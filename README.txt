@@ -1,19 +1,14 @@
-Nexvio fullscreen patch
-=======================
+NEXVIO FULLSCREEN FIX v2
 
-This ZIP contains:
-- AndroidManifest.xml: replacement manifest with orientation/screen-size configChanges.
-- MainActivity.kt.patch: a targeted unified diff for the current MainActivity.kt you pasted.
+1. Replace app/src/main/AndroidManifest.xml with AndroidManifest.xml from this ZIP.
+2. In app/src/main/java/com/nexvio/app/MainActivity.kt, add this import:
+   import androidx.activity.compose.BackHandler
+3. Find the existing line:
+   @Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
+4. Replace the entire existing PlayerScreen function only, up to but not including:
+   private data class PlaybackFailure(...)
+   with the contents of PlayerScreen.kt.txt in this ZIP.
+5. Do not replace the whole MainActivity.kt with PlayerScreen.kt.txt. It is only the complete replacement for the PlayerScreen function.
+6. Commit the changes and wait for the GitHub Actions build to finish. Install the newly built APK, not the old APK.
 
-Important: the MainActivity patch is a diff, not a complete replacement file. Apply it to:
-app/src/main/java/com/nexvio/app/MainActivity.kt
-
-The change adds:
-- Manual Fullscreen button that requests sensor landscape.
-- Automatic fullscreen presentation when the device is in landscape.
-- PlayerView fills the available area in fullscreen.
-- System bars are hidden in fullscreen and restored on exit.
-- Back button exits manually requested fullscreen.
-- Existing stream/player logic is left unchanged.
-
-If applying the diff through GitHub's phone editor is difficult, tell me and I can give you exact replacement sections one at a time.
+This keeps the playlist importer and playback diagnostic helper untouched.

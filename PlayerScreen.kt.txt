@@ -1,0 +1,249 @@
+@Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isBuffering by remember(channel.id) { mutableStateOf(true) }
+    var isPlaying by remember(channel.id) { mutableStateOf(false) }
+    var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
+    var playbackDetails by remember(channel.id) { mutableStateOf<String?>(null) }
+    var retry by remember(channel.id) { mutableIntStateOf(0) }
+    var fullscreen by remember(channel.id) { mutableStateOf(false) }
+    var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    val showFullscreen = fullscreen || isLandscape
+
+    // Fullscreen hides the status/navigation bars. The phone's natural rotation
+    // also expands the player without forcing an orientation change.
+    SideEffect {
+        val window = activity?.window
+        if (window != null) {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, !showFullscreen)
+            val bars = androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
+            if (showFullscreen) {
+                bars.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                bars.systemBarsBehavior =
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                bars.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    DisposableEffect(activity) {
+        onDispose {
+            val window = activity?.window
+            if (window != null) {
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
+                androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
+                    .show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    BackHandler(enabled = fullscreen) {
+        fullscreen = false
+        activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    // Preserve the existing player setup, stream handling, and diagnostics.
+    DisposableEffect(channel.streamUrl, retry) {
+        isBuffering = true
+        isPlaying = false
+        playbackError = null
+        playbackDetails = null
+        Log.i(PLAYBACK_TAG, "Preparing channel name=${channel.name} streamUrl=${channel.streamUrl}")
+        var createdPlayer: ExoPlayer? = null
+        try {
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("Nexvio/1.0 (Android)")
+                .setAllowCrossProtocolRedirects(true)
+            val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpFactory)
+            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            val instance = ExoPlayer.Builder(context.applicationContext)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+            createdPlayer = instance
+            player = instance
+            instance.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    isBuffering = playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_READY) {
+                        playbackError = null
+                        playbackDetails = null
+                    }
+                }
+
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    val failure = describePlaybackFailure(error)
+                    playbackError = failure.message
+                    playbackDetails = "${failure.details}\nHost: ${Uri.parse(channel.streamUrl).host ?: "unknown"}"
+                    isBuffering = false
+                    isPlaying = false
+                    Log.e(
+                        PLAYBACK_TAG,
+                        "Playback failed channel=${channel.name} streamUrl=${channel.streamUrl} details=${failure.details}",
+                        error
+                    )
+                }
+            })
+            val uri = Uri.parse(channel.streamUrl)
+            val mediaItem = MediaItem.Builder().setUri(uri).apply {
+                if (uri.path?.endsWith(".m3u8", ignoreCase = true) == true) {
+                    setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+            }.build()
+            instance.setMediaItem(mediaItem)
+            instance.playWhenReady = true
+            instance.prepare()
+        } catch (e: Exception) {
+            Log.e(PLAYBACK_TAG, "Player initialization failed for channel=${channel.name} streamUrl=${channel.streamUrl}", e)
+            createdPlayer?.release()
+            createdPlayer = null
+            player = null
+            playbackError = "Nexvio could not initialize playback for this channel."
+            playbackDetails = "${e.javaClass.simpleName}: ${e.message ?: "No detail provided"}\nHost: ${Uri.parse(channel.streamUrl).host ?: "unknown"}"
+            isBuffering = false
+            isPlaying = false
+        }
+
+        onDispose {
+            val oldPlayer = createdPlayer
+            if (oldPlayer != null && player === oldPlayer) player = null
+            oldPlayer?.release()
+        }
+    }
+
+    DisposableEffect(player, lifecycleOwner) {
+        val activePlayer = player
+        if (activePlayer == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_PAUSE -> activePlayer.pause()
+                    Lifecycle.Event.ON_RESUME -> if (playbackError == null) activePlayer.play()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(Color.Black)) {
+        if (!showFullscreen) {
+            Row(
+                Modifier.fillMaxWidth().background(Panel).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("‹  Back", color = Lime, modifier = Modifier.clickable { onBack() })
+                Spacer(Modifier.width(18.dp))
+                Text(channel.name, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+        }
+
+        Box(
+            Modifier.fillMaxWidth().weight(1f).background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            if (player != null) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            useController = true
+                            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            this.player = player
+                        }
+                    },
+                    update = { view -> view.player = player },
+                    modifier = if (showFullscreen) Modifier.fillMaxSize()
+                    else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                )
+            }
+
+            if (isBuffering && playbackError == null) {
+                CircularProgressIndicator(color = Lime)
+            }
+
+            if (playbackError != null) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(playbackError!!, color = Color.White)
+                    if (!playbackDetails.isNullOrBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Technical details: ${playbackDetails}", color = Muted, fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { playbackError = null; retry++ },
+                        colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)
+                    ) { Text("Retry") }
+                }
+            }
+
+            if (showFullscreen) {
+                Text(
+                    "Exit fullscreen  ✕",
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(14.dp)
+                        .background(Panel, RoundedCornerShape(8.dp))
+                        .clickable {
+                            fullscreen = false
+                            activity?.requestedOrientation =
+                                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        }
+                        .padding(10.dp)
+                )
+            }
+        }
+
+        if (!showFullscreen) {
+            Row(
+                Modifier.fillMaxWidth().background(Panel).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(channel.name, fontWeight = FontWeight.Bold)
+                    Text("Live stream • availability depends on the provider", color = Muted, fontSize = 12.sp)
+                }
+                Text(
+                    if (isPlaying) "Pause" else "Play",
+                    color = Lime,
+                    modifier = Modifier.clickable {
+                        val activePlayer = player
+                        if (activePlayer != null) {
+                            if (activePlayer.isPlaying) activePlayer.pause()
+                            else {
+                                playbackError = null
+                                playbackDetails = null
+                                activePlayer.play()
+                            }
+                        } else {
+                            playbackError = null
+                            playbackDetails = null
+                            retry++
+                        }
+                    }.padding(10.dp)
+                )
+                Text(
+                    "Fullscreen",
+                    color = Lime,
+                    modifier = Modifier.clickable {
+                        fullscreen = true
+                        activity?.requestedOrientation =
+                            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }.padding(10.dp)
+                )
+            }
+        }
+    }
+}
