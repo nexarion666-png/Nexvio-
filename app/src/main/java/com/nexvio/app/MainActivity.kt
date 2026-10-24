@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,9 +32,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +54,7 @@ private val Panel = Color(0xFF1B1D22)
 private val Lime = Color(0xFFB7F36B)
 private val Muted = Color(0xFF9A9DA6)
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
+private const val PLAYBACK_TAG = "NexvioPlayback"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -243,7 +250,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             }
             if (filtered.isEmpty()) item { EmptySection("No matching channels", "Try another search or category.") }
             items(filtered, key={it.id}) { channel ->
-                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onPlay(channel) }.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { Log.d(PLAYBACK_TAG, "Selected channel name=${channel.name} streamUrl=${channel.streamUrl}"); onPlay(channel) }.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
                     if (!channel.logoUrl.isNullOrBlank()) AsyncImage(model=channel.logoUrl, contentDescription=null, error=painterResource(id=R.drawable.ic_launcher), placeholder=painterResource(id=R.drawable.ic_launcher), modifier=Modifier.size(48.dp).background(Ink, RoundedCornerShape(10.dp)))
                     else Box(Modifier.size(48.dp).background(Ink, RoundedCornerShape(10.dp)), contentAlignment=Alignment.Center) { Text("▶", color=Lime, fontSize=20.sp) }
                     Spacer(Modifier.width(12.dp))
@@ -292,58 +299,99 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
     var isBuffering by remember(channel.id) { mutableStateOf(true) }
     var isPlaying by remember(channel.id) { mutableStateOf(false) }
     var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
+    var playbackDetails by remember(channel.id) { mutableStateOf<String?>(null) }
     var retry by remember(channel.id) { mutableIntStateOf(0) }
     var fullscreen by remember(channel.id) { mutableStateOf(false) }
+    var player by remember { mutableStateOf<ExoPlayer?>(null) }
 
-    // Some IPTV entries contain malformed or unsupported stream URLs. Do not let
-    // synchronous Media3 initialization errors crash the whole app.
-    val player: ExoPlayer? = remember(channel.streamUrl, retry) {
+    // Create/release the player in an effect, never while Compose is evaluating a
+    // remember block. The URI is passed through unchanged; only known HLS paths
+    // receive an explicit HLS MIME type.
+    DisposableEffect(channel.streamUrl, retry) {
+        isBuffering = true
+        isPlaying = false
+        playbackError = null
+        playbackDetails = null
+        Log.i(PLAYBACK_TAG, "Preparing channel name=${channel.name} streamUrl=${channel.streamUrl}")
+        var createdPlayer: ExoPlayer? = null
         try {
-            ExoPlayer.Builder(context.applicationContext).build().apply {
-                addListener(object : Player.Listener {
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        isBuffering = playbackState == Player.STATE_BUFFERING
-                        if (playbackState == Player.STATE_READY) playbackError = null
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("Nexvio/1.0 (Android)")
+                .setAllowCrossProtocolRedirects(true)
+            val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpFactory)
+            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            val instance = ExoPlayer.Builder(context.applicationContext)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+            createdPlayer = instance
+            player = instance
+            instance.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    isBuffering = playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_READY) {
+                        playbackError = null
+                        playbackDetails = null
                     }
-                    override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-                    override fun onPlayerError(error: PlaybackException) {
-                        playbackError = when (error.errorCode) {
-                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Could not connect to this stream. Check the connection and try again."
-                            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
-                            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "This stream format is invalid or unsupported."
-                            else -> "Playback failed. The stream may be unavailable or use an unsupported format."
-                        }
-                        isBuffering = false
-                    }
-                })
-                setMediaItem(MediaItem.fromUri(Uri.parse(channel.streamUrl)))
-                playWhenReady = true
-                prepare()
-            }
+                }
+
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    val failure = describePlaybackFailure(error)
+                    playbackError = failure.message
+                    playbackDetails = failure.details
+                    isBuffering = false
+                    isPlaying = false
+                    Log.e(
+                        PLAYBACK_TAG,
+                        "Playback failed channel=${channel.name} streamUrl=${channel.streamUrl} details=${failure.details}",
+                        error
+                    )
+                }
+            })
+            val uri = Uri.parse(channel.streamUrl)
+            val mediaItem = MediaItem.Builder().setUri(uri).apply {
+                if (uri.path?.endsWith(".m3u8", ignoreCase = true) == true) {
+                    setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+            }.build()
+            instance.setMediaItem(mediaItem)
+            instance.playWhenReady = true
+            instance.prepare()
         } catch (e: Exception) {
-            playbackError = "Could not open this channel. Its stream URL may be invalid or unsupported."
+            Log.e(PLAYBACK_TAG, "Player initialization failed for channel=${channel.name} streamUrl=${channel.streamUrl}", e)
+            createdPlayer?.release()
+            createdPlayer = null
+            player = null
+            playbackError = "Nexvio could not initialize playback for this channel."
+            playbackDetails = "${e.javaClass.simpleName}: ${e.message ?: "No detail provided"}"
             isBuffering = false
-            null
+            isPlaying = false
+        }
+
+        onDispose {
+            val oldPlayer = createdPlayer
+            if (oldPlayer != null && player === oldPlayer) player = null
+            oldPlayer?.release()
         }
     }
 
-    DisposableEffect(player) {
-        if (player == null) {
+    DisposableEffect(player, lifecycleOwner) {
+        val activePlayer = player
+        if (activePlayer == null) {
             onDispose { }
         } else {
             val observer = LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_PAUSE -> player.pause()
-                    Lifecycle.Event.ON_RESUME -> if (playbackError == null) player.play()
+                    Lifecycle.Event.ON_PAUSE -> activePlayer.pause()
+                    Lifecycle.Event.ON_RESUME -> if (playbackError == null) activePlayer.play()
                     else -> Unit
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose {
-                lifecycleOwner.lifecycle.removeObserver(observer)
-                player.release()
-            }
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
     }
 
@@ -363,6 +411,10 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             if (isBuffering && playbackError == null) CircularProgressIndicator(color = Lime)
             if (playbackError != null) Column(Modifier.padding(24.dp), horizontalAlignment=Alignment.CenterHorizontally) {
                 Text(playbackError!!, color=Color.White)
+                if (!playbackDetails.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Technical details: ${playbackDetails}", color=Muted, fontSize=11.sp)
+                }
                 Spacer(Modifier.height(12.dp))
                 Button(onClick={ playbackError=null; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Lime, contentColor=Ink)) { Text("Retry") }
             }
@@ -373,12 +425,52 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             Text(if (isPlaying) "Pause" else "Play", color=Lime, modifier=Modifier.clickable {
                 val activePlayer = player
                 if (activePlayer != null) {
-                    if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; activePlayer.play() }
-                } else { playbackError=null; retry++ }
+                    if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; playbackDetails=null; activePlayer.play() }
+                } else { playbackError=null; playbackDetails=null; retry++ }
             }.padding(10.dp))
             Text("Fullscreen", color=Lime, modifier=Modifier.clickable { fullscreen=true }.padding(10.dp))
         }
     }
+}
+
+private data class PlaybackFailure(val message: String, val details: String)
+
+private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
+    val causes = mutableListOf<Throwable>()
+    var current: Throwable? = error
+    while (current != null && causes.size < 12) {
+        causes += current
+        current = current.cause
+    }
+    val httpError = causes.filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()
+    val causeText = causes.drop(1).firstOrNull()?.let {
+        "${it.javaClass.simpleName}: ${it.message ?: "No message"}"
+    }
+    val details = buildString {
+        append("${error.errorCodeName} (${error.errorCode})")
+        if (httpError != null) append(" • HTTP ${httpError.responseCode}")
+        if (causeText != null) append("\n${causeText}")
+    }
+    val message = when {
+        httpError?.responseCode == 401 || httpError?.responseCode == 403 ->
+            "The stream provider denied access. The channel may require authorization."
+        httpError?.responseCode == 404 ->
+            "The provider could not find this stream (HTTP 404)."
+        httpError?.responseCode == 429 ->
+            "The stream provider is temporarily rate-limiting requests. Try again later."
+        httpError != null ->
+            "The stream server returned HTTP ${httpError.responseCode}."
+        causes.any { it.message?.contains("CLEARTEXT", ignoreCase = true) == true } ->
+            "Android blocked HTTP for this channel's host under the app's network security policy."
+        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+            "Could not connect to the stream server. Check the connection and try again."
+        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+            error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ->
+            "The stream data could not be parsed. Its format may be unsupported or the server response may be invalid."
+        else -> "Playback failed. See the technical details for the Media3 error."
+    }
+    return PlaybackFailure(message, details)
 }
 
 @Composable private fun LibraryScreen() { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) { item { Text("Your Library", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("A home for your saved and watched titles", color=Muted) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV. Movie and series favorites require catalogue support.") }; item { EmptySection("Watch history", "Viewing history is not recorded in this phase.") }; item { EmptySection("Continue watching", "Playback progress is not persisted in Phase 2.") } } }
