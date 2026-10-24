@@ -1,0 +1,132 @@
+--- a/app/src/main/java/com/nexvio/app/MainActivity.kt
++++ b/app/src/main/java/com/nexvio/app/MainActivity.kt
+@@
+ import android.content.Context
+ import android.content.Intent
++import android.content.pm.ActivityInfo
++import android.content.res.Configuration
+ import android.net.Uri
+ import android.os.Bundle
+ import android.util.Log
++import android.view.View
+ import androidx.activity.ComponentActivity
++import androidx.activity.compose.BackHandler
+ import androidx.activity.compose.setContent
+@@
+ import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.platform.LocalConfiguration
+ import androidx.compose.ui.viewinterop.AndroidView
+@@
+ import androidx.media3.ui.PlayerView
++import androidx.core.view.WindowCompat
++import androidx.core.view.WindowInsetsCompat
++import androidx.core.view.WindowInsetsControllerCompat
+@@
+ class MainActivity : ComponentActivity() {
++    private var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
++
++    fun enterPlayerFullscreen() {
++        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
++    }
++
++    fun exitPlayerFullscreen() {
++        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
++    }
++
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+         setContent { NexvioApp() }
+@@
+ @Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
+     val context = LocalContext.current
++    val activity = context as? ComponentActivity
++    val configuration = LocalConfiguration.current
++    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+     val lifecycleOwner = LocalLifecycleOwner.current
+@@
+     var retry by remember(channel.id) { mutableIntStateOf(0) }
+     var fullscreen by remember(channel.id) { mutableStateOf(false) }
++    val showFullscreen = fullscreen || isLandscape
+     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+
++    // Hide system bars while fullscreen/landscape, and restore them on exit.
++    SideEffect {
++        val window = activity?.window ?: return@SideEffect
++        WindowCompat.setDecorFitsSystemWindows(window, !showFullscreen)
++        val controller = WindowInsetsControllerCompat(window, window.decorView)
++        if (showFullscreen) {
++            controller.hide(WindowInsetsCompat.Type.systemBars())
++            controller.systemBarsBehavior =
++                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
++        } else {
++            controller.show(WindowInsetsCompat.Type.systemBars())
++        }
++    }
++
++    DisposableEffect(activity) {
++        onDispose {
++            val window = activity?.window
++            if (window != null) {
++                WindowCompat.setDecorFitsSystemWindows(window, true)
++                WindowInsetsControllerCompat(window, window.decorView)
++                    .show(WindowInsetsCompat.Type.systemBars())
++            }
++            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
++        }
++    }
++
++    BackHandler(enabled = fullscreen) {
++        fullscreen = false
++        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
++    }
++
+@@
+-    Column(Modifier.fillMaxSize().background(Color.Black)) {
+-        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
++    Column(Modifier.fillMaxSize().background(Color.Black)) {
++        if (!showFullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
+@@
+-        Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black), contentAlignment=Alignment.Center) {
++        Box(
++            Modifier
++                .fillMaxWidth()
++                .weight(1f)
++                .background(Color.Black),
++            contentAlignment = Alignment.Center
++        ) {
+             if (player != null) {
+                 AndroidView(
+                     factory = { ctx -> PlayerView(ctx).apply { useController = true; this.player = player } },
+                     update = { view -> view.player = player },
+-                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
++                    modifier = if (showFullscreen) Modifier.fillMaxSize()
++                    else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                 )
+             }
+@@
+-            if (fullscreen) Text("Exit fullscreen  ✕", color=Color.White, modifier=Modifier.align(Alignment.TopEnd).padding(14.dp).background(Panel, RoundedCornerShape(8.dp)).clickable { fullscreen=false }.padding(10.dp))
++            if (showFullscreen) Text(
++                "Exit fullscreen  ✕",
++                color = Color.White,
++                modifier = Modifier
++                    .align(Alignment.TopEnd)
++                    .padding(14.dp)
++                    .background(Panel, RoundedCornerShape(8.dp))
++                    .clickable {
++                        fullscreen = false
++                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
++                    }
++                    .padding(10.dp)
++            )
+         }
+-        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
++        if (!showFullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
+@@
+-            Text("Fullscreen", color=Lime, modifier=Modifier.clickable { fullscreen=true }.padding(10.dp))
++            Text("Fullscreen", color=Lime, modifier=Modifier.clickable {
++                fullscreen = true
++                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
++            }.padding(10.dp))
+         }
+     }
+ }
