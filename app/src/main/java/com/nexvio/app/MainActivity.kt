@@ -341,7 +341,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 override fun onPlayerError(error: PlaybackException) {
                     val failure = describePlaybackFailure(error)
                     playbackError = failure.message
-                    playbackDetails = failure.details
+                    playbackDetails = "${failure.details}\nHost: ${Uri.parse(channel.streamUrl).host ?: "unknown"}"
                     isBuffering = false
                     isPlaying = false
                     Log.e(
@@ -366,7 +366,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             createdPlayer = null
             player = null
             playbackError = "Nexvio could not initialize playback for this channel."
-            playbackDetails = "${e.javaClass.simpleName}: ${e.message ?: "No detail provided"}"
+            playbackDetails = "${e.javaClass.simpleName}: ${e.message ?: "No detail provided"}\nHost: ${Uri.parse(channel.streamUrl).host ?: "unknown"}"
             isBuffering = false
             isPlaying = false
         }
