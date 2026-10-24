@@ -1,54 +1,34 @@
 @Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
     val context = LocalContext.current
     val activity = context as? ComponentActivity
+    val lifecycleOwner = LocalLifecycleOwner.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     var isBuffering by remember(channel.id) { mutableStateOf(true) }
     var isPlaying by remember(channel.id) { mutableStateOf(false) }
     var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
     var playbackDetails by remember(channel.id) { mutableStateOf<String?>(null) }
     var retry by remember(channel.id) { mutableIntStateOf(0) }
-    var fullscreen by remember(channel.id) { mutableStateOf(false) }
-    var player by remember { mutableStateOf<ExoPlayer?>(null) }
-    val showFullscreen = fullscreen || isLandscape
+    var manualFullscreen by remember(channel.id) { mutableStateOf(false) }
+    var player by remember(channel.id) { mutableStateOf<ExoPlayer?>(null) }
 
-    // Fullscreen hides the status/navigation bars. The phone's natural rotation
-    // also expands the player without forcing an orientation change.
-    SideEffect {
-        val window = activity?.window
-        if (window != null) {
-            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, !showFullscreen)
-            val bars = androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
-            if (showFullscreen) {
-                bars.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                bars.systemBarsBehavior =
-                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            } else {
-                bars.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            }
-        }
+    // A manual fullscreen request rotates the existing Activity instead of
+    // reopening the channel. The manifest must handle orientation changes.
+    val showFullscreen = manualFullscreen || isLandscape
+
+    androidx.activity.compose.BackHandler(enabled = showFullscreen) {
+        manualFullscreen = false
+        activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
     DisposableEffect(activity) {
         onDispose {
-            val window = activity?.window
-            if (window != null) {
-                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
-                androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
-                    .show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            }
-            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.requestedOrientation =
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 
-    BackHandler(enabled = fullscreen) {
-        fullscreen = false
-        activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    }
-
-    // Preserve the existing player setup, stream handling, and diagnostics.
     DisposableEffect(channel.streamUrl, retry) {
         isBuffering = true
         isPlaying = false
@@ -162,7 +142,10 @@
                             this.player = player
                         }
                     },
-                    update = { view -> view.player = player },
+                    update = { view ->
+                        // Reattach the same player after a configuration/layout update.
+                        if (view.player !== player) view.player = player
+                    },
                     modifier = if (showFullscreen) Modifier.fillMaxSize()
                     else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                 )
@@ -177,7 +160,7 @@
                     Text(playbackError!!, color = Color.White)
                     if (!playbackDetails.isNullOrBlank()) {
                         Spacer(Modifier.height(8.dp))
-                        Text("Technical details: ${playbackDetails}", color = Muted, fontSize = 11.sp)
+                        Text("Technical details: $playbackDetails", color = Muted, fontSize = 11.sp)
                     }
                     Spacer(Modifier.height(12.dp))
                     Button(
@@ -191,12 +174,11 @@
                 Text(
                     "Exit fullscreen  ✕",
                     color = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
+                    modifier = Modifier.align(Alignment.TopEnd)
                         .padding(14.dp)
                         .background(Panel, RoundedCornerShape(8.dp))
                         .clickable {
-                            fullscreen = false
+                            manualFullscreen = false
                             activity?.requestedOrientation =
                                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                         }
@@ -238,7 +220,7 @@
                     "Fullscreen",
                     color = Lime,
                     modifier = Modifier.clickable {
-                        fullscreen = true
+                        manualFullscreen = true
                         activity?.requestedOrientation =
                             android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                     }.padding(10.dp)
