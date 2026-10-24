@@ -27,7 +27,12 @@ jobs:
       - name: Accept Android SDK licenses and install required packages
         shell: bash
         run: |
+          # GitHub Actions enables pipefail by default. `yes` can receive SIGPIPE
+          # after sdkmanager finishes reading licenses, incorrectly failing the step.
+          set +o pipefail
           yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
+
           sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
