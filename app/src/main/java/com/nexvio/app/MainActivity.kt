@@ -138,7 +138,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             }
             bytes.toByteArray()
         }
-        out.toString(Charsets.UTF_8)
+        out.toString(Charsets.UTF_8.name())
     } finally { conn.disconnect() }
 }
 
@@ -287,51 +287,80 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
 }
 
 @Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
-    val context=LocalContext.current
-    val lifecycleOwner= LocalLifecycleOwner.current
-    var isBuffering by remember { mutableStateOf(true) }
-    var isPlaying by remember { mutableStateOf(false) }
-    var playbackError by remember { mutableStateOf<String?>(null) }
-    var retry by remember { mutableIntStateOf(0) }
-    var fullscreen by remember { mutableStateOf(false) }
-    val player = remember(channel.streamUrl, retry) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(channel.streamUrl))
-            playWhenReady = true
-            addListener(object: Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) { isBuffering = playbackState == Player.STATE_BUFFERING; if (playbackState == Player.STATE_READY) playbackError = null }
-                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-                override fun onPlayerError(error: PlaybackException) {
-                    playbackError = when(error.errorCode) {
-                        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Could not connect to this stream. Check the connection and try again."
-                        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "This stream format is invalid or unsupported."
-                        else -> "Playback failed. The stream may be unavailable or use an unsupported format."
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isBuffering by remember(channel.id) { mutableStateOf(true) }
+    var isPlaying by remember(channel.id) { mutableStateOf(false) }
+    var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
+    var retry by remember(channel.id) { mutableIntStateOf(0) }
+    var fullscreen by remember(channel.id) { mutableStateOf(false) }
+
+    // Some IPTV entries contain malformed or unsupported stream URLs. Do not let
+    // synchronous Media3 initialization errors crash the whole app.
+    val player: ExoPlayer? = remember(channel.streamUrl, retry) {
+        try {
+            ExoPlayer.Builder(context.applicationContext).build().apply {
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        isBuffering = playbackState == Player.STATE_BUFFERING
+                        if (playbackState == Player.STATE_READY) playbackError = null
                     }
-                    isBuffering = false
-                }
-            })
-            prepare()
+                    override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+                    override fun onPlayerError(error: PlaybackException) {
+                        playbackError = when (error.errorCode) {
+                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Could not connect to this stream. Check the connection and try again."
+                            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "This stream format is invalid or unsupported."
+                            else -> "Playback failed. The stream may be unavailable or use an unsupported format."
+                        }
+                        isBuffering = false
+                    }
+                })
+                setMediaItem(MediaItem.fromUri(Uri.parse(channel.streamUrl)))
+                playWhenReady = true
+                prepare()
+            }
+        } catch (e: Exception) {
+            playbackError = "Could not open this channel. Its stream URL may be invalid or unsupported."
+            isBuffering = false
+            null
         }
     }
+
     DisposableEffect(player) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> player.pause()
-                Lifecycle.Event.ON_RESUME -> { if (playbackError == null) player.play() }
-                else -> Unit
+        if (player == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_PAUSE -> player.pause()
+                    Lifecycle.Event.ON_RESUME -> if (playbackError == null) player.play()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                player.release()
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); player.release() }
     }
+
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
             Text("‹  Back", color=Lime, modifier=Modifier.clickable { onBack() })
             Spacer(Modifier.width(18.dp)); Text(channel.name, fontWeight=FontWeight.Bold, maxLines=1)
         }
         Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black), contentAlignment=Alignment.Center) {
-            AndroidView(factory={ ctx -> PlayerView(ctx).apply { this.player=player; useController=true } }, update={ it.player=player }, modifier=Modifier.fillMaxWidth().aspectRatio(16f/9f))
-            if (isBuffering && playbackError == null) CircularProgressIndicator(color=Lime)
+            if (player != null) {
+                AndroidView(
+                    factory = { ctx -> PlayerView(ctx).apply { useController = true; this.player = player } },
+                    update = { view -> view.player = player },
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                )
+            }
+            if (isBuffering && playbackError == null) CircularProgressIndicator(color = Lime)
             if (playbackError != null) Column(Modifier.padding(24.dp), horizontalAlignment=Alignment.CenterHorizontally) {
                 Text(playbackError!!, color=Color.White)
                 Spacer(Modifier.height(12.dp))
@@ -341,7 +370,12 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         }
         if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) { Text(channel.name, fontWeight=FontWeight.Bold); Text("Live stream • availability depends on the provider", color=Muted, fontSize=12.sp) }
-            Text(if (isPlaying) "Pause" else "Play", color=Lime, modifier=Modifier.clickable { if (player.isPlaying) player.pause() else { playbackError=null; player.play() } }.padding(10.dp))
+            Text(if (isPlaying) "Pause" else "Play", color=Lime, modifier=Modifier.clickable {
+                val activePlayer = player
+                if (activePlayer != null) {
+                    if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; activePlayer.play() }
+                } else { playbackError=null; retry++ }
+            }.padding(10.dp))
             Text("Fullscreen", color=Lime, modifier=Modifier.clickable { fullscreen=true }.padding(10.dp))
         }
     }
