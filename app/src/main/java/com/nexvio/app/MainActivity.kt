@@ -138,7 +138,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             }
             bytes.toByteArray()
         }
-        out.toString(Charsets.UTF_8.name())
+        out.toString(Charsets.UTF_8)
     } finally { conn.disconnect() }
 }
 
