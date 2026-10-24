@@ -1,52 +1,65 @@
-# Nexvio — Phase 1
+# Nexvio — Phase 2
 
-**Movies • Series • Live TV** — an original native Android application foundation. This project was created independently; NuvioMobile was used only as a high-level capability reference. No NuvioMobile source code or assets are included.
+**Movies • Series • Live TV** — an original native Android application. Phase 2 extends the existing Kotlin/Compose application; it does not import or reuse NuvioMobile source code or assets.
 
-## Stack
+## Technology and identity
 - Kotlin, Jetpack Compose, Material 3
-- Android Gradle Plugin 8.7.3, Gradle 8.9, Kotlin 2.0.21
-- AndroidX Activity, Navigation Compose, DataStore dependency for future local settings
-- Application ID: `com.nexvio.app`
-- Version: `1.0.0` (version code `1`)
-- Minimum SDK: 24 (Android 7.0); target/compile SDK: 35
+- Android Gradle Plugin 8.7.3, Kotlin 2.0.21, Gradle 8.9
+- AndroidX Media3 ExoPlayer 1.5.1 for in-app playback
+- Coil 2.7.0 for optional channel logos
+- Application ID: `com.nexvio.app`; version `1.0.0` (version code 1)
+- Minimum SDK 24 (Android 7.0); compile/target SDK 35
+- JDK 17 for builds
 
-## Included in Phase 1
-- Dark Nexvio branding and original vector launcher mark
-- Home, Movies, Series, Live TV, Library, and Settings destinations
-- Navigation bar, search entry point, featured layout, category cards, and honest empty states
-- Explanatory feature pages for provider, playlist, playback, download, and appearance settings
-- No account, API key, backend, or network connection required for the initial interface
-- GitHub Actions debug-build workflow
+## Phase 2 features
+- Import `.m3u` / `.m3u8` files with Android's Storage Access Framework; no broad storage permission is requested.
+- Import an M3U/M3U8 text playlist from a user-provided HTTP(S) URL in a background coroutine.
+- Bounded playlist download/read (5 MiB), connection/read timeouts, validation and user-facing errors.
+- Reusable M3U parser for `#EXTINF`, quoted `tvg-id`, `tvg-name`, `tvg-logo`, `group-title`, channel labels, and stream URLs.
+- Channel list, optional logos with fallback, search, category filter, and favorites.
+- Playlist source and favorite IDs are stored locally. URL sources are fetched again on launch; local document URIs are persisted when Android grants permission.
+- In-app AndroidX Media3 player with buffering state, retry, player controls, error messaging and player lifecycle cleanup.
+- Existing Home, Movies, Series, Library and Settings destinations remain present.
+- Parser unit tests cover the requested M3U cases.
 
-## Not implemented yet
-Real provider/addon integrations, real movie/series metadata, IPTV playlist parsing, channels, video playback, favorites persistence, watch history, playback progress, downloads, subtitle/audio selection, and configurable persisted settings. The catalogue cards and sections are layout foundations only. No working streams or fabricated playback results are supplied.
+## Security and limitations
+- No playlist, account, viewing history, or favorite data is uploaded to an external service.
+- The app does not bypass authentication, DRM, paywalls or access restrictions. Only import playlists and streams you are authorized to access.
+- The application does not globally enable cleartext traffic. On modern Android versions, arbitrary HTTP playlist/stream requests may be blocked by Android's cleartext policy; HTTPS sources are recommended. This is deliberate rather than weakening TLS/network security globally.
+- Playback depends on the stream being reachable and supported by Media3 and the device. Some streams require special headers, authentication, codecs or formats not supported here.
+- No movie/series catalogue, playback progress history, subtitle/audio selection, downloads, addon manager, cloud sync or accounts are implemented.
+- URL playlist contents are not persisted; the source URL is re-fetched when the app launches. Local playlist access can expire if Android revokes the URI permission.
+- Favorites are local and keyed to the channel identifier and stream URL.
 
-## Build
-Requires JDK 17 and Android SDK Platform 35. With a working Gradle wrapper, run:
+## Build and tests
+With JDK 17, Android SDK Platform 35 and Gradle 8.9 available:
 
 ```sh
 ./gradlew assembleDebug
 ./gradlew testDebugUnitTest
 ```
 
-The expected APK output is `app/build/outputs/apk/debug/app-debug.apk`. The delivered archive does **not** include `gradle-wrapper.jar` because the build environment could not reach the upstream host to retrieve it. For a local build, install Gradle 8.9 and run `gradle assembleDebug` / `gradle testDebugUnitTest`. The GitHub Actions workflow provisions Gradle 8.9 and generates the standard wrapper before building, so the workflow does not depend on a prebundled wrapper JAR.
+The APK, if a build succeeds, is at `app/build/outputs/apk/debug/app-debug.apk`. This delivery environment had no installed Gradle executable or wrapper JAR, so a full Android build and JUnit execution were not possible here. The M3U parser source was independently compiled with `kotlinc`; this is not a substitute for an Android build or running the JUnit suite.
 
 ## GitHub Actions APK
-`.github/workflows/android-build.yml` runs on pushes to `main` or `master` and manual dispatch. It installs JDK 17 and Android SDK 35, runs `assembleDebug` and unit tests, then uploads `app-debug.apk` as the `Nexvio-Phase-1-debug-apk` workflow artifact. After a successful workflow: open the repository's **Actions** tab, select the successful Android build run, and download the artifact from **Artifacts**. No secrets are required. GitHub execution has not been run or verified as part of this delivery.
+The existing `.github/workflows/android-build.yml` workflow is retained. It runs on pushes to `main`/`master` and manual dispatch, sets up JDK 17 and Android SDK 35, provisions Gradle 8.9, generates the wrapper, runs `assembleDebug` and `testDebugUnitTest`, then uploads the debug APK as a workflow artifact. No secrets are required. GitHub Actions has not been run or verified as part of this delivery.
 
-## Project layout
-- `app/src/main/java/com/nexvio/app/` — app entry point and Compose screens
-- `app/src/main/res/` — app label, theme, original vector brand mark
-- `app/src/test/` — basic JVM unit test
-- `.github/workflows/` — CI build and artifact upload
-- `gradle/` — wrapper distribution configuration
+To download the APK after a successful workflow:
+1. Open the repository's **Actions** tab.
+2. Open the successful **Android build** run.
+3. Download the `Nexvio-Phase-2-debug-apk` artifact from **Artifacts**.
+4. Extract the artifact ZIP and install the APK on your Android device. Android may ask you to permit installation from the browser or file manager.
 
-## Upload to your existing GitHub repository (phone-friendly)
-1. Download and extract `Nexvio-Phase-1.zip` on your phone.
-2. Open `https://github.com/nexarion666-png/Nexvio-` in your browser and confirm you are signed in.
-3. Choose **Add file → Upload files**. Upload the extracted project contents directly into the repository root, including hidden `.github` workflow files if your upload method supports them. Do not upload an extra enclosing `Nexvio-Phase-1/` folder.
-4. Commit the upload to the primary branch. If GitHub's mobile browser cannot upload the hidden `.github` directory or many files at once, use GitHub's web desktop mode or a computer so the workflow is included.
-5. Open **Actions** and inspect the build result. Do not treat the APK as available until a workflow run succeeds.
+## Project structure
+- `app/src/main/java/com/nexvio/app/MainActivity.kt` — existing app screens plus playlist/channel UI and player
+- `app/src/main/java/com/nexvio/app/M3uParser.kt` — reusable M3U parser and channel model
+- `app/src/test/java/com/nexvio/app/M3uParserTest.kt` — parser unit tests
+- `.github/workflows/android-build.yml` — Android build/test/APK workflow
+- `app/src/main/AndroidManifest.xml` — INTERNET permission and network security policy
 
-## Verification status
-This archive was checked for ZIP integrity and required source/configuration files. Android compilation, APK generation, emulator testing, and GitHub Actions execution were not performed in the available environment. Therefore no APK is included. See the delivery report for unresolved items.
+## Uploading from a phone
+1. Extract the ZIP.
+2. Open your existing Nexvio repository: https://github.com/nexarion666-png/Nexvio-
+3. Upload the extracted **contents** to the repository root, replacing the previous Phase 1 files when prompted. Do not add an extra enclosing folder.
+4. Ensure `.github/workflows/android-build.yml` is included.
+5. Commit to the primary branch and inspect the Actions run. Do not treat an APK as available unless the workflow succeeds.
