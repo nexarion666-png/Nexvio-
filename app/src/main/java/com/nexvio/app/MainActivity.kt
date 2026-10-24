@@ -138,7 +138,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             }
             bytes.toByteArray()
         }
-        out.toString(Charsets.UTF_8.name())
+        out.toString(Charsets.UTF_8)
     } finally { conn.disconnect() }
 }
 
@@ -203,21 +203,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 try {
                     if (store.isLocal()) {
                         val uri = Uri.parse(saved)
-                        val text = withContext(Dispatchers.IO) {
-                            context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
-                                val output = StringBuilder()
-                                val buffer = CharArray(8192)
-                                var count = 0
-                                while (true) {
-                                    val n = reader.read(buffer)
-                                    if (n < 0) break
-                                    count += n
-                                    if (count > MAX_PLAYLIST_BYTES) throw IllegalStateException("Playlist is larger than the 5 MB limit.")
-                                    output.append(buffer, 0, n)
-                                }
-                                output.toString()
-                            } ?: throw IllegalStateException("Local playlist access expired. Please re-import the file.")
-                        }
+                        val text = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: throw IllegalStateException("Local playlist access expired. Please re-import the file.") }
                         applyPlaylist(text, store.label() ?: "Local playlist")
                     } else {
                         applyPlaylist(downloadPlaylist(saved), store.label() ?: "Playlist URL")
