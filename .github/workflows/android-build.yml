@@ -1,39 +1,65 @@
 name: Android build
+
 on:
   push:
     branches: ["main", "master"]
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
+
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Provision Gradle and generate standard wrapper
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+
+      - name: Provision Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-          # The delivered project intentionally lacks gradle-wrapper.jar.
-          # Generate it below after Gradle is provisioned.
+          gradle-version: "8.9"
           validate-wrappers: false
-      - name: Generate wrapper JAR and scripts
+
+      - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.9
-      - name: Accept SDK licenses and install platform
-        run: yes | sdkmanager --licenses >/dev/null; sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - name: Make wrapper executable
         run: chmod +x ./gradlew
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest
+
+      - name: Build debug APK and run unit tests
+        run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexvio-build-diagnostics
+          path: |
+            app/build/reports/
+            app/build/test-results/
+            ~/.gradle/daemon/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Nexvio-Phase-1-debug-apk
