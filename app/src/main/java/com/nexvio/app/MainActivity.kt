@@ -1,11 +1,15 @@
 package com.nexvio.app
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -40,10 +47,14 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URI
@@ -56,6 +67,41 @@ private val Muted = Color(0xFF9A9DA6)
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
 private const val PLAYBACK_TAG = "NexvioPlayback"
 
+private val tvChannelSaver = Saver<TvChannel?, Bundle>(
+    save = { channel -> channel?.let { value ->
+        Bundle().apply {
+            putString("id", value.id)
+            putString("name", value.name)
+            putString("streamUrl", value.streamUrl)
+            putString("logoUrl", value.logoUrl)
+            putString("category", value.category)
+            putString("tvgId", value.tvgId)
+            putString("tvgName", value.tvgName)
+            putBoolean("isFavorite", value.isFavorite)
+        }
+    } },
+    restore = { state -> state?.let { value ->
+        val streamUrl = value.getString("streamUrl")
+        val name = value.getString("name")
+        if (!streamUrl.isNullOrBlank() && !name.isNullOrBlank()) TvChannel(
+            id = value.getString("id").orEmpty(),
+            name = name,
+            streamUrl = streamUrl,
+            logoUrl = value.getString("logoUrl"),
+            category = value.getString("category"),
+            tvgId = value.getString("tvgId"),
+            tvgName = value.getString("tvgName"),
+            isFavorite = value.getBoolean("isFavorite")
+        ) else null
+    } }
+)
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,7 +112,7 @@ class MainActivity : ComponentActivity() {
 @Composable fun NexvioApp() {
     var current by remember { mutableStateOf("Home") }
     var detail by remember { mutableStateOf<String?>(null) }
-    var playing by remember { mutableStateOf<TvChannel?>(null) }
+    var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
     MaterialTheme(colorScheme = darkColorScheme(primary=Lime, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
             if (playing != null) {
@@ -296,13 +342,41 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
 @Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val configuration = LocalConfiguration.current
+    val activity = remember(context) { context.findActivity() }
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var fullscreenOverride by rememberSaveable(channel.id) { mutableStateOf<Boolean?>(null) }
+    val fullscreen = fullscreenOverride ?: isLandscape
+    var resumeAfterLifecyclePause by remember { mutableStateOf(false) }
     var isBuffering by remember(channel.id) { mutableStateOf(true) }
     var isPlaying by remember(channel.id) { mutableStateOf(false) }
     var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
     var playbackDetails by remember(channel.id) { mutableStateOf<String?>(null) }
     var retry by remember(channel.id) { mutableIntStateOf(0) }
-    var fullscreen by remember(channel.id) { mutableStateOf(false) }
+    var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(0L) }
+    var shouldResumePlayback by rememberSaveable(channel.id) { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+
+    // Landscape is fullscreen by default. Back exits fullscreen first; rotating again
+    // clears the temporary override so orientation-driven fullscreen works normally.
+    LaunchedEffect(configuration.orientation) { fullscreenOverride = null }
+    LaunchedEffect(fullscreen, activity) {
+        val window = activity?.window ?: return@LaunchedEffect
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars())
+        else controller.show(WindowInsetsCompat.Type.systemBars())
+    }
+    DisposableEffect(activity) {
+        onDispose {
+            activity?.window?.let { window ->
+                WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+    BackHandler(enabled = fullscreen) {
+        fullscreenOverride = false
+    }
 
     // Create/release the player in an effect, never while Compose is evaluating a
     // remember block. The URI is passed through unchanged; only known HLS paths
@@ -331,11 +405,21 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                     if (playbackState == Player.STATE_READY) {
                         playbackError = null
                         playbackDetails = null
+                        // For seekable/VOD sources, restore a saved position once. Do not
+                        // seek live IPTV streams away from their default live position.
+                        if (savedPositionMs > 0L && !instance.isCurrentMediaItemLive) {
+                            instance.seekTo(savedPositionMs)
+                            savedPositionMs = 0L
+                        }
                     }
                 }
 
                 override fun onIsPlayingChanged(playing: Boolean) {
                     isPlaying = playing
+                }
+
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    shouldResumePlayback = playWhenReady
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
@@ -358,7 +442,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 }
             }.build()
             instance.setMediaItem(mediaItem)
-            instance.playWhenReady = true
+            instance.playWhenReady = shouldResumePlayback
             instance.prepare()
         } catch (e: Exception) {
             Log.e(PLAYBACK_TAG, "Player initialization failed for channel=${channel.name} streamUrl=${channel.streamUrl}", e)
@@ -378,6 +462,19 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         }
     }
 
+    LaunchedEffect(player) {
+        val activePlayer = player ?: return@LaunchedEffect
+        while (true) {
+            delay(1_000)
+            shouldResumePlayback = activePlayer.playWhenReady
+            // Live streams should reopen at the provider's live edge. Preserve position
+            // only for non-live media that supports a meaningful seek position.
+            if (activePlayer.playbackState == Player.STATE_READY && !activePlayer.isCurrentMediaItemLive) {
+                savedPositionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+            }
+        }
+    }
+
     DisposableEffect(player, lifecycleOwner) {
         val activePlayer = player
         if (activePlayer == null) {
@@ -385,8 +482,14 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         } else {
             val observer = LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_PAUSE -> activePlayer.pause()
-                    Lifecycle.Event.ON_RESUME -> if (playbackError == null) activePlayer.play()
+                    Lifecycle.Event.ON_PAUSE -> {
+                        resumeAfterLifecyclePause = activePlayer.playWhenReady
+                        activePlayer.pause()
+                    }
+                    Lifecycle.Event.ON_RESUME -> {
+                        if (resumeAfterLifecyclePause && activePlayer.playerError == null) activePlayer.play()
+                        resumeAfterLifecyclePause = false
+                    }
                     else -> Unit
                 }
             }
@@ -403,9 +506,19 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black), contentAlignment=Alignment.Center) {
             if (player != null) {
                 AndroidView(
-                    factory = { ctx -> PlayerView(ctx).apply { useController = true; this.player = player } },
-                    update = { view -> view.player = player },
-                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                    factory = { ctx -> PlayerView(ctx).apply {
+                        useController = true
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setKeepContentOnPlayerReset(true)
+                        this.player = player
+                    } },
+                    update = { view ->
+                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        if (view.player !== player) view.player = player
+                    },
+                    onRelease = { view -> view.player = null },
+                    modifier = if (fullscreen) Modifier.fillMaxSize()
+                        else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                 )
             }
             if (isBuffering && playbackError == null) CircularProgressIndicator(color = Lime)
@@ -416,19 +529,19 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                     Text("Technical details: ${playbackDetails}", color=Muted, fontSize=11.sp)
                 }
                 Spacer(Modifier.height(12.dp))
-                Button(onClick={ playbackError=null; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Lime, contentColor=Ink)) { Text("Retry") }
+                Button(onClick={ playbackError=null; shouldResumePlayback=true; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Lime, contentColor=Ink)) { Text("Retry") }
             }
-            if (fullscreen) Text("Exit fullscreen  ✕", color=Color.White, modifier=Modifier.align(Alignment.TopEnd).padding(14.dp).background(Panel, RoundedCornerShape(8.dp)).clickable { fullscreen=false }.padding(10.dp))
+            if (fullscreen) Text("Exit fullscreen  ✕", color=Color.White, modifier=Modifier.align(Alignment.TopEnd).padding(14.dp).background(Panel, RoundedCornerShape(8.dp)).clickable { fullscreenOverride=false }.padding(10.dp))
         }
         if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) { Text(channel.name, fontWeight=FontWeight.Bold); Text("Live stream • availability depends on the provider", color=Muted, fontSize=12.sp) }
             Text(if (isPlaying) "Pause" else "Play", color=Lime, modifier=Modifier.clickable {
                 val activePlayer = player
                 if (activePlayer != null) {
-                    if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; playbackDetails=null; activePlayer.play() }
-                } else { playbackError=null; playbackDetails=null; retry++ }
+                    if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; activePlayer.play() }
+                } else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; retry++ }
             }.padding(10.dp))
-            Text("Fullscreen", color=Lime, modifier=Modifier.clickable { fullscreen=true }.padding(10.dp))
+            Text("Fullscreen", color=Lime, modifier=Modifier.clickable { fullscreenOverride=true }.padding(10.dp))
         }
     }
 }
