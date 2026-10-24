@@ -21,7 +21,10 @@ jobs:
       - name: Provision Gradle and generate standard wrapper
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.9
+          gradle-version: '8.9'
+          # The delivered project intentionally lacks gradle-wrapper.jar.
+          # Generate it below after Gradle is provisioned.
+          validate-wrappers: false
       - name: Generate wrapper JAR and scripts
         run: gradle wrapper --gradle-version 8.9
       - name: Accept SDK licenses and install platform
