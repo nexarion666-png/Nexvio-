@@ -1,5 +1,6 @@
 package com.nexvio.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -107,6 +108,12 @@ internal fun TmdbCatalogueScreen(mediaType: String) {
     }
 
     LaunchedEffect(mediaType) { load("") }
+    BackHandler(enabled = selected != null) { selected = null }
+
+    selected?.let { item ->
+        TitleDetailPage(item = item, onBack = { selected = null })
+        return
+    }
 
     Column(Modifier.fillMaxSize().background(CatalogueInk).padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(20.dp))
@@ -173,27 +180,50 @@ internal fun TmdbCatalogueScreen(mediaType: String) {
             color = CatalogueMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 8.dp))
     }
 
-    selected?.let { item ->
-        AlertDialog(
-            onDismissRequest = { selected = null },
-            title = { Text(item.title) },
-            text = {
-                Column {
-                    item.posterPath?.let {
-                        AsyncImage(model = "$TMDB_IMAGE_BASE$it", contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(250.dp))
-                        Spacer(Modifier.height(10.dp))
-                    }
-                    Text(item.overview.ifBlank { "No description is available." })
-                    Spacer(Modifier.height(8.dp))
-                    Text("Year: ${item.year.ifBlank { "Unknown" }}  •  Rating: ${if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"}")
-                    Spacer(Modifier.height(8.dp))
-                    Text("Stream availability depends on your installed compatible add-ons.", color = CatalogueMuted, fontSize = 12.sp)
+}
+
+@Composable
+private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit) {
+    val year = item.year.ifBlank { "Unknown year" }
+    val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
+    Column(Modifier.fillMaxSize().background(CatalogueInk)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("‹  Back", color = CatalogueLime, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
+            Text("\${if (item.mediaType == "movie") "Movie" else "Series"} details", color = Color.White,
+                fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        }
+        androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
+            item {
+                Box(Modifier.fillMaxWidth().height(330.dp).background(CataloguePanel), contentAlignment = Alignment.Center) {
+                    AsyncImage(model = item.posterPath?.let { "\${TMDB_IMAGE_BASE}\$it" }, contentDescription = item.title, modifier = Modifier.fillMaxSize())
                 }
-            },
-            confirmButton = { TextButton(onClick = { selected = null }) { Text("Close", color = CatalogueLime) } },
-            containerColor = CataloguePanel,
-            titleContentColor = Color.White,
-            textContentColor = Color.White
-        )
+            }
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp)) {
+                    Text(item.title, color = Color.White, fontSize = 29.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold)
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(year, color = CatalogueMuted, fontSize = 14.sp)
+                        Text("•", color = CatalogueMuted)
+                        Text("★ \$rating / 10", color = CatalogueLime, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("•", color = CatalogueMuted)
+                        Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
+                    }
+                    Spacer(Modifier.height(24.dp))
+                    Text("Overview", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
+                    Spacer(Modifier.height(24.dp))
+                    Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
+                        Text("Where to watch", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        Text("Stream availability depends on your installed compatible add-ons. This page currently shows catalogue information from TMDB.", color = CatalogueMuted, fontSize = 13.sp, lineHeight = 19.sp)
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    Text("Movie and series information provided by TMDB. Nexvio is not endorsed or certified by TMDB.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
+                }
+            }
+        }
     }
 }
