@@ -95,8 +95,6 @@ fun DownloadsScreen() {
     LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressRefresh++; delay(1000) } }
     // Read this state so the screen recomposes even when queue status/title stay unchanged.
     val currentProgressRefresh = progressRefresh
-    // Keep the periodic byte-count refresh observable by Compose.
-    currentProgressRefresh
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Downloads", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold); Text("Save supported direct media files for offline playback.", color = Color(0xFF9A9DA6)) }
         item {
@@ -152,7 +150,6 @@ fun OfflineLibraryScreen() {
     LaunchedEffect(Unit) { while (true) { files = store.files(); rows = store.rows(); progressRefresh++; delay(1000) } }
     // Download byte counts change independently of queue status, so force a periodic recomposition.
     val currentProgressRefresh = progressRefresh
-    currentProgressRefresh
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Offline Library", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
