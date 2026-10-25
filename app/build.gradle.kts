@@ -16,7 +16,16 @@ android { namespace = "com.nexvio.app"; compileSdk = 35
             keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
         }
     }
-    buildTypes { getByName("release") { signingConfig = signingConfigs.getByName("release") } }
+    buildTypes {
+        getByName("debug") {
+            // When CI provides the permanent keystore, sign distributable debug APKs
+            // with it so they can update the existing installation.
+            if (!System.getenv("ANDROID_KEYSTORE_PATH").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+        getByName("release") { signingConfig = signingConfigs.getByName("release") }
+    }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
