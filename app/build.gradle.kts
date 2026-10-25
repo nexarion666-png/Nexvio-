@@ -20,7 +20,10 @@ android { namespace = "com.nexvio.app"; compileSdk = 35
         getByName("debug") {
             // When CI provides the permanent keystore, sign distributable debug APKs
             // with it so they can update the existing installation.
-            if (!System.getenv("ANDROID_KEYSTORE_PATH").isNullOrBlank()) {
+            val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            // Use the release keystore only when the configured file actually exists.
+            // Otherwise keep Android's standard debug signing so CI can build debug APKs.
+            if (!keystorePath.isNullOrBlank() && file(keystorePath).isFile) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
