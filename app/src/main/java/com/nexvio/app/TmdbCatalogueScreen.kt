@@ -33,7 +33,7 @@ private val CataloguePanel = Color(0xFF1B1D22)
 private val CatalogueLime = Color(0xFFB7F36B)
 private val CatalogueMuted = Color(0xFF9A9DA6)
 
-private data class TmdbTitle(
+internal data class TmdbTitle(
     val id: Int,
     val title: String,
     val overview: String,
@@ -84,7 +84,7 @@ private suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmdb
 }
 
 @Composable
-internal fun TmdbCatalogueScreen(mediaType: String) {
+internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit) {
     var query by remember { mutableStateOf("") }
     var titles by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -111,7 +111,7 @@ internal fun TmdbCatalogueScreen(mediaType: String) {
     BackHandler(enabled = selected != null) { selected = null }
 
     selected?.let { item ->
-        TitleDetailPage(item = item, onBack = { selected = null })
+        TitleDetailPage(item = item, onBack = { selected = null }, onPlay = onPlay)
         return
     }
 
@@ -183,7 +183,7 @@ internal fun TmdbCatalogueScreen(mediaType: String) {
 }
 
 @Composable
-private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit) {
+private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit) {
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
     Column(Modifier.fillMaxSize().background(CatalogueInk)) {
@@ -215,15 +215,169 @@ private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
                     Spacer(Modifier.height(24.dp))
-                    Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
-                        Text("Where to watch", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Stream availability depends on your installed compatible add-ons. This page currently shows catalogue information from TMDB.", color = CatalogueMuted, fontSize = 13.sp, lineHeight = 19.sp)
-                    }
+                    StreamDiscoverySection(item = item, onPlay = onPlay)
                     Spacer(Modifier.height(20.dp))
                     Text("Movie and series information provided by TMDB. Nexvio is not endorsed or certified by TMDB.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
                 }
             }
         }
+    }
+}
+
+
+private data class DiscoveredStream(
+    val addonName: String,
+    val title: String,
+    val url: String,
+    val quality: String
+)
+
+private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispatchers.IO) {
+    val typePath = if (item.mediaType == "movie") "movie" else "tv"
+    val connection = URL("https://api.themoviedb.org/3/$typePath/${item.id}/external_ids?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
+        .openConnection() as HttpURLConnection
+    try {
+        connection.connectTimeout = 10000
+        connection.readTimeout = 12000
+        val status = connection.responseCode
+        if (status !in 200..299) throw IllegalStateException("TMDB external ID lookup failed (HTTP $status).")
+        JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optString("imdb_id")
+            .takeIf { it.startsWith("tt") }
+            ?: throw IllegalStateException("TMDB has no IMDb ID for this title, so compatible add-ons cannot search it.")
+    } finally { connection.disconnect() }
+}
+
+private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle): List<DiscoveredStream> = withContext(Dispatchers.IO) {
+    val prefs = context.getSharedPreferences("nexvio_addons", android.content.Context.MODE_PRIVATE)
+    val installed = org.json.JSONArray(prefs.getString("installed", "[]") ?: "[]")
+    val addons = (0 until installed.length()).mapNotNull { installed.optJSONObject(it) }
+        .filter { it.optBoolean("enabled", true) }
+        .mapNotNull { obj ->
+            val name = obj.optString("name").ifBlank { "Add-on" }
+            val manifest = obj.optString("manifestUrl").trim()
+            if (manifest.startsWith("https://") || manifest.startsWith("http://")) name to manifest else null
+        }
+    if (addons.isEmpty()) throw IllegalStateException("No enabled add-ons are installed. Open Settings → Content providers to install a compatible Stremio add-on.")
+    val imdbId = fetchTmdbImdbId(item)
+    val resourceType = if (item.mediaType == "movie") "movie" else "series"
+    // Stremio-compatible series endpoints require an episode ID. Phase 3C uses S1:E1
+    // as the initial lookup; episode selection can be added in a later iteration.
+    val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:1:1"
+    val output = mutableListOf<DiscoveredStream>()
+    for ((addonName, manifestUrl) in addons) {
+        try {
+            val manifestUri = java.net.URI(manifestUrl)
+            val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
+            val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$path"
+            val streamUrl = "$base/stream/$resourceType/$streamId.json"
+            val connection = URL(streamUrl).openConnection() as HttpURLConnection
+            try {
+                connection.connectTimeout = 7000
+                connection.readTimeout = 9000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
+                connection.setRequestProperty("Accept", "application/json")
+                if (connection.responseCode !in 200..299) continue
+                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                val streams = json.optJSONArray("streams") ?: continue
+                for (i in 0 until streams.length()) {
+                    val stream = streams.optJSONObject(i) ?: continue
+                    val url = stream.optString("url").trim()
+                    if (!url.startsWith("https://") && !url.startsWith("http://")) continue
+                    val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
+                    val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
+                    output.add(DiscoveredStream(addonName, label, url, quality))
+                }
+            } finally { connection.disconnect() }
+        } catch (_: Exception) {
+            // A single unavailable add-on should not block results from other providers.
+        }
+    }
+    output.distinctBy { it.url }.take(50)
+}
+
+@Composable
+private fun StreamDiscoverySection(item: TmdbTitle, onPlay: (TvChannel) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var streams by remember(item.id, item.mediaType) { mutableStateOf<List<DiscoveredStream>>(emptyList()) }
+    var loading by remember(item.id, item.mediaType) { mutableStateOf(false) }
+    var searched by remember(item.id, item.mediaType) { mutableStateOf(false) }
+    var error by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
+
+    Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
+        Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (item.mediaType == "movie") "Search enabled Stremio-compatible add-ons for playable sources."
+            else "Search enabled Stremio-compatible add-ons for season 1, episode 1. Episode selection is not available yet.",
+            color = CatalogueMuted, fontSize = 13.sp, lineHeight = 19.sp
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = {
+                scope.launch {
+                    loading = true
+                    searched = true
+                    error = null
+                    streams = emptyList()
+                    try {
+                        streams = fetchAddonStreams(context, item)
+                        if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
+                    } catch (e: Exception) {
+                        error = e.message ?: "Stream discovery failed."
+                    } finally { loading = false }
+                }
+            },
+            enabled = !loading,
+            colors = ButtonDefaults.buttonColors(containerColor = CatalogueLime, contentColor = CatalogueInk)
+        ) {
+            if (loading) {
+                CircularProgressIndicator(Modifier.size(18.dp), color = CatalogueInk, strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(if (loading) "Finding streams…" else "Find streams")
+        }
+        if (error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(error.orEmpty(), color = CatalogueMuted, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+        if (streams.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text("${streams.size} source(s) found", color = CatalogueLime, fontWeight = FontWeight.SemiBold)
+            streams.forEach { stream ->
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().background(CatalogueInk, RoundedCornerShape(10.dp))
+                        .clickable {
+                            onPlay(TvChannel(
+                                id = "addon-${item.mediaType}-${item.id}-${stream.url.hashCode()}",
+                                name = "${item.title} • ${stream.quality}",
+                                streamUrl = stream.url,
+                                logoUrl = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
+                                category = stream.addonName,
+                                tvgId = null,
+                                tvgName = stream.title,
+                                isFavorite = false
+                            ))
+                        }.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stream.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text(stream.addonName, color = CatalogueMuted, fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(stream.quality, color = CatalogueLime, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(6.dp))
+                    Text("▶", color = CatalogueLime)
+                }
+            }
+        } else if (searched && !loading && error == null) {
+            Spacer(Modifier.height(8.dp))
+            Text("No playable sources found.", color = CatalogueMuted, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Only direct HTTP(S) stream URLs from Stremio-compatible add-ons are listed. Nuvio JavaScript scraper repositories are not executable in Nexvio yet.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
     }
 }
