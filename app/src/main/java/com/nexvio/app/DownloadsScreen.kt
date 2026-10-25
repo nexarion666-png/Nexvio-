@@ -91,7 +91,10 @@ fun DownloadsScreen() {
     var title by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var rows by remember { mutableStateOf(store.rows()) }
-    LaunchedEffect(Unit) { while (true) { rows = store.rows(); delay(1000) } }
+    var progressRefresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressRefresh++; delay(1000) } }
+    // Read this state so the screen recomposes even when queue status/title stay unchanged.
+    val currentProgressRefresh = progressRefresh
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Downloads", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold); Text("Save supported direct media files for offline playback.", color = Color(0xFF9A9DA6)) }
         item {
@@ -142,8 +145,11 @@ fun OfflineLibraryScreen() {
     val store = remember { OfflineDownloads(context.applicationContext) }
     var files by remember { mutableStateOf(store.files()) }
     var rows by remember { mutableStateOf(store.rows()) }
+    var progressRefresh by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { while (true) { files = store.files(); rows = store.rows(); delay(1000) } }
+    LaunchedEffect(Unit) { while (true) { files = store.files(); rows = store.rows(); progressRefresh++; delay(1000) } }
+    // Download byte counts change independently of queue status, so force a periodic recomposition.
+    val currentProgressRefresh = progressRefresh
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Offline Library", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
