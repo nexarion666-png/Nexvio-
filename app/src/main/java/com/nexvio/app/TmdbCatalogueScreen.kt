@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -52,7 +53,8 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
     val endpoint = if (query.isBlank()) {
         "https://api.themoviedb.org/3/trending/$mediaType/week"
     } else {
-        "https://api.themoviedb.org/3/search/$mediaType?query=${URLEncoder.encode(query, "UTF-8")}&include_adult=false"
+        val searchEndpoint = if (mediaType == "multi") "multi" else mediaType
+        "https://api.themoviedb.org/3/search/$searchEndpoint?query=${URLEncoder.encode(query, "UTF-8")}&include_adult=false"
     }
     val separator = if (endpoint.contains("?")) "&" else "?"
     val connection = URL("$endpoint${separator}api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
@@ -69,15 +71,17 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
             val item = results.optJSONObject(index) ?: return@mapNotNull null
             val id = item.optInt("id", 0)
             if (id == 0) return@mapNotNull null
-            val rawTitle = if (mediaType == "movie") item.optString("title") else item.optString("name")
+            val resultType = if (mediaType == "multi") item.optString("media_type") else mediaType
+            if (resultType != "movie" && resultType != "tv") return@mapNotNull null
+            val rawTitle = if (resultType == "movie") item.optString("title") else item.optString("name")
             TmdbTitle(
                 id = id,
                 title = rawTitle.ifBlank { "Untitled" },
                 overview = item.optString("overview"),
                 posterPath = item.optString("poster_path").takeIf { it.isNotBlank() && it != "null" },
-                year = (if (mediaType == "movie") item.optString("release_date") else item.optString("first_air_date")).take(4),
+                year = (if (resultType == "movie") item.optString("release_date") else item.optString("first_air_date")).take(4),
                 rating = item.optDouble("vote_average", 0.0),
-                mediaType = mediaType
+                mediaType = resultType
             )
         }
     } finally {
@@ -87,21 +91,19 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
 
 @Composable
 internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit) {
-    var activeType by remember(mediaType) { mutableStateOf(mediaType) }
     var query by remember { mutableStateOf("") }
     var titles by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<TmdbTitle?>(null) }
     val scope = rememberCoroutineScope()
-    val heading = if (activeType == "movie") "Movies" else "Series"
 
     fun load(search: String) {
         scope.launch {
             loading = true
             error = null
             try {
-                titles = fetchTmdbTitles(activeType, search)
+                titles = fetchTmdbTitles("multi", search)
             } catch (e: Exception) {
                 error = e.message ?: "Could not load catalogue."
             } finally {
@@ -110,7 +112,16 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
         }
     }
 
-    LaunchedEffect(activeType) { load("") }
+    LaunchedEffect(query) {
+        if (query.isBlank()) {
+            titles = emptyList()
+            error = null
+            loading = false
+        } else {
+            delay(350)
+            load(query.trim())
+        }
+    }
     BackHandler(enabled = selected != null) { selected = null }
 
     selected?.let { item ->
@@ -120,45 +131,35 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
 
     Column(Modifier.fillMaxSize().background(CatalogueInk).padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(20.dp))
-        Text(heading, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-        Text("Discover titles powered by TMDB", color = CatalogueMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(13.dp)).padding(4.dp)) {
-            listOf("movie" to "Movies", "tv" to "Series").forEach { (type, label) ->
-                Box(
-                    Modifier.weight(1f).background(if (activeType == type) CatalogueAccent else Color.Transparent, RoundedCornerShape(10.dp))
-                        .clickable {
-                            if (activeType != type) {
-                                activeType = type
-                                query = ""
-                                titles = emptyList()
-                            }
-                        }.padding(vertical = 11.dp),
-                    contentAlignment = Alignment.Center
-                ) { Text(label, color = Color.White, fontWeight = if (activeType == type) FontWeight.Bold else FontWeight.Medium) }
-            }
-        }
-        Spacer(Modifier.height(14.dp))
+        Text("Search", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+        Text("Find movies and series in one place", color = CatalogueMuted, fontSize = 13.sp)
+        Spacer(Modifier.height(18.dp))
         Row(
-            Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Text("⌕", color = CatalogueMuted, fontSize = 22.sp)
+            Spacer(Modifier.width(10.dp))
             Box(Modifier.weight(1f)) {
-                if (query.isEmpty()) Text("Search $heading…", color = CatalogueMuted)
+                if (query.isEmpty()) Text("Search any movie or series…", color = CatalogueMuted)
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
                     singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 15.sp),
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 16.sp),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            Text("Search", color = CatalogueAccent, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { load(query.trim()) }.padding(start = 12.dp))
+            if (query.isNotEmpty()) {
+                Text("×", color = CatalogueMuted, fontSize = 22.sp, modifier = Modifier.clickable { query = "" }.padding(start = 8.dp))
+            }
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
         when {
-            loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            query.isBlank() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text("Start typing a title to see suggestions.", color = CatalogueMuted)
+            }
+            loading && titles.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = CatalogueAccent)
             }
             error != null -> Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -167,7 +168,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
                 Button(onClick = { load(query.trim()) }, colors = ButtonDefaults.buttonColors(containerColor = CatalogueAccent, contentColor = CatalogueInk)) { Text("Try again") }
             }
             titles.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Text("No titles found. Try another search.", color = CatalogueMuted)
+                Text("No matching movies or series found.", color = CatalogueMuted)
             }
             else -> LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -176,21 +177,19 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                items(titles, key = { "${it.mediaType}-${it.id}" }) { item ->
-                    Column(
-                        Modifier.fillMaxWidth().clickable { selected = item },
-                    ) {
+                items(titles, key = { it.mediaType + "-" + it.id }) { item ->
+                    Column(Modifier.fillMaxWidth().clickable { selected = item }) {
                         AsyncImage(
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier.fillMaxWidth().height(230.dp).background(CataloguePanel, RoundedCornerShape(14.dp))
                         )
                         Spacer(Modifier.height(7.dp))
                         Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                        Text(
-                            listOfNotNull(item.year.takeIf { it.isNotBlank() }, if (item.rating > 0) "★ ${String.format("%.1f", item.rating)}" else null).joinToString("  •  "),
-                            color = CatalogueMuted, fontSize = 12.sp
-                        )
+                        val kind = if (item.mediaType == "movie") "Movie" else "Series"
+                        val details = listOfNotNull(item.year.takeIf { it.isNotBlank() }, if (item.rating > 0) "★ " + String.format("%.1f", item.rating) else null).joinToString("  •  ")
+                        Text(if (details.isBlank()) kind else "$kind  •  $details", color = CatalogueMuted, fontSize = 12.sp)
                     }
                 }
             }
@@ -198,7 +197,6 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
         Text("Movie and series information provided by TMDB. Nexvio is not endorsed or certified by TMDB.",
             color = CatalogueMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 8.dp))
     }
-
 }
 
 @Composable
