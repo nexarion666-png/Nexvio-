@@ -4,6 +4,8 @@ on:
   push:
     branches: ["main", "master"]
     tags: ["v*"]
+  pull_request:
+    branches: ["main", "master"]
   workflow_dispatch:
 
 permissions:
@@ -46,7 +48,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build and test debug variant
-        if: startsWith(github.ref, 'refs/heads/')
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/')
         run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
 
       - name: Upload debug APK artifact

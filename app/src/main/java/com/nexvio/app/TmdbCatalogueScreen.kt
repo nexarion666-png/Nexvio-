@@ -3,6 +3,8 @@ package com.nexvio.app
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -420,6 +422,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
     output.distinctBy { it.url }.take(50)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -430,6 +433,32 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var error by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
     var qualityFilter by remember(item.id, item.mediaType) { mutableStateOf("All qualities") }
     var qualityMenu by remember { mutableStateOf(false) }
+    var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
+    var downloadMessage by remember { mutableStateOf<String?>(null) }
+
+    downloadTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { downloadTarget = null },
+            title = { Text("Download for offline") },
+            text = { Text("Save " + item.title + (if (item.mediaType == "series") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " (" + target.quality + ")? Only direct media files are supported. HLS/DASH playlists, DRM and provider pages cannot be converted by this downloader.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val title = item.title + (if (item.mediaType == "series") " S" + seasonNumber + "E" + episodeNumber else "") + " - " + target.quality + " - " + target.addonName
+                    try {
+                        enqueueDiscoveredStream(context, title, target.url)
+                        downloadMessage = "Download queued. Track it in Library → Offline."
+                    } catch (e: Exception) {
+                        downloadMessage = e.message ?: "This stream cannot be downloaded as a direct media file."
+                    }
+                    downloadTarget = null
+                }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { downloadTarget = null }) { Text("Cancel") } }
+        )
+    }
+    downloadMessage?.let { message ->
+        AlertDialog(onDismissRequest = { downloadMessage = null }, title = { Text("Nexvio downloads") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { downloadMessage = null }) { Text("OK") } })
+    }
 
     Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
         Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
@@ -491,7 +520,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 Spacer(Modifier.height(8.dp))
                 Row(
                     Modifier.fillMaxWidth().background(CatalogueInk, RoundedCornerShape(10.dp))
-                        .clickable {
+                        .combinedClickable(
+                            onClick = {
                             onPlay(TvChannel(
                                 id = "addon-${item.mediaType}-${item.id}-${stream.url.hashCode()}",
                                 name = "${item.title} • ${stream.quality}",
@@ -502,7 +532,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                                 tvgName = stream.title,
                                 isFavorite = false
                             ))
-                        }.padding(12.dp),
+                            },
+                            onLongClick = { downloadTarget = stream }
+                        ).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
