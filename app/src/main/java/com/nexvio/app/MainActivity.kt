@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
     var current by remember { mutableStateOf("Home") }
     var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
+    var selectedTitle by remember { mutableStateOf<TmdbTitle?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
@@ -125,7 +126,9 @@ class MainActivity : ComponentActivity() {
                 PlayerScreen(channel = playing!!, onBack = { playing = null })
             } else Column {
                 Box(Modifier.weight(1f)) {
-                    if (detail == "Content providers") {
+                    if (selectedTitle != null) {
+                        TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it })
+                    } else if (detail == "Content providers") {
                         AddonManagerScreen(onBack = { detail = null })
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
@@ -138,8 +141,8 @@ class MainActivity : ComponentActivity() {
                             if (detail == "Downloads") DownloadsScreen() else InfoPage(detail!!)
                         }
                     } else when(current) {
-                        "Home" -> HomeScreen(onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it })
-                        "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it })
+                        "Home" -> HomeScreen(onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
+                        "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
                         "Library" -> OfflineLibraryScreen()
                         else -> SettingsScreen(onDetail={detail=it})
@@ -159,7 +162,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Brand() { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(12.dp)), contentAlignment=Alignment.Center) { Text("N", color=Ink, fontSize=25.sp, fontWeight=FontWeight.Black) }; Spacer(Modifier.width(10.dp)); Column { Text("NEXVIO", fontWeight=FontWeight.Black, letterSpacing=2.sp, fontSize=19.sp); Text("Movies • Series • Live TV", color=Muted, fontSize=11.sp) } } }
-@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit) {
+@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
     val historyStore = remember(context) { WatchHistoryStore(context) }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
@@ -189,7 +192,7 @@ class MainActivity : ComponentActivity() {
         }
         item {
             val featured = featuredTitles.getOrNull(if (featuredTitles.isEmpty()) 0 else featuredIndex % featuredTitles.size)
-            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { onOpen("Movies") }) {
+            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { featured?.let(onTitleSelected) }) {
                 if (featured?.posterPath != null) AsyncImage(model="https://image.tmdb.org/t/p/w780${featured.posterPath}",contentDescription=featured.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color(0xCC101114),RoundedCornerShape(24.dp)))
                 Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
@@ -207,9 +210,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
-        item { HomePosterRow(movies) { onOpen("Movies") } }
+        item { HomePosterRow(movies, onTitleSelected) }
         item { HomeTitleRow("Popular Series","See all") { onOpen("Series") } }
-        item { HomePosterRow(series) { onOpen("Series") } }
+        item { HomePosterRow(series, onTitleSelected) }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 HomeQuickCard("Live TV","Watch channels",Modifier.weight(1f)) { onOpen("Live TV") }
@@ -229,11 +232,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:()->Unit) {
+@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:(TmdbTitle)->Unit) {
     if(titles.isEmpty()) Text("Loading titles…",color=Muted,modifier=Modifier.padding(horizontal=18.dp))
     else LazyRow(contentPadding=PaddingValues(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         items(titles,key={"poster-${it.mediaType}-${it.id}"}) { title ->
-            Column(Modifier.width(126.dp).clickable(onClick=onClick)) {
+            Column(Modifier.width(126.dp).clickable { onClick(title) }) {
                 AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height(182.dp).background(Panel,RoundedCornerShape(13.dp)))
                 Spacer(Modifier.height(7.dp))
                 Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
