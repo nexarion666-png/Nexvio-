@@ -91,9 +91,6 @@ internal fun enqueueDiscoveredStream(context: Context, title: String, url: Strin
 fun DownloadsScreen() {
     val context = LocalContext.current
     val store = remember { OfflineDownloads(context.applicationContext) }
-    var url by remember { mutableStateOf("") }
-    var title by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
     var rows by remember { mutableStateOf(store.rows()) }
     var progressRefresh by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressRefresh++; delay(1000) } }
@@ -101,16 +98,6 @@ fun DownloadsScreen() {
     val currentProgressRefresh = progressRefresh
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Downloads", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold); Text("Save supported direct media files for offline playback.", color = Color(0xFF9A9DA6)) }
-        item {
-            Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("New download", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                OutlinedTextField(title, { title = it }, label = { Text("Name (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(url, { url = it; error = null }, label = { Text("Direct media URL") }, placeholder = { Text("https://example.com/video.mp4") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true, modifier = Modifier.fillMaxWidth())
-                Text("Direct media files work best. Playlist URLs and DRM-protected streams are not converted into offline files.", color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(onClick = { try { store.enqueue(url, title); url = ""; title = ""; error = null; rows = store.rows() } catch (e: Exception) { error = e.message ?: "Could not start download." } }, modifier = Modifier.fillMaxWidth()) { Text("Start download") }
-            }
-        }
         item { Text("Download queue", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         if (rows.isEmpty()) item { Text("No downloads yet.", color = Color(0xFF9A9DA6)) }
         items(rows, key = { it.first }) { row ->
@@ -123,7 +110,7 @@ fun DownloadsScreen() {
                 Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; DownloadManager.STATUS_SUCCESSFUL -> "Downloaded"; DownloadManager.STATUS_FAILED -> "Failed"; else -> "Checking status" }, color = Color(0xFF9A9DA6))
                 if (row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED || row.third == DownloadManager.STATUS_PENDING) {
                     if (totalBytes > 0L) {
-                        LinearProgressIndicator(progress = { (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
+                        LinearProgressIndicator(progress = { (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Color(0xFF8B7CFF))
                         Text("${downloadedBytes / (1024 * 1024)} MB / ${totalBytes / (1024 * 1024)} MB • ${(downloadedBytes * 100 / totalBytes).coerceIn(0L, 100L)}%", color = Color(0xFF9A9DA6), fontSize = 12.sp)
                     } else {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
