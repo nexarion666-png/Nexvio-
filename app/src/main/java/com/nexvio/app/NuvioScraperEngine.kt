@@ -84,7 +84,7 @@ internal object NuvioScraperEngine {
                         val js = "(function(){var module={exports:{}},exports=module.exports;var __fetchCallbacks={};" +
                             "window.__nexvioFetchDone=function(id,payload){var cb=__fetchCallbacks[id];if(!cb)return;delete __fetchCallbacks[id];try{var d=JSON.parse(payload);cb.resolve({ok:d.status>=200&&d.status<300,status:d.status,text:function(){return Promise.resolve(d.body)},json:function(){try{return Promise.resolve(JSON.parse(d.body))}catch(e){return Promise.reject(e)}}})}catch(e){cb.reject(e)}};" +
                             "window.fetch=function(input,opts){return new Promise(function(resolve,reject){var id=String(Date.now())+Math.random().toString(36).slice(2);__fetchCallbacks[id]={resolve:resolve,reject:reject};NexvioBridge.request(id,String(input),JSON.stringify(opts||{}))})};" +
-                            "var require=function(n){throw new Error('Unsupported module: '+n)};"
+                            "var require=function(n){throw new Error('Unsupported module: '+n)};" +
                             "try{(new Function('module','exports','require'," + src + "))(module,exports,require);" +
                             "var fn=module.exports&&module.exports.getStreams;if(typeof fn!=='function')throw new Error('Missing getStreams export');" +
                             "Promise.resolve(fn(" + id + "," + type + "," + s + "," + e + ")).then(function(v){" +
