@@ -4,6 +4,7 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import android.os.Environment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,7 +60,7 @@ private class OfflineDownloads(private val context: Context) {
     fun cancel(id: Long) { manager.remove(id) }
     fun open(id: Long): Uri? = manager.getUriForDownloadedFile(id)
     fun removeRecord(id: Long) { prefs.edit().putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
-    fun files(): List<File> = (context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList()).walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList()
+    fun files(): List<File> { val root = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
 
@@ -87,7 +88,7 @@ fun DownloadsScreen() {
         item { Text("Download queue", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         if (rows.isEmpty()) item { Text("No downloads yet.", color = Color(0xFF9A9DA6)) }
         items(rows, key = { it.first }) { row ->
-            val cursor = remember(row.first, row.third) { context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager }
+            
             Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(row.second, fontWeight = FontWeight.SemiBold)
                 Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; DownloadManager.STATUS_SUCCESSFUL -> "Downloaded"; DownloadManager.STATUS_FAILED -> "Failed"; else -> "Checking status" }, color = Color(0xFF9A9DA6))
@@ -126,7 +127,7 @@ fun OfflineLibraryScreen() {
                     Text("${file.length() / (1024 * 1024)} MB • ${file.extension.uppercase()}", color = Color(0xFF9A9DA6), fontSize = 12.sp)
                 }
                 Text("Play", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.fromFile(file), "video/*")) }.onFailure { message = "No compatible video player could open this file." }
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*")) }.onFailure { message = "No compatible video player could open this file." }
                 })
                 Spacer(Modifier.width(12.dp))
                 Text("Delete", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { if (store.delete(file)) { files = store.files(); message = "File deleted." } else message = "Could not delete file." })
