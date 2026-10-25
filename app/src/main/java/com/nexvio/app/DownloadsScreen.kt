@@ -91,7 +91,8 @@ fun DownloadsScreen() {
     var title by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var rows by remember { mutableStateOf(store.rows()) }
-    LaunchedEffect(Unit) { while (true) { rows = store.rows(); delay(1000) } }
+    var progressById by remember { mutableStateOf<Map<Long, Pair<Long, Long>?>>(emptyMap()) }
+    LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressById = rows.associate { it.first to store.progress(it.first) }; delay(1000) } }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Downloads", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold); Text("Save supported direct media files for offline playback.", color = Color(0xFF9A9DA6)) }
         item {
@@ -110,7 +111,7 @@ fun DownloadsScreen() {
             
             Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(row.second, fontWeight = FontWeight.SemiBold)
-                val transfer = store.progress(row.first)
+                val transfer = progressById[row.first]
                 val downloadedBytes = transfer?.first ?: 0L
                 val totalBytes = transfer?.second ?: -1L
                 Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; DownloadManager.STATUS_SUCCESSFUL -> "Downloaded"; DownloadManager.STATUS_FAILED -> "Failed"; else -> "Checking status" }, color = Color(0xFF9A9DA6))
@@ -142,8 +143,9 @@ fun OfflineLibraryScreen() {
     val store = remember { OfflineDownloads(context.applicationContext) }
     var files by remember { mutableStateOf(store.files()) }
     var rows by remember { mutableStateOf(store.rows()) }
+    var progressById by remember { mutableStateOf<Map<Long, Pair<Long, Long>?>>(emptyMap()) }
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { while (true) { files = store.files(); rows = store.rows(); delay(1000) } }
+    LaunchedEffect(Unit) { while (true) { files = store.files(); rows = store.rows(); progressById = rows.associate { it.first to store.progress(it.first) }; delay(1000) } }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Offline Library", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
