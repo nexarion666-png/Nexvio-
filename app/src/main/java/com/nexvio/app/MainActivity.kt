@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -157,7 +158,94 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Brand() { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(12.dp)), contentAlignment=Alignment.Center) { Text("N", color=Ink, fontSize=25.sp, fontWeight=FontWeight.Black) }; Spacer(Modifier.width(10.dp)); Column { Text("NEXVIO", fontWeight=FontWeight.Black, letterSpacing=2.sp, fontSize=19.sp); Text("Movies • Series • Live TV", color=Muted, fontSize=11.sp) } } }
-@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit) { val historyContext = LocalContext.current; val historyStore = remember(historyContext) { WatchHistoryStore(historyContext) }; var watchEntries by remember { mutableStateOf(historyStore.all()) }; LaunchedEffect(Unit) { while (true) { watchEntries = historyStore.all(); delay(1500) } }; LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(18.dp)) { item { Brand(); Spacer(Modifier.height(4.dp)); Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp), verticalAlignment=Alignment.CenterVertically) { Text("⌕", color=Accent, fontSize=22.sp); Spacer(Modifier.width(10.dp)); Text("Search movies, series…", color=Muted) } }; item { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(22.dp)).padding(20.dp)) { Text("YOUR NEXT STORY STARTS HERE", color=Accent, fontSize=10.sp, letterSpacing=1.5.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text("Entertainment,\nyour way.", fontSize=32.sp, lineHeight=36.sp, fontWeight=FontWeight.ExtraBold); Spacer(Modifier.height(8.dp)); Text("Your personal hub for movies, series and live TV.", color=Muted); Spacer(Modifier.height(16.dp)); Text("SET UP YOUR LIBRARY  →", color=Ink, fontWeight=FontWeight.Bold, modifier=Modifier.background(Accent, RoundedCornerShape(12.dp)).clickable { onDetail("Content providers") }.padding(horizontal=14.dp, vertical=11.dp)) } }; item { Text("EXPLORE", color=Muted, fontSize=11.sp, letterSpacing=2.sp) }; item { Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) { listOf("Movies","Series","Live TV").forEach { name -> Column(Modifier.weight(1f).background(Panel, RoundedCornerShape(16.dp)).clickable { onOpen(name) }.padding(12.dp)) { Text(when(name){"Movies"->"▣";"Series"->"▤";else->"◉"}, color=Accent, fontSize=22.sp); Spacer(Modifier.height(12.dp)); Text(name, fontWeight=FontWeight.Bold); Text("Explore", color=Muted, fontSize=11.sp) } } } }; item { WatchHistorySection("Continue watching", watchEntries.filter { it.positionMs > 0L && !it.completed }.take(5), onPlay, onSeeAll={ onDetail("Watch history") }) }; item { WatchHistorySection("Recently watched", watchEntries.take(5), onPlay, onSeeAll={ onDetail("Watch history") }) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV.") }; item { Text("Your viewing history is stored locally on this device.", color=Muted, fontSize=11.sp) } } }
+@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit) {
+    val context = LocalContext.current
+    val historyStore = remember(context) { WatchHistoryStore(context) }
+    var watchEntries by remember { mutableStateOf(historyStore.all()) }
+    var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
+    var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        while (true) { watchEntries = historyStore.all(); delay(1500) }
+    }
+    LaunchedEffect(Unit) {
+        try { movies = fetchTmdbTitles("movie", "").take(10); series = fetchTmdbTitles("tv", "").take(10) } catch (_: Exception) { }
+    }
+    LazyColumn(contentPadding=PaddingValues(bottom=22.dp), verticalArrangement=Arrangement.spacedBy(20.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal=18.dp).padding(top=20.dp), verticalAlignment=Alignment.CenterVertically) {
+                Brand()
+                Spacer(Modifier.weight(1f))
+                Text("⚙", color=Color.White, fontSize=21.sp, modifier=Modifier.background(Panel,RoundedCornerShape(12.dp)).clickable { onDetail("Settings") }.padding(10.dp))
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal=18.dp).background(Panel,RoundedCornerShape(14.dp)).clickable { onOpen("Movies") }.padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
+                Text("⌕",color=Muted,fontSize=22.sp); Spacer(Modifier.width(10.dp)); Text("Search movies and series",color=Muted)
+            }
+        }
+        item {
+            val featured = movies.firstOrNull()
+            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { onOpen("Movies") }) {
+                if (featured?.posterPath != null) AsyncImage(model="https://image.tmdb.org/t/p/w780${featured.posterPath}",contentDescription=featured.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Color(0xCC101114),RoundedCornerShape(24.dp)))
+                Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+                    Text("FEATURED TODAY",color=Accent,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(featured?.title ?: "Find your next favourite",color=Color.White,fontSize=29.sp,lineHeight=34.sp,fontWeight=FontWeight.ExtraBold,maxLines=2)
+                    Spacer(Modifier.height(8.dp))
+                    Text(featured?.overview?.takeIf{it.isNotBlank()} ?: "Discover trending movies, popular series and live TV.",color=Color.White.copy(alpha=.82f),fontSize=13.sp,lineHeight=19.sp,maxLines=3)
+                    Spacer(Modifier.height(15.dp))
+                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Text("▶  Explore movies",color=Color.White,fontWeight=FontWeight.Bold,modifier=Modifier.background(Accent,RoundedCornerShape(11.dp)).clickable { onOpen("Movies") }.padding(horizontal=14.dp,vertical=11.dp))
+                        Text("Series",color=Color.White,fontWeight=FontWeight.Bold,modifier=Modifier.background(Panel,RoundedCornerShape(11.dp)).clickable { onOpen("Series") }.padding(horizontal=14.dp,vertical=11.dp))
+                    }
+                }
+            }
+        }
+        item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
+        item { HomePosterRow(movies) { onOpen("Movies") } }
+        item { HomeTitleRow("Popular Series","See all") { onOpen("Series") } }
+        item { HomePosterRow(series) { onOpen("Series") } }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                HomeQuickCard("Live TV","Watch channels",Modifier.weight(1f)) { onOpen("Live TV") }
+                HomeQuickCard("My Library","Your downloads",Modifier.weight(1f)) { onDetail("Downloads") }
+            }
+        }
+        item { Column(Modifier.padding(horizontal=18.dp)) { WatchHistorySection("Continue watching",watchEntries.filter{it.positionMs>0L&&!it.completed}.take(5),onPlay,onSeeAll={onDetail("Watch history")}) } }
+        item { Column(Modifier.padding(horizontal=18.dp)) { WatchHistorySection("Recently watched",watchEntries.take(5),onPlay,onSeeAll={onDetail("Watch history")}) } }
+    }
+}
+
+@Composable private fun HomeTitleRow(title:String,action:String,onClick:()->Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal=18.dp),verticalAlignment=Alignment.CenterVertically) {
+        Text(title,color=Color.White,fontSize=20.sp,fontWeight=FontWeight.Bold)
+        Spacer(Modifier.weight(1f))
+        Text(action,color=Accent,fontSize=12.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.clickable(onClick=onClick))
+    }
+}
+
+@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:()->Unit) {
+    if(titles.isEmpty()) Text("Loading titles…",color=Muted,modifier=Modifier.padding(horizontal=18.dp))
+    else LazyRow(contentPadding=PaddingValues(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+        items(titles,key={"poster-${it.mediaType}-${it.id}"}) { title ->
+            Column(Modifier.width(126.dp).clickable(onClick=onClick)) {
+                AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height(182.dp).background(Panel,RoundedCornerShape(13.dp)))
+                Spacer(Modifier.height(7.dp))
+                Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
+                Text(title.year,color=Muted,fontSize=11.sp)
+            }
+        }
+    }
+}
+
+@Composable private fun HomeQuickCard(title:String,subtitle:String,modifier:Modifier=Modifier,onClick:()->Unit) {
+    Column(modifier.background(Panel,RoundedCornerShape(16.dp)).clickable(onClick=onClick).padding(15.dp)) {
+        Text(title,color=Color.White,fontSize=15.sp,fontWeight=FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text(subtitle,color=Muted,fontSize=12.sp)
+    }
+}
 @Composable private fun EmptySection(title:String, message:String) { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp)).padding(16.dp)) { Text(title, fontSize=18.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(message, color=Muted, fontSize=13.sp); Spacer(Modifier.height(10.dp)); Text("FOUNDATION", color=Accent, fontSize=10.sp, letterSpacing=1.sp) } }
 @Composable private fun CatalogueScreen(title:String, subtitle:String,onDetail:(String)->Unit) { Column(Modifier.fillMaxSize().padding(20.dp)) { Text(title, fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text(subtitle, color=Muted); Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp)) { Text("⌕  Search $title", color=Muted) }; Spacer(Modifier.height(20.dp)); EmptySection("Your $title collection", "Connect a compatible content provider in a later phase to browse real titles. No demonstration streams are provided.") } }
 private class PlaylistStore(context: Context) {
