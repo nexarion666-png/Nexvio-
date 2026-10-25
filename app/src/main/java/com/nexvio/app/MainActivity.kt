@@ -131,8 +131,8 @@ class MainActivity : ComponentActivity() {
                         }
                     } else when(current) {
                         "Home" -> HomeScreen(onOpen={ current=it }, onDetail={detail=it})
-                        "Movies" -> TmdbCatalogueScreen("movie")
-                        "Series" -> TmdbCatalogueScreen("tv")
+                        "Movies" -> TmdbCatalogueScreen("movie", onPlay = { playing = it })
+                        "Series" -> TmdbCatalogueScreen("tv", onPlay = { playing = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
                         "Library" -> LibraryScreen()
                         else -> SettingsScreen(onDetail={detail=it})
