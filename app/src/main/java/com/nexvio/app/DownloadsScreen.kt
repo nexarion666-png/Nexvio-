@@ -142,34 +142,16 @@ fun DownloadsScreen() {
     }
 }
 
-@Composable
+ @Composable
 fun OfflineLibraryScreen() {
     val context = LocalContext.current
-    val store = remember { OfflineDownloads(context.applicationContext) }
-    var files by remember { mutableStateOf(store.files()) }
-    var rows by remember { mutableStateOf(store.rows()) }
-    var progressRefresh by remember { mutableIntStateOf(0) }
-    var message by remember { mutableStateOf<String?>(null) }
+    val watchlist = remember(context) { WatchlistStore(context) }
+    var saved by remember { mutableStateOf(watchlist.all()) }
     var showDownloads by remember { mutableStateOf(false) }
     var cloudSelected by remember { mutableStateOf(false) }
     var gridMode by remember { mutableStateOf(true) }
     var sortMenu by remember { mutableStateOf(false) }
     var sortByRecent by remember { mutableStateOf(true) }
-    var posters by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-
-    LaunchedEffect(Unit) {
-        while (true) { files = store.files(); rows = store.rows(); progressRefresh++; delay(1000) }
-    }
-    LaunchedEffect(files.map { it.name }) {
-        files.forEach { file ->
-            if (!posters.containsKey(file.name)) {
-                runCatching {
-                    val match = fetchTmdbTitles("multi", file.nameWithoutExtension.replace('-', ' ').replace('_', ' ')).firstOrNull()
-                    match?.posterPath?.let { path -> posters = posters + (file.name to ("https://image.tmdb.org/t/p/w500" + path)) }
-                }
-            }
-        }
-    }
     if (showDownloads) {
         Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -180,96 +162,48 @@ fun OfflineLibraryScreen() {
         }
         return
     }
-    val visibleFiles = if (sortByRecent) files.sortedByDescending { it.lastModified() } else files.sortedBy { it.name.lowercase() }
-    val activeRows = rows.filter { it.third == DownloadManager.STATUS_PENDING || it.third == DownloadManager.STATUS_RUNNING || it.third == DownloadManager.STATUS_PAUSED }
+    val titles = if (sortByRecent) saved.reversed() else saved.sortedBy { it.title.lowercase() }
     Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Library", modifier = Modifier.weight(1f), color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold)
             Text(if (gridMode) "▦" else "☰", color = Color(0xFF9A9DA6), fontSize = 28.sp, modifier = Modifier.clickable { gridMode = !gridMode }.padding(horizontal = 12.dp))
-            Text("↓", color = Color(0xFF9A9DA6), fontSize = 32.sp, modifier = Modifier.clickable { showDownloads = true }.padding(start = 12.dp, end = 4.dp))
+            Text("⇩", color = Color(0xFF9A9DA6), fontSize = 30.sp, modifier = Modifier.clickable { showDownloads = true }.padding(start = 12.dp, end = 4.dp))
         }
         Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.background(if (!cloudSelected) Color(0xFF303034) else Color(0xFF19191D), RoundedCornerShape(28.dp)).clickable { cloudSelected = false }.padding(horizontal = 22.dp, vertical = 10.dp)) { Text("Saved", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
             Box(Modifier.background(if (cloudSelected) Color(0xFF303034) else Color(0xFF19191D), RoundedCornerShape(28.dp)).clickable { cloudSelected = true }.padding(horizontal = 22.dp, vertical = 10.dp)) { Text("Cloud", color = Color(0xFF9A9DA6), fontSize = 14.sp) }
         }
-        if (cloudSelected) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Cloud library", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp)); Text("Cloud sync isn't connected yet.", color = Color(0xFF9A9DA6))
-                }
-            }
-        } else {
+        if (cloudSelected) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Cloud sync isn't connected yet.", color = Color(0xFF9A9DA6)) }
+        else {
             Box(Modifier.padding(start = 20.dp, top = 22.dp, bottom = 20.dp)) {
                 Row(Modifier.background(Color(0xFF19191D), RoundedCornerShape(14.dp)).clickable { sortMenu = true }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (sortByRecent) "Recently added" else "Name", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Text(" ⌄", color = Color(0xFF9A9DA6), fontSize = 18.sp)
+                    Text(if (sortByRecent) "Recently added" else "Name", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold); Text(" ⌄", color = Color(0xFF9A9DA6), fontSize = 18.sp)
                 }
                 DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                     DropdownMenuItem(text = { Text("Recently added") }, onClick = { sortByRecent = true; sortMenu = false })
                     DropdownMenuItem(text = { Text("Name") }, onClick = { sortByRecent = false; sortMenu = false })
                 }
             }
-            message?.let { Text(it, color = Color(0xFF9A9DA6), modifier = Modifier.padding(horizontal = 20.dp)) }
-            if (activeRows.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().clickable { showDownloads = true }.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Downloads in progress (" + activeRows.size + ")", color = Color(0xFF9A9DA6), modifier = Modifier.weight(1f))
-                    Text("View  ›", color = Color(0xFF8B7CFF))
-                }
-            }
-            if (visibleFiles.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Your library is empty", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(8.dp)); Text("Downloaded movies will appear here.", color = Color(0xFF9A9DA6))
-                        Spacer(Modifier.height(12.dp)); Text("Open downloads  ↓", color = Color(0xFF8B7CFF), modifier = Modifier.clickable { showDownloads = true })
-                    }
-                }
-            } else if (gridMode) {
-                LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    items(visibleFiles.size, key = { visibleFiles[it].absolutePath }) { index ->
-                        val file = visibleFiles[index]
+            if (titles.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Your watchlist is empty", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp)); Text("Add movies and series from their detail pages.", color = Color(0xFF9A9DA6))
+            } } else if (gridMode) {
+                LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    items(titles, key = { it.mediaType + "-" + it.id }) { item ->
                         Column(Modifier.fillMaxWidth()) {
-                            Box(Modifier.fillMaxWidth().height(248.dp).background(Color(0xFF19191D), RoundedCornerShape(12.dp))) {
-                                val poster = posters[file.name]
-                                if (poster != null) AsyncImage(model = poster, contentDescription = file.nameWithoutExtension,
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize().clickable {
-                                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
-                                    })
-                                else Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("▶", color = Color(0xFF8B7CFF), fontSize = 30.sp)
-                                    Text(file.extension.uppercase().ifBlank { "VIDEO" }, color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Text(file.nameWithoutExtension.replace('_', ' ').replace('-', ' '), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2)
-                            Text(file.extension.uppercase() + " • " + file.length() / (1024 * 1024) + " MB", color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 6.dp)) {
-                                Text("Play", color = Color(0xFF8B7CFF), modifier = Modifier.clickable {
-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
-                                })
-                                Text("Delete", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { if (store.delete(file)) { files = store.files(); message = "File deleted." } else message = "Could not delete file." })
-                            }
+                            AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(248.dp).background(Color(0xFF19191D), RoundedCornerShape(12.dp)))
+                            Spacer(Modifier.height(8.dp)); Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2)
+                            Text((if (item.mediaType == "movie") "Movie" else "Series") + if (item.year.isNotBlank()) " • " + item.year else "", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                            Text("▣", color = Color(0xFFCF9DA4), fontSize = 20.sp, modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() }.padding(top = 5.dp))
                         }
                     }
                 }
-            } else {
-                LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(visibleFiles, key = { it.absolutePath }) { file ->
-                        Row(Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AsyncImage(model = posters[file.name], contentDescription = file.nameWithoutExtension, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier.size(width = 68.dp, height = 96.dp).background(Color(0xFF26262A), RoundedCornerShape(8.dp)))
-                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                Text(file.nameWithoutExtension.replace('_', ' ').replace('-', ' '), color = Color.White, fontWeight = FontWeight.SemiBold)
-                                Text((file.length() / (1024 * 1024)).toString() + " MB", color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                                Text("Play", color = Color(0xFF8B7CFF), modifier = Modifier.clickable {
-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
-                                })
-                            }
-                            Text("Delete", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { if (store.delete(file)) { files = store.files(); message = "File deleted." } else message = "Could not delete file." })
-                        }
+            } else LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(titles, key = { it.mediaType + "-" + it.id }) { item ->
+                    Row(Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.size(width = 68.dp, height = 96.dp).background(Color(0xFF26262A), RoundedCornerShape(8.dp)))
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) { Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold); Text(if (item.mediaType == "movie") "Movie" else "Series", color = Color(0xFF9A9DA6), fontSize = 12.sp) }
+                        Text("▣", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() })
                     }
                 }
             }
