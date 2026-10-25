@@ -119,7 +119,9 @@ class MainActivity : ComponentActivity() {
                 PlayerScreen(channel = playing!!, onBack = { playing = null })
             } else Column {
                 Box(Modifier.weight(1f)) {
-                    if (detail != null) {
+                    if (detail == "Content providers") {
+                        AddonManagerScreen(onBack = { detail = null })
+                    } else if (detail != null) {
                         Column {
                             Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment=Alignment.CenterVertically) {
                                 Text("‹  Back", color=Lime, modifier=Modifier.clickable { detail=null })
