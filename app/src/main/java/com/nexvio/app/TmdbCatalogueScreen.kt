@@ -136,9 +136,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
 
     LaunchedEffect(query) {
         if (query.isBlank()) {
-            titles = emptyList()
-            error = null
-            loading = false
+            load("")
         } else {
             delay(350)
             load(query.trim())
@@ -178,9 +176,6 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
         }
         Spacer(Modifier.height(12.dp))
         when {
-            query.isBlank() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Text("Start typing a title to see suggestions.", color = CatalogueMuted)
-            }
             loading && titles.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = CatalogueAccent)
             }
@@ -216,8 +211,6 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                 }
             }
         }
-        Text("Movie and series information provided by TMDB. Nexvio is not endorsed or certified by TMDB.",
-            color = CatalogueMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 8.dp))
     }
 }
 
@@ -269,7 +262,6 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                     }
                     StreamDiscoverySection(item = item, seasonNumber = selectedSeason, episodeNumber = selectedEpisode, onPlay = onPlay)
                     Spacer(Modifier.height(20.dp))
-                    Text("Movie and series information provided by TMDB. Nexvio is not endorsed or certified by TMDB.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
                 }
             }
         }
