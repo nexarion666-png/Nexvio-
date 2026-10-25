@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -421,6 +422,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
     output.distinctBy { it.url }.take(50)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
