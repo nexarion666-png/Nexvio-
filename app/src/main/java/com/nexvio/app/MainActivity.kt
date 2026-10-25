@@ -130,7 +130,15 @@ class MainActivity : ComponentActivity() {
                     if (selectedTitle != null) {
                         TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it })
                     } else if (detail == "Content providers") {
-                        PluginRepositoryScreen(onBack = { detail = null })
+                        ContentProvidersScreen(
+                            onOpenAddons = { detail = "Add-ons" },
+                            onOpenRepositories = { detail = "Plugin repositories" },
+                            onBack = { detail = null }
+                        )
+                    } else if (detail == "Add-ons") {
+                        AddonManagerScreen(onBack = { detail = "Content providers" })
+                    } else if (detail == "Plugin repositories") {
+                        PluginRepositoryScreen(onBack = { detail = "Content providers" })
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
                     } else if (detail != null) {
