@@ -51,7 +51,8 @@ private suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmdb
     } else {
         "https://api.themoviedb.org/3/search/$mediaType?query=${URLEncoder.encode(query, "UTF-8")}&include_adult=false"
     }
-    val connection = URL("$endpoint&api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
+    val separator = if (endpoint.contains("?")) "&" else "?"
+    val connection = URL("$endpoint${separator}api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
         .openConnection() as HttpURLConnection
     try {
         connection.connectTimeout = 12000
