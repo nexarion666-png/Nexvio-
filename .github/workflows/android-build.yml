@@ -1,12 +1,13 @@
-name: Android build
+name: Android build and release
 
 on:
   push:
     branches: ["main", "master"]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -27,12 +28,9 @@ jobs:
       - name: Accept Android SDK licenses and install required packages
         shell: bash
         run: |
-          # GitHub Actions enables pipefail by default. `yes` can receive SIGPIPE
-          # after sdkmanager finishes reading licenses, incorrectly failing the step.
           set +o pipefail
           yes | sdkmanager --licenses >/dev/null
           set -o pipefail
-
           sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
@@ -47,26 +45,55 @@ jobs:
       - name: Make wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build debug APK and run unit tests
+      - name: Build and test debug variant
+        if: startsWith(github.ref, 'refs/heads/')
         run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
 
-      - name: Upload build diagnostics
-        if: failure()
+      - name: Upload debug APK artifact
+        if: success() && startsWith(github.ref, 'refs/heads/')
         uses: actions/upload-artifact@v4
         with:
-          name: nexvio-build-diagnostics
-          path: |
-            app/build/reports/
-            app/build/test-results/
-            **/*.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload debug APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Nexvio-Phase-2-debug-apk
+          name: Nexvio-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
           retention-days: 14
+
+      - name: Validate release secrets
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing repository secret ANDROID_KEYSTORE_BASE64" && exit 1)
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || (echo "Missing repository secret ANDROID_KEYSTORE_PASSWORD" && exit 1)
+          test -n "$ANDROID_KEY_ALIAS" || (echo "Missing repository secret ANDROID_KEY_ALIAS" && exit 1)
+          test -n "$ANDROID_KEY_PASSWORD" || (echo "Missing repository secret ANDROID_KEY_PASSWORD" && exit 1)
+
+      - name: Decode permanent signing key
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nexvio-release.jks"
+
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/nexvio-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          VERSION_CODE="$(echo "$VERSION" | awk -F. '{ printf "%d%02d%02d", $1, $2, $3 }')"
+          NEXVIO_VERSION_NAME="$VERSION" NEXVIO_VERSION_CODE="$VERSION_CODE" ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk Nexvio-"$VERSION".apk
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Nexvio ${{ github.ref_name }}
+          generate_release_notes: true
+          files: Nexvio-*.apk
