@@ -80,17 +80,34 @@ private object AddonManifestClient {
             val json = try { JSONObject(bytes.toString(Charsets.UTF_8)) } catch (_: Exception) {
                 throw IllegalArgumentException("The server did not return a valid JSON manifest.")
             }
-            val id = json.optString("id").trim()
             val name = json.optString("name").trim()
             val version = json.optString("version").trim()
-            require(id.isNotBlank()) { "Manifest is missing the required id field." }
+            val scrapers = json.optJSONArray("scrapers")
+            val isRepositoryManifest = scrapers != null && scrapers.length() > 0
+            val declaredId = json.optString("id").trim()
+            // Repository-style manifests (including Nuvio's) identify the repository
+            // with name/version and list individual providers under "scrapers".
+            // Derive a stable local ID only for that recognized format.
+            val id = declaredId.ifBlank {
+                if (isRepositoryManifest) {
+                    "repo-" + name.lowercase()
+                        .replace(Regex("[^a-z0-9]+"), "-")
+                        .trim('-')
+                        .take(48)
+                } else ""
+            }
             require(name.isNotBlank()) { "Manifest is missing the required name field." }
             require(version.isNotBlank()) { "Manifest is missing the required version field." }
+            require(id.isNotBlank()) {
+                "Manifest is missing the required id field and has no supported scrapers repository list."
+            }
+            val scraperEntries = readScrapers(scrapers)
             NexvioAddon(
                 id = id, name = name, version = version, manifestUrl = uri.toASCIIString(),
                 description = json.optString("description").take(500),
-                resources = readResources(json.optJSONArray("resources")),
-                types = readStrings(json.optJSONArray("types")),
+                resources = (readResources(json.optJSONArray("resources")) + scraperEntries).distinct(),
+                types = (readStrings(json.optJSONArray("types")) +
+                    readScraperTypes(scrapers)).distinct(),
                 catalogues = readCatalogues(json.optJSONArray("catalogs"))
             )
         } finally { connection.disconnect() }
@@ -113,6 +130,35 @@ private object AddonManifestClient {
             if (value.isNotEmpty() && value !in this) add(value)
         } }
     }
+    private fun readScrapers(array: JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val id = item.optString("id").trim()
+                val name = item.optString("name").trim().ifBlank { id }
+                if (name.isBlank()) continue
+                val version = item.optString("version").trim()
+                val types = readStrings(item.optJSONArray("supportedTypes"))
+                val details = buildList {
+                    if (version.isNotBlank()) add("v$version")
+                    if (types.isNotEmpty()) add(types.joinToString("/"))
+                }.joinToString(", ")
+                add(if (details.isBlank()) name else "$name ($details)")
+            }
+        }
+    }
+
+    private fun readScraperTypes(array: JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                addAll(readStrings(item.optJSONArray("supportedTypes")))
+            }
+        }
+    }
+
     private fun readCatalogues(array: JSONArray?): List<String> {
         if (array == null) return emptyList()
         return buildList { for (i in 0 until array.length()) {
