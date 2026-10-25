@@ -113,7 +113,7 @@ fun DownloadsScreen() {
             
             Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(row.second, fontWeight = FontWeight.SemiBold)
-                val transfer = store.progress(row.first)
+                val transfer = remember(row.first, progressRefresh) { store.progress(row.first) }
                 val downloadedBytes = transfer?.first ?: 0L
                 val totalBytes = transfer?.second ?: -1L
                 Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; DownloadManager.STATUS_SUCCESSFUL -> "Downloaded"; DownloadManager.STATUS_FAILED -> "Failed"; else -> "Checking status" }, color = Color(0xFF9A9DA6))
@@ -161,7 +161,7 @@ fun OfflineLibraryScreen() {
         val activeRows = rows.filter { it.third == DownloadManager.STATUS_PENDING || it.third == DownloadManager.STATUS_RUNNING || it.third == DownloadManager.STATUS_PAUSED }
         if (activeRows.isEmpty()) item { Text("No active downloads.", color = Color(0xFF9A9DA6), fontSize = 13.sp) }
         items(activeRows, key = { "download-${it.first}" }) { row ->
-            val transfer = store.progress(row.first)
+            val transfer = remember(row.first, progressRefresh) { store.progress(row.first) }
             val downloadedBytes = transfer?.first ?: 0L
             val totalBytes = transfer?.second ?: -1L
             Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -186,7 +186,7 @@ fun OfflineLibraryScreen() {
                     Text("${file.length() / (1024 * 1024)} MB • ${file.extension.uppercase()}", color = Color(0xFF9A9DA6), fontSize = 12.sp)
                 }
                 Text("Play", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*")) }.onFailure { message = "No compatible video player could open this file." }
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
                 })
                 Spacer(Modifier.width(12.dp))
                 Text("Delete", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { if (store.delete(file)) { files = store.files(); message = "File deleted." } else message = "Could not delete file." })
