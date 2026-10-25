@@ -408,6 +408,15 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             // A single unavailable add-on should not block results from other providers.
         }
     }
+    // Phase 3E/3F: merge results from compatible Nuvio repository scrapers
+    // with the existing Stremio-compatible add-on results.
+    try {
+        NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber).forEach { stream ->
+            output.add(DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality))
+        }
+    } catch (_: Exception) {
+        // Stremio results remain available if the Nuvio adapter is unavailable.
+    }
     output.distinctBy { it.url }.take(50)
 }
 
@@ -426,8 +435,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(
-            if (item.mediaType == "movie") "Search enabled Stremio-compatible add-ons for playable sources."
-            else "Search enabled Stremio-compatible add-ons for season $seasonNumber, episode $episodeNumber.",
+            if (item.mediaType == "movie") "Search enabled Stremio add-ons and compatible Nuvio repository scrapers for playable sources."
+            else "Search enabled Stremio add-ons and compatible Nuvio scrapers for season $seasonNumber, episode $episodeNumber.",
             color = CatalogueMuted, fontSize = 13.sp, lineHeight = 19.sp
         )
         Spacer(Modifier.height(12.dp))
@@ -511,6 +520,6 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             Text("No playable sources found.", color = CatalogueMuted, fontSize = 12.sp)
         }
         Spacer(Modifier.height(8.dp))
-        Text("Only direct HTTP(S) stream URLs from Stremio-compatible add-ons are listed. Nuvio JavaScript scraper repositories are not executable in Nexvio yet.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
+        Text("Results combine Stremio add-ons with a restricted Nuvio JavaScript adapter. Some scrapers may require unsupported modules or host APIs.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
     }
 }
