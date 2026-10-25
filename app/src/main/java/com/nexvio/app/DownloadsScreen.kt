@@ -27,13 +27,20 @@ import kotlinx.coroutines.delay
 import java.io.File
 import java.net.URI
 
-private class OfflineDownloads(private val context: Context) {
+internal class OfflineDownloads(private val context: Context) {
     private val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private val prefs = context.getSharedPreferences("nexvio_downloads", Context.MODE_PRIVATE)
     fun ids(): List<Long> = prefs.getString("ids", "").orEmpty().split(",").mapNotNull { it.toLongOrNull() }
     fun enqueue(rawUrl: String, rawTitle: String): Long {
         val parsed = URI(rawUrl.trim())
-        require((parsed.scheme.equals("https", true) || parsed.scheme.equals("http", true)) && !parsed.host.isNullOrBlank()) { "Enter a valid HTTP or HTTPS direct media URL." }
+        require((parsed.scheme.equals("https", true) || parsed.scheme.equals("http", true)) && !parsed.host.isNullOrBlank()) { "This source does not provide a valid HTTP/HTTPS media URL." }
+        val path = parsed.path.orEmpty().lowercase()
+        require(!path.endsWith(".m3u8") && !path.endsWith(".mpd") && !path.endsWith(".m3u")) {
+            "This source is a streaming playlist (HLS/DASH/M3U), not a direct media file. Nexvio cannot save it as an offline video yet."
+        }
+        require(listOf(".mp4", ".m4v", ".mkv", ".webm", ".mp3", ".aac").any { path.endsWith(it) } || !parsed.path.orEmpty().substringAfterLast("/").contains(".")) {
+            "This URL does not look like a direct media file. Choose a direct MP4/M4V/MKV/WebM/MP3/AAC source."
+        }
         val title = rawTitle.trim().ifBlank { parsed.path?.substringAfterLast('/')?.ifBlank { "Nexvio media" } ?: "Nexvio media" }
             .replace("/", "_").replace("\\", "_").take(100)
         val request = DownloadManager.Request(Uri.parse(parsed.toString()))
@@ -63,6 +70,9 @@ private class OfflineDownloads(private val context: Context) {
     fun files(): List<File> { val root = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
+
+internal fun enqueueDiscoveredStream(context: Context, title: String, url: String): Long =
+    OfflineDownloads(context.applicationContext).enqueue(url, title)
 
 @Composable
 fun DownloadsScreen() {
@@ -119,7 +129,7 @@ fun OfflineLibraryScreen() {
             Text("${files.size} file(s) • ${files.sumOf { it.length() } / (1024 * 1024)} MB used", color = Color(0xFFB7F36B))
         }
         message?.let { item { Text(it, color = Color(0xFFB7F36B)) } }
-        if (files.isEmpty()) item { Text("Nothing offline yet. Open Settings → Downloads to save a supported direct media URL.", color = Color(0xFF9A9DA6)) }
+        if (files.isEmpty()) item { Text("Nothing offline yet. Open Movies or Series, find a stream, then long-press a supported direct media source to download it.", color = Color(0xFF9A9DA6)) }
         items(files, key = { it.absolutePath }) { file ->
             Row(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
