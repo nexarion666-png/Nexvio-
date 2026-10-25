@@ -92,13 +92,14 @@ fun DownloadsScreen() {
     val context = LocalContext.current
     val store = remember { OfflineDownloads(context.applicationContext) }
     var rows by remember { mutableStateOf(store.rows()) }
+    var error by remember { mutableStateOf<String?>(null) }
     var progressRefresh by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressRefresh++; delay(1000) } }
     // Read this state so the screen recomposes even when queue status/title stay unchanged.
     val currentProgressRefresh = progressRefresh
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Downloads", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold); Text("Save supported direct media files for offline playback.", color = Color(0xFF9A9DA6)) }
-        item { Text("Download queue", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+        item { Text("Download queue", fontSize = 20.sp, fontWeight = FontWeight.Bold); error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (rows.isEmpty()) item { Text("No downloads yet.", color = Color(0xFF9A9DA6)) }
         items(rows, key = { it.first }) { row ->
             
