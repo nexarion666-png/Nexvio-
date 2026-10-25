@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -147,49 +149,128 @@ fun OfflineLibraryScreen() {
     var rows by remember { mutableStateOf(store.rows()) }
     var progressRefresh by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { while (true) { files = store.files(); rows = store.rows(); progressRefresh++; delay(1000) } }
-    // Download byte counts change independently of queue status, so force a periodic recomposition.
-    val currentProgressRefresh = progressRefresh
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Text("Offline Library", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Downloaded media available without internet.", color = Color(0xFF9A9DA6))
-            Text("${files.size} file(s) • ${files.sumOf { it.length() } / (1024 * 1024)} MB used", color = Color(0xFFB7F36B))
-        }
-        message?.let { item { Text(it, color = Color(0xFFB7F36B)) } }
-        item { Text("DOWNLOADS IN PROGRESS", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
-        val activeRows = rows.filter { it.third == DownloadManager.STATUS_PENDING || it.third == DownloadManager.STATUS_RUNNING || it.third == DownloadManager.STATUS_PAUSED }
-        if (activeRows.isEmpty()) item { Text("No active downloads.", color = Color(0xFF9A9DA6), fontSize = 13.sp) }
-        items(activeRows, key = { "download-${it.first}" }) { row ->
-            val transfer = remember(row.first, progressRefresh) { store.progress(row.first) }
-            val downloadedBytes = transfer?.first ?: 0L
-            val totalBytes = transfer?.second ?: -1L
-            Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(row.second, fontWeight = FontWeight.SemiBold)
-                Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; else -> "In progress" }, color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                if (totalBytes > 0L) {
-                    LinearProgressIndicator(progress = { (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
-                    Text("${downloadedBytes / (1024 * 1024)} MB / ${totalBytes / (1024 * 1024)} MB • ${(downloadedBytes * 100 / totalBytes).coerceIn(0L, 100L)}%", color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
-                    Text("${downloadedBytes / (1024 * 1024)} MB downloaded • total size unknown", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+    var showDownloads by remember { mutableStateOf(false) }
+    var cloudSelected by remember { mutableStateOf(false) }
+    var gridMode by remember { mutableStateOf(true) }
+    var sortMenu by remember { mutableStateOf(false) }
+    var sortByRecent by remember { mutableStateOf(true) }
+    var posters by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    LaunchedEffect(Unit) {
+        while (true) { files = store.files(); rows = store.rows(); progressRefresh++; delay(1000) }
+    }
+    LaunchedEffect(files.map { it.name }) {
+        files.forEach { file ->
+            if (!posters.containsKey(file.name)) {
+                runCatching {
+                    val match = fetchTmdbTitles("multi", file.nameWithoutExtension.replace('-', ' ').replace('_', ' ')).firstOrNull()
+                    match?.posterPath?.let { path -> posters = posters + (file.name to ("https://image.tmdb.org/t/p/w500" + path)) }
                 }
-                Text("Cancel", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { store.cancel(row.first); rows = store.rows() })
             }
         }
-        item { Text("OFFLINE FILES", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
-        if (files.isEmpty()) item { Text("Nothing offline yet. Open Movies or Series, find a stream, then long-press a supported direct media source to download it.", color = Color(0xFF9A9DA6)) }
-        items(files, key = { it.absolutePath }) { file ->
-            Row(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(file.name, fontWeight = FontWeight.SemiBold)
-                    Text("${file.length() / (1024 * 1024)} MB • ${file.extension.uppercase()}", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+    }
+    if (showDownloads) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { showDownloads = false }.padding(end = 14.dp))
+                Text("Downloads", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            }
+            DownloadsScreen()
+        }
+        return
+    }
+    val visibleFiles = if (sortByRecent) files.sortedByDescending { it.lastModified() } else files.sortedBy { it.name.lowercase() }
+    val activeRows = rows.filter { it.third == DownloadManager.STATUS_PENDING || it.third == DownloadManager.STATUS_RUNNING || it.third == DownloadManager.STATUS_PAUSED }
+    Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Library", modifier = Modifier.weight(1f), color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold)
+            Text(if (gridMode) "▦" else "☰", color = Color(0xFF9A9DA6), fontSize = 28.sp, modifier = Modifier.clickable { gridMode = !gridMode }.padding(horizontal = 12.dp))
+            Text("↓", color = Color(0xFF9A9DA6), fontSize = 32.sp, modifier = Modifier.clickable { showDownloads = true }.padding(start = 12.dp, end = 4.dp))
+        }
+        Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.background(if (!cloudSelected) Color(0xFF303034) else Color(0xFF19191D), RoundedCornerShape(28.dp)).clickable { cloudSelected = false }.padding(horizontal = 22.dp, vertical = 10.dp)) { Text("Saved", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+            Box(Modifier.background(if (cloudSelected) Color(0xFF303034) else Color(0xFF19191D), RoundedCornerShape(28.dp)).clickable { cloudSelected = true }.padding(horizontal = 22.dp, vertical = 10.dp)) { Text("Cloud", color = Color(0xFF9A9DA6), fontSize = 14.sp) }
+        }
+        if (cloudSelected) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Cloud library", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp)); Text("Cloud sync isn't connected yet.", color = Color(0xFF9A9DA6))
                 }
-                Text("Play", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
-                })
-                Spacer(Modifier.width(12.dp))
-                Text("Delete", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { if (store.delete(file)) { files = store.files(); message = "File deleted." } else message = "Could not delete file." })
+            }
+        } else {
+            Box(Modifier.padding(start = 20.dp, top = 22.dp, bottom = 20.dp)) {
+                Row(Modifier.background(Color(0xFF19191D), RoundedCornerShape(14.dp)).clickable { sortMenu = true }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (sortByRecent) "Recently added" else "Name", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(" ⌄", color = Color(0xFF9A9DA6), fontSize = 18.sp)
+                }
+                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    DropdownMenuItem(text = { Text("Recently added") }, onClick = { sortByRecent = true; sortMenu = false })
+                    DropdownMenuItem(text = { Text("Name") }, onClick = { sortByRecent = false; sortMenu = false })
+                }
+            }
+            message?.let { Text(it, color = Color(0xFF9A9DA6), modifier = Modifier.padding(horizontal = 20.dp)) }
+            if (activeRows.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().clickable { showDownloads = true }.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Downloads in progress (" + activeRows.size + ")", color = Color(0xFF9A9DA6), modifier = Modifier.weight(1f))
+                    Text("View  ›", color = Color(0xFF8B7CFF))
+                }
+            }
+            if (visibleFiles.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Your library is empty", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp)); Text("Downloaded movies will appear here.", color = Color(0xFF9A9DA6))
+                        Spacer(Modifier.height(12.dp)); Text("Open downloads  ↓", color = Color(0xFF8B7CFF), modifier = Modifier.clickable { showDownloads = true })
+                    }
+                }
+            } else if (gridMode) {
+                LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    items(visibleFiles.size, key = { visibleFiles[it].absolutePath }) { index ->
+                        val file = visibleFiles[index]
+                        Column(Modifier.fillMaxWidth()) {
+                            Box(Modifier.fillMaxWidth().height(248.dp).background(Color(0xFF19191D), RoundedCornerShape(12.dp))) {
+                                val poster = posters[file.name]
+                                if (poster != null) AsyncImage(model = poster, contentDescription = file.nameWithoutExtension,
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize().clickable {
+                                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
+                                    })
+                                else Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("▶", color = Color(0xFF8B7CFF), fontSize = 30.sp)
+                                    Text(file.extension.uppercase().ifBlank { "VIDEO" }, color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(file.nameWithoutExtension.replace('_', ' ').replace('-', ' '), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2)
+                            Text(file.extension.uppercase() + " • " + file.length() / (1024 * 1024) + " MB", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 6.dp)) {
+                                Text("Play", color = Color(0xFF8B7CFF), modifier = Modifier.clickable {
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
+                                })
+                                Text("Delete", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { if (store.delete(file)) { files = store.files(); message = "File deleted." } else message = "Could not delete file." })
+                            }
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(visibleFiles, key = { it.absolutePath }) { file ->
+                        Row(Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(model = posters[file.name], contentDescription = file.nameWithoutExtension, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(width = 68.dp, height = 96.dp).background(Color(0xFF26262A), RoundedCornerShape(8.dp)))
+                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                Text(file.nameWithoutExtension.replace('_', ' ').replace('-', ' '), color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Text((file.length() / (1024 * 1024)).toString() + " MB", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                                Text("Play", color = Color(0xFF8B7CFF), modifier = Modifier.clickable {
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file), "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "No compatible video player could open this file." }
+                                })
+                            }
+                            Text("Delete", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { if (store.delete(file)) { files = store.files(); message = "File deleted." } else message = "Could not delete file." })
+                        }
+                    }
+                }
             }
         }
     }
