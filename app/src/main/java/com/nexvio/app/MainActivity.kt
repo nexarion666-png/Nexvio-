@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable fun NexvioApp() {
     var current by remember { mutableStateOf("Home") }
+    var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
     MaterialTheme(colorScheme = darkColorScheme(primary=Lime, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
@@ -135,18 +136,17 @@ class MainActivity : ComponentActivity() {
                             if (detail == "Downloads") DownloadsScreen() else InfoPage(detail!!)
                         }
                     } else when(current) {
-                        "Home" -> HomeScreen(onOpen={ current=it }, onDetail={detail=it}, onPlay={ playing=it })
-                        "Movies" -> TmdbCatalogueScreen("movie", onPlay = { playing = it })
-                        "Series" -> TmdbCatalogueScreen("tv", onPlay = { playing = it })
+                        "Home" -> HomeScreen(onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it })
+                        "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
                         "Library" -> OfflineLibraryScreen()
                         else -> SettingsScreen(onDetail={detail=it})
                     }
                 }
                 NavigationBar(containerColor=Panel) {
-                    listOf("Home","Movies","Series","Live TV","Library","Settings").forEach { item ->
+                    listOf("Home","Search","Live TV","Library","Profile").forEach { item ->
                         NavigationBarItem(selected=current==item, onClick={detail=null; current=item},
-                            icon={Text(when(item){"Home"->"⌂";"Movies"->"▣";"Series"->"▤";"Live TV"->"◉";"Library"->"♡";else->"⚙"},fontSize=18.sp)},
+                            icon={Text(when(item){"Home"->"⌂";"Search"->"⌕";"Live TV"->"◉";"Library"->"▤";else->"●"},fontSize=18.sp)},
                             label={Text(item,fontSize=10.sp)},
                             colors=NavigationBarItemDefaults.colors(selectedIconColor=Lime, selectedTextColor=Lime, indicatorColor=Ink))
                     }
