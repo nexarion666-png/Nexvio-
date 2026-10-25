@@ -25,7 +25,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-private const val TMDB_API_KEY = "PASTE_YOUR_TMDB_API_KEY_HERE"
+private const val TMDB_API_KEY = "df35ad7483eaf39d05d6b534109453bb"
 private const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 private val CatalogueInk = Color(0xFF101114)
 private val CataloguePanel = Color(0xFF1B1D22)
