@@ -64,6 +64,15 @@ internal class OfflineDownloads(private val context: Context) {
         }
         return out
     }
+    fun progress(id: Long): Pair<Long, Long>? {
+        val cursor = manager.query(DownloadManager.Query().setFilterById(id)) ?: return null
+        cursor.use {
+            if (!it.moveToFirst()) return null
+            val downloaded = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)).coerceAtLeast(0L)
+            val total = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)).coerceAtLeast(-1L)
+            return downloaded to total
+        }
+    }
     fun cancel(id: Long) { manager.remove(id) }
     fun open(id: Long): Uri? = manager.getUriForDownloadedFile(id)
     fun removeRecord(id: Long) { prefs.edit().putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
@@ -101,7 +110,19 @@ fun DownloadsScreen() {
             
             Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(row.second, fontWeight = FontWeight.SemiBold)
+                val transfer = store.progress(row.first)
+                val downloadedBytes = transfer?.first ?: 0L
+                val totalBytes = transfer?.second ?: -1L
                 Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; DownloadManager.STATUS_SUCCESSFUL -> "Downloaded"; DownloadManager.STATUS_FAILED -> "Failed"; else -> "Checking status" }, color = Color(0xFF9A9DA6))
+                if (row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED || row.third == DownloadManager.STATUS_PENDING) {
+                    if (totalBytes > 0L) {
+                        LinearProgressIndicator(progress = { (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
+                        Text("${downloadedBytes / (1024 * 1024)} MB / ${totalBytes / (1024 * 1024)} MB • ${(downloadedBytes * 100 / totalBytes).coerceIn(0L, 100L)}%", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
+                        Text("${downloadedBytes / (1024 * 1024)} MB downloaded • total size unknown", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (row.third == DownloadManager.STATUS_SUCCESSFUL) Text("Open", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
                         store.open(row.first)?.let { uri -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, context.contentResolver.getType(uri) ?: "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { error = "No compatible media player is installed." } }
@@ -120,8 +141,9 @@ fun OfflineLibraryScreen() {
     val context = LocalContext.current
     val store = remember { OfflineDownloads(context.applicationContext) }
     var files by remember { mutableStateOf(store.files()) }
+    var rows by remember { mutableStateOf(store.rows()) }
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { while (true) { files = store.files(); delay(1500) } }
+    LaunchedEffect(Unit) { while (true) { files = store.files(); rows = store.rows(); delay(1000) } }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Offline Library", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
@@ -129,6 +151,27 @@ fun OfflineLibraryScreen() {
             Text("${files.size} file(s) • ${files.sumOf { it.length() } / (1024 * 1024)} MB used", color = Color(0xFFB7F36B))
         }
         message?.let { item { Text(it, color = Color(0xFFB7F36B)) } }
+        item { Text("DOWNLOADS IN PROGRESS", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+        val activeRows = rows.filter { it.third == DownloadManager.STATUS_PENDING || it.third == DownloadManager.STATUS_RUNNING || it.third == DownloadManager.STATUS_PAUSED }
+        if (activeRows.isEmpty()) item { Text("No active downloads.", color = Color(0xFF9A9DA6), fontSize = 13.sp) }
+        items(activeRows, key = { "download-${it.first}" }) { row ->
+            val transfer = store.progress(row.first)
+            val downloadedBytes = transfer?.first ?: 0L
+            val totalBytes = transfer?.second ?: -1L
+            Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(row.second, fontWeight = FontWeight.SemiBold)
+                Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; else -> "In progress" }, color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                if (totalBytes > 0L) {
+                    LinearProgressIndicator(progress = { (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
+                    Text("${downloadedBytes / (1024 * 1024)} MB / ${totalBytes / (1024 * 1024)} MB • ${(downloadedBytes * 100 / totalBytes).coerceIn(0L, 100L)}%", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
+                    Text("${downloadedBytes / (1024 * 1024)} MB downloaded • total size unknown", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                }
+                Text("Cancel", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { store.cancel(row.first); rows = store.rows() })
+            }
+        }
+        item { Text("OFFLINE FILES", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
         if (files.isEmpty()) item { Text("Nothing offline yet. Open Movies or Series, find a stream, then long-press a supported direct media source to download it.", color = Color(0xFF9A9DA6)) }
         items(files, key = { it.absolutePath }) { file ->
             Row(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
