@@ -73,7 +73,7 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
         "Add your TMDB API key in TmdbCatalogueScreen.kt before building the app."
     }
     val endpoint = if (query.isBlank()) {
-        "https://api.themoviedb.org/3/trending/$mediaType/week"
+        "https://api.themoviedb.org/3/trending/${if (mediaType == "multi") "all" else mediaType}/week"
     } else {
         val searchEndpoint = if (mediaType == "multi") "multi" else mediaType
         "https://api.themoviedb.org/3/search/$searchEndpoint?query=${URLEncoder.encode(query, "UTF-8")}&include_adult=false"
