@@ -200,7 +200,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 items(titles, key = { it.mediaType + "-" + it.id }) { item ->
-                    Column(Modifier.fillMaxWidth().clickable { selected = item; onTitleSelected(item) }) {
+                    Column(Modifier.fillMaxWidth().clickable { onTitleSelected(item) }) {
                         AsyncImage(
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
