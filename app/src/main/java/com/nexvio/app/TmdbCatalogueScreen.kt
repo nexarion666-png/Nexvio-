@@ -32,7 +32,7 @@ private const val TMDB_API_KEY = "df35ad7483eaf39d05d6b534109453bb"
 private const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 private val CatalogueInk = Color(0xFF101114)
 private val CataloguePanel = Color(0xFF1B1D22)
-private val CatalogueLime = Color(0xFFB7F36B)
+private val CatalogueAccent = Color(0xFF8B7CFF)
 private val CatalogueMuted = Color(0xFF9A9DA6)
 
 internal data class TmdbTitle(
@@ -45,7 +45,7 @@ internal data class TmdbTitle(
     val mediaType: String
 )
 
-private suspend fun fetchTmdbTitles(mediaType: String, query: String): List<TmdbTitle> = withContext(Dispatchers.IO) {
+internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<TmdbTitle> = withContext(Dispatchers.IO) {
     require(TMDB_API_KEY != "PASTE_YOUR_TMDB_API_KEY_HERE" && TMDB_API_KEY.isNotBlank()) {
         "Add your TMDB API key in TmdbCatalogueScreen.kt before building the app."
     }
@@ -87,20 +87,21 @@ private suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmdb
 
 @Composable
 internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit) {
+    var activeType by remember(mediaType) { mutableStateOf(mediaType) }
     var query by remember { mutableStateOf("") }
     var titles by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<TmdbTitle?>(null) }
     val scope = rememberCoroutineScope()
-    val heading = if (mediaType == "movie") "Movies" else "Series"
+    val heading = if (activeType == "movie") "Movies" else "Series"
 
     fun load(search: String) {
         scope.launch {
             loading = true
             error = null
             try {
-                titles = fetchTmdbTitles(mediaType, search)
+                titles = fetchTmdbTitles(activeType, search)
             } catch (e: Exception) {
                 error = e.message ?: "Could not load catalogue."
             } finally {
@@ -109,7 +110,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
         }
     }
 
-    LaunchedEffect(mediaType) { load("") }
+    LaunchedEffect(activeType) { load("") }
     BackHandler(enabled = selected != null) { selected = null }
 
     selected?.let { item ->
@@ -121,7 +122,23 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
         Spacer(Modifier.height(20.dp))
         Text(heading, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
         Text("Discover titles powered by TMDB", color = CatalogueMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(13.dp)).padding(4.dp)) {
+            listOf("movie" to "Movies", "tv" to "Series").forEach { (type, label) ->
+                Box(
+                    Modifier.weight(1f).background(if (activeType == type) CatalogueAccent else Color.Transparent, RoundedCornerShape(10.dp))
+                        .clickable {
+                            if (activeType != type) {
+                                activeType = type
+                                query = ""
+                                titles = emptyList()
+                            }
+                        }.padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text(label, color = Color.White, fontWeight = if (activeType == type) FontWeight.Bold else FontWeight.Medium) }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
         Row(
             Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -136,18 +153,18 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            Text("Search", color = CatalogueLime, fontWeight = FontWeight.Bold,
+            Text("Search", color = CatalogueAccent, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable { load(query.trim()) }.padding(start = 12.dp))
         }
         Spacer(Modifier.height(14.dp))
         when {
             loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = CatalogueLime)
+                CircularProgressIndicator(color = CatalogueAccent)
             }
             error != null -> Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text(error.orEmpty(), color = Color.White)
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = { load(query.trim()) }, colors = ButtonDefaults.buttonColors(containerColor = CatalogueLime, contentColor = CatalogueInk)) { Text("Try again") }
+                Button(onClick = { load(query.trim()) }, colors = ButtonDefaults.buttonColors(containerColor = CatalogueAccent, contentColor = CatalogueInk)) { Text("Try again") }
             }
             titles.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 Text("No titles found. Try another search.", color = CatalogueMuted)
@@ -190,7 +207,7 @@ private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChan
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
     Column(Modifier.fillMaxSize().background(CatalogueInk)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹  Back", color = CatalogueLime, fontWeight = FontWeight.Bold,
+            Text("‹  Back", color = CatalogueAccent, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
             Text("${if (item.mediaType == "movie") "Movie" else "Series"} details", color = Color.White,
                 fontSize = 19.sp, fontWeight = FontWeight.Bold)
@@ -208,7 +225,7 @@ private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChan
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(year, color = CatalogueMuted, fontSize = 14.sp)
                         Text("•", color = CatalogueMuted)
-                        Text("★ $rating / 10", color = CatalogueLime, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("★ $rating / 10", color = CatalogueAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         Text("•", color = CatalogueMuted)
                         Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
                     }
@@ -344,7 +361,7 @@ private fun SeriesEpisodePicker(item: TmdbTitle, onSelection: (Int, Int) -> Unit
                 }
             }
         }
-        if (loadingEpisodes) LinearProgressIndicator(Modifier.fillMaxWidth(), color = CatalogueLime)
+        if (loadingEpisodes) LinearProgressIndicator(Modifier.fillMaxWidth(), color = CatalogueAccent)
         if (pickerError != null) Text(pickerError.orEmpty(), color = CatalogueMuted, fontSize = 11.sp)
     }
 }
@@ -485,7 +502,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 }
             },
             enabled = !loading,
-            colors = ButtonDefaults.buttonColors(containerColor = CatalogueLime, contentColor = CatalogueInk)
+            colors = ButtonDefaults.buttonColors(containerColor = CatalogueAccent, contentColor = CatalogueInk)
         ) {
             if (loading) {
                 CircularProgressIndicator(Modifier.size(18.dp), color = CatalogueInk, strokeWidth = 2.dp)
@@ -499,7 +516,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         }
         if (streams.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            Text("${streams.size} source(s) found", color = CatalogueLime, fontWeight = FontWeight.SemiBold)
+            Text("${streams.size} source(s) found", color = CatalogueAccent, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             Box {
                 OutlinedButton(onClick = { qualityMenu = true }) { Text("Quality: $qualityFilter") }
@@ -542,9 +559,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                         Text(stream.addonName, color = CatalogueMuted, fontSize = 11.sp)
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text(stream.quality, color = CatalogueLime, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(stream.quality, color = CatalogueAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(6.dp))
-                    Text("▶", color = CatalogueLime)
+                    Text("▶", color = CatalogueAccent)
                 }
             }
         } else if (searched && !loading && error == null) {
