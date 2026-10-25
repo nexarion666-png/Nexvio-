@@ -68,7 +68,7 @@ internal object NuvioScraperEngine {
     private suspend fun execute(context: Context, name: String, source: String, item: TmdbTitle, season: Int, episode: Int): List<NuvioDiscoveredStream> =
         withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
-                val web = WebView(context.applicationContext)
+                val web = WebView(context)
                 val bridge = Bridge(web)
                 web.settings.javaScriptEnabled = true
                 web.settings.domStorageEnabled = false
