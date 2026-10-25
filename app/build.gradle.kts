@@ -1,8 +1,23 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 
 android { namespace = "com.nexvio.app"; compileSdk = 35
-    defaultConfig { applicationId = "com.nexvio.app"; minSdk = 24; targetSdk = 35; versionCode = 1; versionName = "1.0.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
-    buildFeatures { compose = true }
+    defaultConfig {
+        applicationId = "com.nexvio.app"; minSdk = 24; targetSdk = 35
+        versionCode = (System.getenv("NEXVIO_VERSION_CODE") ?: "2").toInt()
+        versionName = System.getenv("NEXVIO_VERSION_NAME") ?: "1.0.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    signingConfigs {
+        create("release") {
+            val ks = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (!ks.isNullOrBlank()) storeFile = file(ks)
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+        }
+    }
+    buildTypes { getByName("release") { signingConfig = signingConfigs.getByName("release") } }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
