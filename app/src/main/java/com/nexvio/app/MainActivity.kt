@@ -121,6 +121,8 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.weight(1f)) {
                     if (detail == "Content providers") {
                         AddonManagerScreen(onBack = { detail = null })
+                    } else if (detail == "Watch history") {
+                        WatchHistoryScreen(onPlay = { playing = it })
                     } else if (detail != null) {
                         Column {
                             Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment=Alignment.CenterVertically) {
@@ -130,7 +132,7 @@ class MainActivity : ComponentActivity() {
                             if (detail == "Downloads") DownloadsScreen() else InfoPage(detail!!)
                         }
                     } else when(current) {
-                        "Home" -> HomeScreen(onOpen={ current=it }, onDetail={detail=it})
+                        "Home" -> HomeScreen(onOpen={ current=it }, onDetail={detail=it}, onPlay={ playing=it })
                         "Movies" -> TmdbCatalogueScreen("movie", onPlay = { playing = it })
                         "Series" -> TmdbCatalogueScreen("tv", onPlay = { playing = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
@@ -152,7 +154,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Brand() { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(38.dp).background(Lime, RoundedCornerShape(12.dp)), contentAlignment=Alignment.Center) { Text("N", color=Ink, fontSize=25.sp, fontWeight=FontWeight.Black) }; Spacer(Modifier.width(10.dp)); Column { Text("NEXVIO", fontWeight=FontWeight.Black, letterSpacing=2.sp, fontSize=19.sp); Text("Movies • Series • Live TV", color=Muted, fontSize=11.sp) } } }
-@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit) { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(18.dp)) { item { Brand(); Spacer(Modifier.height(4.dp)); Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp), verticalAlignment=Alignment.CenterVertically) { Text("⌕", color=Lime, fontSize=22.sp); Spacer(Modifier.width(10.dp)); Text("Search movies, series…", color=Muted) } }; item { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(22.dp)).padding(20.dp)) { Text("YOUR NEXT STORY STARTS HERE", color=Lime, fontSize=10.sp, letterSpacing=1.5.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text("Entertainment,\nyour way.", fontSize=32.sp, lineHeight=36.sp, fontWeight=FontWeight.ExtraBold); Spacer(Modifier.height(8.dp)); Text("Your personal hub for movies, series and live TV.", color=Muted); Spacer(Modifier.height(16.dp)); Text("SET UP YOUR LIBRARY  →", color=Ink, fontWeight=FontWeight.Bold, modifier=Modifier.background(Lime, RoundedCornerShape(12.dp)).clickable { onDetail("Content providers") }.padding(horizontal=14.dp, vertical=11.dp)) } }; item { Text("EXPLORE", color=Muted, fontSize=11.sp, letterSpacing=2.sp) }; item { Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) { listOf("Movies","Series","Live TV").forEach { name -> Column(Modifier.weight(1f).background(Panel, RoundedCornerShape(16.dp)).clickable { onOpen(name) }.padding(12.dp)) { Text(when(name){"Movies"->"▣";"Series"->"▤";else->"◉"}, color=Lime, fontSize=22.sp); Spacer(Modifier.height(12.dp)); Text(name, fontWeight=FontWeight.Bold); Text("Explore", color=Muted, fontSize=11.sp) } } } }; item { EmptySection("Recently watched", "Your watch history will appear here once playback is available.") }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV.") }; item { Text("Catalogue demo layout only • No movie or series provider connected", color=Muted, fontSize=11.sp) } } }
+@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit) { val historyContext = LocalContext.current; val historyStore = remember(historyContext) { WatchHistoryStore(historyContext) }; var watchEntries by remember { mutableStateOf(historyStore.all()) }; LaunchedEffect(Unit) { while (true) { watchEntries = historyStore.all(); delay(1500) } }; LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(18.dp)) { item { Brand(); Spacer(Modifier.height(4.dp)); Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp), verticalAlignment=Alignment.CenterVertically) { Text("⌕", color=Lime, fontSize=22.sp); Spacer(Modifier.width(10.dp)); Text("Search movies, series…", color=Muted) } }; item { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(22.dp)).padding(20.dp)) { Text("YOUR NEXT STORY STARTS HERE", color=Lime, fontSize=10.sp, letterSpacing=1.5.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text("Entertainment,\nyour way.", fontSize=32.sp, lineHeight=36.sp, fontWeight=FontWeight.ExtraBold); Spacer(Modifier.height(8.dp)); Text("Your personal hub for movies, series and live TV.", color=Muted); Spacer(Modifier.height(16.dp)); Text("SET UP YOUR LIBRARY  →", color=Ink, fontWeight=FontWeight.Bold, modifier=Modifier.background(Lime, RoundedCornerShape(12.dp)).clickable { onDetail("Content providers") }.padding(horizontal=14.dp, vertical=11.dp)) } }; item { Text("EXPLORE", color=Muted, fontSize=11.sp, letterSpacing=2.sp) }; item { Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) { listOf("Movies","Series","Live TV").forEach { name -> Column(Modifier.weight(1f).background(Panel, RoundedCornerShape(16.dp)).clickable { onOpen(name) }.padding(12.dp)) { Text(when(name){"Movies"->"▣";"Series"->"▤";else->"◉"}, color=Lime, fontSize=22.sp); Spacer(Modifier.height(12.dp)); Text(name, fontWeight=FontWeight.Bold); Text("Explore", color=Muted, fontSize=11.sp) } } } }; item { WatchHistorySection("Continue watching", watchEntries.filter { it.positionMs > 0L && !it.completed }.take(5), onPlay, onSeeAll={ onDetail("Watch history") }) }; item { WatchHistorySection("Recently watched", watchEntries.take(5), onPlay, onSeeAll={ onDetail("Watch history") }) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV.") }; item { Text("Your viewing history is stored locally on this device.", color=Muted, fontSize=11.sp) } } }
 @Composable private fun EmptySection(title:String, message:String) { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp)).padding(16.dp)) { Text(title, fontSize=18.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(message, color=Muted, fontSize=13.sp); Spacer(Modifier.height(10.dp)); Text("FOUNDATION", color=Lime, fontSize=10.sp, letterSpacing=1.sp) } }
 @Composable private fun CatalogueScreen(title:String, subtitle:String,onDetail:(String)->Unit) { Column(Modifier.fillMaxSize().padding(20.dp)) { Text(title, fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text(subtitle, color=Muted); Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp)) { Text("⌕  Search $title", color=Muted) }; Spacer(Modifier.height(20.dp)); EmptySection("Your $title collection", "Connect a compatible content provider in a later phase to browse real titles. No demonstration streams are provided.") } }
 private class PlaylistStore(context: Context) {
@@ -355,9 +357,12 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
     var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
     var playbackDetails by remember(channel.id) { mutableStateOf<String?>(null) }
     var retry by remember(channel.id) { mutableIntStateOf(0) }
-    var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(0L) }
+    var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(WatchHistoryStore(context).get(channel.id)?.positionMs ?: 0L) }
     var shouldResumePlayback by rememberSaveable(channel.id) { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+
+    val watchHistory = remember { WatchHistoryStore(context) }
+    LaunchedEffect(channel.id) { if (channel.id.startsWith("addon-")) watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
 
     // Landscape is fullscreen by default. Back exits fullscreen first; rotating again
     // clears the temporary override so orientation-driven fullscreen works normally.
@@ -466,13 +471,18 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
 
     LaunchedEffect(player) {
         val activePlayer = player ?: return@LaunchedEffect
+        var saveTick = 0
         while (true) {
             delay(1_000)
+            saveTick++
             shouldResumePlayback = activePlayer.playWhenReady
             // Live streams should reopen at the provider's live edge. Preserve position
             // only for non-live media that supports a meaningful seek position.
             if (activePlayer.playbackState == Player.STATE_READY && !activePlayer.isCurrentMediaItemLive) {
                 savedPositionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+                if (channel.id.startsWith("addon-") && saveTick % 5 == 0) {
+                    watchHistory.record(channel, savedPositionMs, activePlayer.duration.takeIf { it > 0L } ?: 0L)
+                }
             }
         }
     }
@@ -496,7 +506,14 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            onDispose {
+                if (channel.id.startsWith("addon-")) {
+                    val position = activePlayer.currentPosition.coerceAtLeast(0L)
+                    val duration = activePlayer.duration.takeIf { it > 0L } ?: 0L
+                    watchHistory.record(channel, position, duration)
+                }
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
         }
     }
 
@@ -589,5 +606,5 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 }
 
 @Composable private fun LibraryScreen() { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) { item { Text("Your Library", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("A home for your saved and watched titles", color=Muted) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV. Movie and series favorites require catalogue support.") }; item { EmptySection("Watch history", "Viewing history is not recorded in this phase.") }; item { EmptySection("Continue watching", "Playback progress is not persisted in Phase 2.") } } }
-@Composable private fun SettingsScreen(onDetail:(String)->Unit) { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) { item { Text("Settings", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("Make Nexvio yours", color=Muted); Spacer(Modifier.height(10.dp)) }; listOf("Appearance" to "Theme and visual preferences", "Playback preferences" to "Playback controls and defaults", "Content providers" to "Catalogue sources and addons", "IPTV playlists" to "Manage playlist sources", "Downloads" to "Offline media settings", "About Nexvio" to "Version and project information").forEach { (title,desc) -> item { Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail(title) }.padding(16.dp), verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight=FontWeight.SemiBold); Spacer(Modifier.height(4.dp)); Text(desc, color=Muted, fontSize=12.sp) }; Text("›", color=Lime, fontSize=24.sp) } } } } }
+@Composable private fun SettingsScreen(onDetail:(String)->Unit) { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) { item { Text("Settings", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("Make Nexvio yours", color=Muted); Spacer(Modifier.height(10.dp)) }; listOf("Appearance" to "Theme and visual preferences", "Playback preferences" to "Playback controls and defaults", "Watch history" to "Recently watched movies and series progress", "Content providers" to "Catalogue sources and addons", "IPTV playlists" to "Manage playlist sources", "Downloads" to "Offline media settings", "About Nexvio" to "Version and project information").forEach { (title,desc) -> item { Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail(title) }.padding(16.dp), verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight=FontWeight.SemiBold); Spacer(Modifier.height(4.dp)); Text(desc, color=Muted, fontSize=12.sp) }; Text("›", color=Lime, fontSize=24.sp) } } } } }
 @Composable private fun InfoPage(title:String) { Column(Modifier.fillMaxWidth().padding(20.dp).background(Panel, RoundedCornerShape(18.dp)).padding(18.dp)) { Text(title, fontSize=23.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text(when(title) { "About Nexvio" -> "Nexvio 1.0.0 • Phase 2\nMovies • Series • Live TV\nAn original Android application."; "Search" -> "Search will become available when a real movie or series catalogue provider is connected."; "Appearance" -> "Nexvio currently uses its premium dark appearance."; "Playback preferences" -> "Live TV uses AndroidX Media3. Supported formats depend on stream and device compatibility."; "Content providers" -> "Movie and series provider integration is planned for a later phase."; "IPTV playlists" -> "Import an M3U/M3U8 file from Live TV or provide an HTTP/HTTPS playlist URL."; "Downloads" -> "Download supported direct media URLs and manage your offline files."; else -> "This feature is planned for a later Nexvio phase." }, color=Muted, lineHeight=23.sp); Spacer(Modifier.height(14.dp)); Text("NEXVIO", color=Lime, fontSize=10.sp, letterSpacing=1.5.sp) } }
