@@ -18,32 +18,35 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val LATEST_RELEASE_API = "https://api.github.com/repos/nexarion666-png/Nexvio-/releases/latest"
-private const val RELEASES_PAGE = "https://github.com/nexarion666-png/Nexvio-/releases/latest"
+private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site.vercel.app/latest.json"
 
 @Composable
 fun NexvioUpdateChecker() {
     val context = LocalContext.current
-    var updateTag by remember { mutableStateOf<String?>(null) }
+    var updateVersion by remember { mutableStateOf<String?>(null) }
     var releaseNotes by remember { mutableStateOf("") }
+    var downloadUrl by remember { mutableStateOf<String?>(null) }
     var dismissed by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        updateTag = withContext(Dispatchers.IO) {
+        val update = withContext(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
             try {
-                connection = (URL(LATEST_RELEASE_API).openConnection() as HttpURLConnection).apply {
+                connection = (URL(LATEST_UPDATE_JSON).openConnection() as HttpURLConnection).apply {
                     connectTimeout = 7000
                     readTimeout = 7000
-                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("Accept", "application/json")
                     setRequestProperty("User-Agent", "Nexvio-Android")
                 }
                 if (connection.responseCode !in 200..299) return@withContext null
-                val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                val tag = release.optString("tag_name").removePrefix("v")
-                if (tag.isNotBlank() && isNewerVersion(tag, BuildConfig.VERSION_NAME)) {
-                    releaseNotes = release.optString("body").take(1000)
-                    tag
+                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                val version = json.optString("version").removePrefix("v")
+                val url = json.optString("downloadUrl")
+                if (version.isNotBlank() &&
+                    url.startsWith("https://") &&
+                    isNewerVersion(version, BuildConfig.VERSION_NAME)
+                ) {
+                    Triple(version, json.optString("releaseNotes"), url)
                 } else null
             } catch (_: Exception) {
                 null
@@ -51,18 +54,23 @@ fun NexvioUpdateChecker() {
                 connection?.disconnect()
             }
         }
+        updateVersion = update?.first
+        releaseNotes = update?.second.orEmpty()
+        downloadUrl = update?.third
     }
 
-    if (updateTag != null && !dismissed) {
+    if (updateVersion != null && downloadUrl != null && !dismissed) {
         AlertDialog(
             onDismissRequest = { dismissed = true },
             title = { Text("Nexvio update available") },
-            text = { Text("Version $updateTag is available. You have version ${BuildConfig.VERSION_NAME}.\n\n${releaseNotes.ifBlank { "Bug fixes and improvements." }}") },
+            text = {
+                Text("Version $updateVersion is available. You have version ${BuildConfig.VERSION_NAME}.\n\n${releaseNotes.ifBlank { "Bug fixes and improvements." }}")
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RELEASES_PAGE)))
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
                     dismissed = true
-                }) { Text("Update now") }
+                }) { Text("Download update") }
             },
             dismissButton = { TextButton(onClick = { dismissed = true }) { Text("Later") } }
         )
