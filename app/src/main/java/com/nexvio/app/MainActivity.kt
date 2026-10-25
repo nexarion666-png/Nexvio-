@@ -657,7 +657,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         }
         if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=10.dp, vertical=8.dp), verticalArrangement=Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
-                Text("↶ 10s", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
+                Text("↶", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
                     modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(8.dp))
                 Text("Speed ${playbackSpeed}×", color=Accent,
                     modifier=Modifier.clickable {
@@ -666,29 +666,29 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                         playbackSpeed = next
                         player?.setPlaybackSpeed(next)
                     }.padding(8.dp))
-                Text("10s ↷", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
+                Text("↷", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
                     modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() } }.padding(8.dp))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
-                Text("Audio", color=Accent, modifier=Modifier.clickable {
+                Text("♫", color=Accent, modifier=Modifier.clickable {
                     player?.let { active -> TrackSelectionDialogBuilder(context, "Audio tracks", active, C.TRACK_TYPE_AUDIO).build().show() }
                 }.padding(8.dp))
-                Text("Subtitles", color=Accent, modifier=Modifier.clickable {
+                Text("CC", color=Accent, modifier=Modifier.clickable {
                     player?.let { active -> TrackSelectionDialogBuilder(context, "Subtitles", active, C.TRACK_TYPE_TEXT).setShowDisableOption(true).build().show() }
                 }.padding(8.dp))
-                Text("Brightness −", color=Accent, modifier=Modifier.clickable {
+                Text("☼−", color=Accent, modifier=Modifier.clickable {
                     brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
                     activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
                 }.padding(8.dp))
-                Text("Brightness +", color=Accent, modifier=Modifier.clickable {
+                Text("☼+", color=Accent, modifier=Modifier.clickable {
                     brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
                     activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
                 }.padding(8.dp))
-                Text("Vol −", color=Accent, modifier=Modifier.clickable {
+                Text("🔉", color=Accent, modifier=Modifier.clickable {
                     val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume - 1).coerceAtLeast(0), 0)
                 }.padding(8.dp))
-                Text("Vol +", color=Accent, modifier=Modifier.clickable {
+                Text("🔊", color=Accent, modifier=Modifier.clickable {
                     val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
                 }.padding(8.dp))
@@ -696,13 +696,13 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         }
         if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) { Text(channel.name, fontWeight=FontWeight.Bold); Text("Live stream • availability depends on the provider", color=Muted, fontSize=12.sp) }
-            Text(if (isPlaying) "Pause" else "Play", color=Accent, modifier=Modifier.clickable {
+            Text(if (isPlaying) "Ⅱ" else "▶", color=Accent, modifier=Modifier.clickable {
                 val activePlayer = player
                 if (activePlayer != null) {
                     if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; activePlayer.play() }
                 } else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; retry++ }
             }.padding(10.dp))
-            Text("Fullscreen", color=Accent, modifier=Modifier.clickable { fullscreenOverride=true }.padding(10.dp))
+            Text("⛶", color=Accent, modifier=Modifier.clickable { fullscreenOverride=true }.padding(10.dp))
         }
     }
 }
