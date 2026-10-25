@@ -1,5 +1,6 @@
 package com.nexvio.app
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,6 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -45,6 +48,25 @@ internal data class TmdbTitle(
     val rating: Double,
     val mediaType: String
 )
+
+internal class WatchlistStore(context: Context) {
+    private val prefs = context.getSharedPreferences("nexvio_watchlist", Context.MODE_PRIVATE)
+    fun all(): List<TmdbTitle> {
+        val array = runCatching { JSONArray(prefs.getString("items", "[]")) }.getOrElse { JSONArray() }
+        return (0 until array.length()).mapNotNull { index ->
+            val obj = array.optJSONObject(index) ?: return@mapNotNull null
+            TmdbTitle(obj.optInt("id"), obj.optString("title"), obj.optString("overview"), obj.optString("posterPath").takeIf { it.isNotBlank() && it != "null" }, obj.optString("year"), obj.optDouble("rating"), obj.optString("mediaType"))
+        }
+    }
+    fun contains(item: TmdbTitle): Boolean = all().any { it.id == item.id && it.mediaType == item.mediaType }
+    fun add(item: TmdbTitle) { save(all().filterNot { it.id == item.id && it.mediaType == item.mediaType } + item) }
+    fun remove(item: TmdbTitle) { save(all().filterNot { it.id == item.id && it.mediaType == item.mediaType }) }
+    private fun save(items: List<TmdbTitle>) {
+        val array = JSONArray()
+        items.forEach { title -> array.put(JSONObject().put("id", title.id).put("title", title.title).put("overview", title.overview).put("posterPath", title.posterPath).put("year", title.year).put("rating", title.rating).put("mediaType", title.mediaType)) }
+        prefs.edit().putString("items", array.toString()).apply()
+    }
+}
 
 internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<TmdbTitle> = withContext(Dispatchers.IO) {
     require(TMDB_API_KEY != "PASTE_YOUR_TMDB_API_KEY_HERE" && TMDB_API_KEY.isNotBlank()) {
@@ -90,7 +112,7 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
 }
 
 @Composable
-internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit) {
+internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit, onTitleSelected: (TmdbTitle) -> Unit) {
     var query by remember { mutableStateOf("") }
     var titles by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -178,7 +200,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 items(titles, key = { it.mediaType + "-" + it.id }) { item ->
-                    Column(Modifier.fillMaxWidth().clickable { selected = item }) {
+                    Column(Modifier.fillMaxWidth().clickable { selected = item; onTitleSelected(item) }) {
                         AsyncImage(
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
@@ -200,7 +222,10 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit)
 }
 
 @Composable
-private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit) {
+internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit) {
+    val context = LocalContext.current
+    val watchlist = remember(context) { WatchlistStore(context) }
+    var savedToWatchlist by remember(item.id, item.mediaType) { mutableStateOf(watchlist.contains(item)) }
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
     Column(Modifier.fillMaxSize().background(CatalogueInk)) {
@@ -227,6 +252,7 @@ private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChan
                         Text("•", color = CatalogueMuted)
                         Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
                     }
+                    Button(onClick = { if (savedToWatchlist) watchlist.remove(item) else watchlist.add(item); savedToWatchlist = !savedToWatchlist }, colors = ButtonDefaults.buttonColors(containerColor = CataloguePanel, contentColor = CatalogueAccent)) { Text(if (savedToWatchlist) "✓  In watchlist" else "＋  Add to watchlist") }
                     Spacer(Modifier.height(24.dp))
                     Text("Overview", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
