@@ -3,6 +3,7 @@ package com.nexvio.app
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.media.AudioManager
 import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
@@ -38,6 +39,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -49,6 +51,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TrackSelectionDialogBuilder
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
@@ -360,6 +363,9 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
     var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(WatchHistoryStore(context).get(channel.id)?.positionMs ?: 0L) }
     var shouldResumePlayback by rememberSaveable(channel.id) { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
+    var brightnessLevel by rememberSaveable { mutableFloatStateOf(0.6f) }
+    val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
     val watchHistory = remember { WatchHistoryStore(context) }
     LaunchedEffect(channel.id) { if (channel.id.startsWith("addon-")) watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
@@ -403,6 +409,8 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
             val instance = ExoPlayer.Builder(context.applicationContext)
                 .setMediaSourceFactory(mediaSourceFactory)
+                .setSeekBackIncrementMs(10_000L)
+                .setSeekForwardIncrementMs(10_000L)
                 .build()
             createdPlayer = instance
             player = instance
@@ -551,6 +559,45 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 Button(onClick={ playbackError=null; shouldResumePlayback=true; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Lime, contentColor=Ink)) { Text("Retry") }
             }
             if (fullscreen) Text("Exit fullscreen  ✕", color=Color.White, modifier=Modifier.align(Alignment.TopEnd).padding(14.dp).background(Panel, RoundedCornerShape(8.dp)).clickable { fullscreenOverride=false }.padding(10.dp))
+        }
+        if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=10.dp, vertical=8.dp), verticalArrangement=Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
+                Text("↶ 10s", color=if (player?.isCurrentMediaItemSeekable == true) Lime else Muted,
+                    modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(8.dp))
+                Text("Speed ${playbackSpeed}×", color=Lime,
+                    modifier=Modifier.clickable {
+                        val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+                        val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
+                        playbackSpeed = next
+                        player?.setPlaybackSpeed(next)
+                    }.padding(8.dp))
+                Text("10s ↷", color=if (player?.isCurrentMediaItemSeekable == true) Lime else Muted,
+                    modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() } }.padding(8.dp))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
+                Text("Audio", color=Lime, modifier=Modifier.clickable {
+                    player?.let { active -> TrackSelectionDialogBuilder(context, "Audio tracks", active, C.TRACK_TYPE_AUDIO).build().show() }
+                }.padding(8.dp))
+                Text("Subtitles", color=Lime, modifier=Modifier.clickable {
+                    player?.let { active -> TrackSelectionDialogBuilder(context, "Subtitles", active, C.TRACK_TYPE_TEXT).setShowDisableOption(true).build().show() }
+                }.padding(8.dp))
+                Text("Brightness −", color=Lime, modifier=Modifier.clickable {
+                    brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
+                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                }.padding(8.dp))
+                Text("Brightness +", color=Lime, modifier=Modifier.clickable {
+                    brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
+                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                }.padding(8.dp))
+                Text("Vol −", color=Lime, modifier=Modifier.clickable {
+                    val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume - 1).coerceAtLeast(0), 0)
+                }.padding(8.dp))
+                Text("Vol +", color=Lime, modifier=Modifier.clickable {
+                    val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+                }.padding(8.dp))
+            }
         }
         if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) { Text(channel.name, fontWeight=FontWeight.Bold); Text("Live stream • availability depends on the provider", color=Muted, fontSize=12.sp) }
