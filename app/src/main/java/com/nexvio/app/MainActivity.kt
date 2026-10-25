@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
     var current by remember { mutableStateOf("Home") }
     var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
+    var selectedTitle by remember { mutableStateOf<TmdbTitle?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
@@ -125,7 +126,9 @@ class MainActivity : ComponentActivity() {
                 PlayerScreen(channel = playing!!, onBack = { playing = null })
             } else Column {
                 Box(Modifier.weight(1f)) {
-                    if (detail == "Content providers") {
+                    if (selectedTitle != null) {
+                        TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it })
+                    } else if (detail == "Content providers") {
                         AddonManagerScreen(onBack = { detail = null })
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
@@ -138,8 +141,8 @@ class MainActivity : ComponentActivity() {
                             if (detail == "Downloads") DownloadsScreen() else InfoPage(detail!!)
                         }
                     } else when(current) {
-                        "Home" -> HomeScreen(onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it })
-                        "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it })
+                        "Home" -> HomeScreen(onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
+                        "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
                         "Library" -> OfflineLibraryScreen()
                         else -> SettingsScreen(onDetail={detail=it})
@@ -159,7 +162,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Brand() { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(12.dp)), contentAlignment=Alignment.Center) { Text("N", color=Ink, fontSize=25.sp, fontWeight=FontWeight.Black) }; Spacer(Modifier.width(10.dp)); Column { Text("NEXVIO", fontWeight=FontWeight.Black, letterSpacing=2.sp, fontSize=19.sp); Text("Movies • Series • Live TV", color=Muted, fontSize=11.sp) } } }
-@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit) {
+@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
     val historyStore = remember(context) { WatchHistoryStore(context) }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
@@ -189,7 +192,7 @@ class MainActivity : ComponentActivity() {
         }
         item {
             val featured = featuredTitles.getOrNull(if (featuredTitles.isEmpty()) 0 else featuredIndex % featuredTitles.size)
-            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { onOpen("Movies") }) {
+            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { featured?.let(onTitleSelected) }) {
                 if (featured?.posterPath != null) AsyncImage(model="https://image.tmdb.org/t/p/w780${featured.posterPath}",contentDescription=featured.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color(0xCC101114),RoundedCornerShape(24.dp)))
                 Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
@@ -207,9 +210,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
-        item { HomePosterRow(movies) { onOpen("Movies") } }
+        item { HomePosterRow(movies, onTitleSelected) }
         item { HomeTitleRow("Popular Series","See all") { onOpen("Series") } }
-        item { HomePosterRow(series) { onOpen("Series") } }
+        item { HomePosterRow(series, onTitleSelected) }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 HomeQuickCard("Live TV","Watch channels",Modifier.weight(1f)) { onOpen("Live TV") }
@@ -229,11 +232,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:()->Unit) {
+@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:(TmdbTitle)->Unit) {
     if(titles.isEmpty()) Text("Loading titles…",color=Muted,modifier=Modifier.padding(horizontal=18.dp))
     else LazyRow(contentPadding=PaddingValues(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         items(titles,key={"poster-${it.mediaType}-${it.id}"}) { title ->
-            Column(Modifier.width(126.dp).clickable(onClick=onClick)) {
+            Column(Modifier.width(126.dp).clickable { onClick(title) }) {
                 AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height(182.dp).background(Panel,RoundedCornerShape(13.dp)))
                 Spacer(Modifier.height(7.dp))
                 Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
@@ -654,7 +657,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         }
         if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=10.dp, vertical=8.dp), verticalArrangement=Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
-                Text("↶ 10s", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
+                Text("↶", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
                     modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(8.dp))
                 Text("Speed ${playbackSpeed}×", color=Accent,
                     modifier=Modifier.clickable {
@@ -663,29 +666,29 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                         playbackSpeed = next
                         player?.setPlaybackSpeed(next)
                     }.padding(8.dp))
-                Text("10s ↷", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
+                Text("↷", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
                     modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() } }.padding(8.dp))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
-                Text("Audio", color=Accent, modifier=Modifier.clickable {
+                Text("♫", color=Accent, modifier=Modifier.clickable {
                     player?.let { active -> TrackSelectionDialogBuilder(context, "Audio tracks", active, C.TRACK_TYPE_AUDIO).build().show() }
                 }.padding(8.dp))
-                Text("Subtitles", color=Accent, modifier=Modifier.clickable {
+                Text("CC", color=Accent, modifier=Modifier.clickable {
                     player?.let { active -> TrackSelectionDialogBuilder(context, "Subtitles", active, C.TRACK_TYPE_TEXT).setShowDisableOption(true).build().show() }
                 }.padding(8.dp))
-                Text("Brightness −", color=Accent, modifier=Modifier.clickable {
+                Text("☼−", color=Accent, modifier=Modifier.clickable {
                     brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
                     activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
                 }.padding(8.dp))
-                Text("Brightness +", color=Accent, modifier=Modifier.clickable {
+                Text("☼+", color=Accent, modifier=Modifier.clickable {
                     brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
                     activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
                 }.padding(8.dp))
-                Text("Vol −", color=Accent, modifier=Modifier.clickable {
+                Text("🔉", color=Accent, modifier=Modifier.clickable {
                     val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume - 1).coerceAtLeast(0), 0)
                 }.padding(8.dp))
-                Text("Vol +", color=Accent, modifier=Modifier.clickable {
+                Text("🔊", color=Accent, modifier=Modifier.clickable {
                     val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
                 }.padding(8.dp))
@@ -693,13 +696,13 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         }
         if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f)) { Text(channel.name, fontWeight=FontWeight.Bold); Text("Live stream • availability depends on the provider", color=Muted, fontSize=12.sp) }
-            Text(if (isPlaying) "Pause" else "Play", color=Accent, modifier=Modifier.clickable {
+            Text(if (isPlaying) "Ⅱ" else "▶", color=Accent, modifier=Modifier.clickable {
                 val activePlayer = player
                 if (activePlayer != null) {
                     if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; activePlayer.play() }
                 } else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; retry++ }
             }.padding(10.dp))
-            Text("Fullscreen", color=Accent, modifier=Modifier.clickable { fullscreenOverride=true }.padding(10.dp))
+            Text("⛶", color=Accent, modifier=Modifier.clickable { fullscreenOverride=true }.padding(10.dp))
         }
     }
 }
