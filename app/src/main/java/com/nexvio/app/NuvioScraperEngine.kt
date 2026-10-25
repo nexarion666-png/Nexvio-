@@ -81,8 +81,10 @@ internal object NuvioScraperEngine {
                         val type = JSONObject.quote(if (item.mediaType == "movie") "movie" else "tv")
                         val s = if (item.mediaType == "movie") "null" else season.toString()
                         val e = if (item.mediaType == "movie") "null" else episode.toString()
-                        val js = "(function(){var module={exports:{}},exports=module.exports;" +
-                            "var require=function(n){throw new Error('Unsupported module: '+n)};" +
+                        val js = "(function(){var module={exports:{}},exports=module.exports;var __fetchCallbacks={};" +
+                            "window.__nexvioFetchDone=function(id,payload){var cb=__fetchCallbacks[id];if(!cb)return;delete __fetchCallbacks[id];try{var d=JSON.parse(payload);cb.resolve({ok:d.status>=200&&d.status<300,status:d.status,text:function(){return Promise.resolve(d.body)},json:function(){try{return Promise.resolve(JSON.parse(d.body))}catch(e){return Promise.reject(e)}}})}catch(e){cb.reject(e)}};" +
+                            "window.fetch=function(input,opts){return new Promise(function(resolve,reject){var id=String(Date.now())+Math.random().toString(36).slice(2);__fetchCallbacks[id]={resolve:resolve,reject:reject};NexvioBridge.request(id,String(input),JSON.stringify(opts||{}))})};" +
+                            "var require=function(n){throw new Error('Unsupported module: '+n)};"
                             "try{(new Function('module','exports','require'," + src + "))(module,exports,require);" +
                             "var fn=module.exports&&module.exports.getStreams;if(typeof fn!=='function')throw new Error('Missing getStreams export');" +
                             "Promise.resolve(fn(" + id + "," + type + "," + s + "," + e + ")).then(function(v){" +
@@ -128,6 +130,69 @@ internal object NuvioScraperEngine {
     private class Bridge(private val web: WebView) {
         @Volatile var done: ((String) -> Unit)? = null
         @JavascriptInterface fun finish(result: String) { done?.invoke(result.take(512 * 1024)) }
+
+        @JavascriptInterface
+        fun request(id: String, address: String, optionsText: String) {
+            pool.execute {
+                val payload = try {
+                    val uri = URI(address.trim())
+                    require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) &&
+                        !uri.host.isNullOrBlank() && uri.userInfo == null)
+                    val host = uri.host.lowercase()
+                    val ip = java.net.InetAddress.getByName(host)
+                    require(host != "localhost" && !host.endsWith(".local") && !ip.isAnyLocalAddress &&
+                        !ip.isLoopbackAddress && !ip.isLinkLocalAddress && !ip.isSiteLocalAddress) {
+                        "Requests to local/private hosts are blocked."
+                    }
+                    val options = JSONObject(optionsText)
+                    val method = options.optString("method", "GET").uppercase()
+                    require(method == "GET" || method == "POST" || method == "HEAD")
+                    val connection = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
+                    try {
+                        connection.connectTimeout = 8000
+                        connection.readTimeout = 10000
+                        connection.instanceFollowRedirects = true
+                        connection.requestMethod = method
+                        connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
+                        val headers = options.optJSONObject("headers")
+                        if (headers != null) {
+                            val keys = headers.keys()
+                            while (keys.hasNext()) {
+                                val key = keys.next()
+                                if (!key.equals("host", true) && !key.equals("content-length", true))
+                                    connection.setRequestProperty(key.take(80), headers.optString(key).take(2000))
+                            }
+                        }
+                        val body = options.optString("body")
+                        if (method == "POST" && body.isNotBlank()) {
+                            connection.doOutput = true
+                            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) }
+                        }
+                        val status = connection.responseCode
+                        val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                        val response = stream?.use { input ->
+                            val out = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(4096)
+                            var total = 0
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                total += n
+                                if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB")
+                                out.write(buffer, 0, n)
+                            }
+                            out.toString("UTF-8")
+                        }.orEmpty()
+                        JSONObject().put("status", status).put("body", response).toString()
+                    } finally { connection.disconnect() }
+                } catch (e: Exception) {
+                    JSONObject().put("status", 599).put("body", e.message ?: "Network request failed").toString()
+                }
+                val jsId = JSONObject.quote(id)
+                val jsPayload = JSONObject.quote(payload)
+                main.post { web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + jsPayload + ")", null) }
+            }
+        }
     }
 
     private fun publicHttp(value: String): Boolean = try {
