@@ -120,12 +120,16 @@ class MainActivity : ComponentActivity() {
             } else Column {
                 Box(Modifier.weight(1f)) {
                     if (detail != null) {
-                        Column {
-                            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment=Alignment.CenterVertically) {
-                                Text("‹  Back", color=Lime, modifier=Modifier.clickable { detail=null })
-                                Spacer(Modifier.width(18.dp)); Text(detail!!, fontSize=20.sp, fontWeight=FontWeight.Bold)
+                        if (detail == "Content providers") {
+                            AddonsScreen(onBack = { detail = null })
+                        } else {
+                            Column {
+                                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment=Alignment.CenterVertically) {
+                                    Text("‹  Back", color=Lime, modifier=Modifier.clickable { detail=null })
+                                    Spacer(Modifier.width(18.dp)); Text(detail!!, fontSize=20.sp, fontWeight=FontWeight.Bold)
+                                }
+                                InfoPage(detail!!)
                             }
-                            InfoPage(detail!!)
                         }
                     } else when(current) {
                         "Home" -> HomeScreen(onOpen={ current=it }, onDetail={detail=it})
