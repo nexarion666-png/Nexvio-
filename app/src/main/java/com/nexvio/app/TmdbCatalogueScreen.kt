@@ -215,7 +215,16 @@ private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChan
                     Spacer(Modifier.height(8.dp))
                     Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
                     Spacer(Modifier.height(24.dp))
-                    StreamDiscoverySection(item = item, onPlay = onPlay)
+                    var selectedSeason by remember(item.id) { mutableIntStateOf(1) }
+                    var selectedEpisode by remember(item.id) { mutableIntStateOf(1) }
+                    if (item.mediaType == "tv") {
+                        SeriesEpisodePicker(item = item, onSelection = { season, episode ->
+                            selectedSeason = season
+                            selectedEpisode = episode
+                        })
+                        Spacer(Modifier.height(14.dp))
+                    }
+                    StreamDiscoverySection(item = item, seasonNumber = selectedSeason, episodeNumber = selectedEpisode, onPlay = onPlay)
                     Spacer(Modifier.height(20.dp))
                     Text("Movie and series information provided by TMDB. Nexvio is not endorsed or certified by TMDB.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
                 }
@@ -232,6 +241,112 @@ private data class DiscoveredStream(
     val quality: String
 )
 
+private data class TmdbSeason(val number: Int, val name: String, val episodeCount: Int)
+private data class TmdbEpisode(val number: Int, val name: String)
+
+private suspend fun fetchTmdbSeasons(item: TmdbTitle): List<TmdbSeason> = withContext(Dispatchers.IO) {
+    if (item.mediaType != "tv") return@withContext emptyList()
+    val connection = URL("https://api.themoviedb.org/3/tv/${item.id}?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
+        .openConnection() as HttpURLConnection
+    try {
+        connection.connectTimeout = 10000
+        connection.readTimeout = 12000
+        if (connection.responseCode !in 200..299) throw IllegalStateException("Could not load seasons from TMDB.")
+        val seasons = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optJSONArray("seasons")
+            ?: return@withContext emptyList()
+        (0 until seasons.length()).mapNotNull { i ->
+            val season = seasons.optJSONObject(i) ?: return@mapNotNull null
+            val number = season.optInt("season_number", -1)
+            if (number < 0 || season.optInt("episode_count", 0) <= 0) null
+            else TmdbSeason(number, season.optString("name").ifBlank { "Season $number" }, season.optInt("episode_count"))
+        }
+    } finally { connection.disconnect() }
+}
+
+private suspend fun fetchTmdbEpisodes(item: TmdbTitle, seasonNumber: Int): List<TmdbEpisode> = withContext(Dispatchers.IO) {
+    val connection = URL("https://api.themoviedb.org/3/tv/${item.id}/season/$seasonNumber?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
+        .openConnection() as HttpURLConnection
+    try {
+        connection.connectTimeout = 10000
+        connection.readTimeout = 12000
+        if (connection.responseCode !in 200..299) throw IllegalStateException("Could not load episodes from TMDB.")
+        val episodes = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optJSONArray("episodes")
+            ?: return@withContext emptyList()
+        (0 until episodes.length()).mapNotNull { i ->
+            val episode = episodes.optJSONObject(i) ?: return@mapNotNull null
+            val number = episode.optInt("episode_number", 0)
+            if (number <= 0) null else TmdbEpisode(number, episode.optString("name").ifBlank { "Episode $number" })
+        }
+    } finally { connection.disconnect() }
+}
+
+@Composable
+private fun SeriesEpisodePicker(item: TmdbTitle, onSelection: (Int, Int) -> Unit) {
+    var seasons by remember(item.id) { mutableStateOf<List<TmdbSeason>>(emptyList()) }
+    var episodes by remember(item.id) { mutableStateOf<List<TmdbEpisode>>(emptyList()) }
+    var selectedSeason by remember(item.id) { mutableIntStateOf(1) }
+    var selectedEpisode by remember(item.id) { mutableIntStateOf(1) }
+    var seasonMenu by remember { mutableStateOf(false) }
+    var episodeMenu by remember { mutableStateOf(false) }
+    var loadingEpisodes by remember { mutableStateOf(false) }
+    var pickerError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(item.id) {
+        try {
+            seasons = fetchTmdbSeasons(item)
+            selectedSeason = seasons.firstOrNull { it.number == 1 }?.number ?: seasons.firstOrNull()?.number ?: 1
+        } catch (e: Exception) { pickerError = e.message ?: "Could not load seasons." }
+    }
+    LaunchedEffect(item.id, selectedSeason) {
+        loadingEpisodes = true
+        try {
+            episodes = fetchTmdbEpisodes(item, selectedSeason)
+            selectedEpisode = episodes.firstOrNull()?.number ?: 1
+            onSelection(selectedSeason, selectedEpisode)
+            pickerError = if (episodes.isEmpty()) "No episode list is available for this season." else null
+        } catch (e: Exception) {
+            episodes = emptyList()
+            pickerError = e.message ?: "Could not load episodes."
+        } finally { loadingEpisodes = false }
+    }
+
+    Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp)) {
+        Text("Choose episode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                OutlinedButton(onClick = { seasonMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(seasons.firstOrNull { it.number == selectedSeason }?.name ?: "Season $selectedSeason", maxLines = 1)
+                }
+                DropdownMenu(expanded = seasonMenu, onDismissRequest = { seasonMenu = false }) {
+                    seasons.forEach { season ->
+                        DropdownMenuItem(text = { Text(season.name) }, onClick = {
+                            seasonMenu = false
+                            if (selectedSeason != season.number) selectedSeason = season.number
+                        })
+                    }
+                }
+            }
+            Box(Modifier.weight(1f)) {
+                OutlinedButton(onClick = { episodeMenu = true }, enabled = episodes.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                    Text(episodes.firstOrNull { it.number == selectedEpisode }?.let { "E${it.number}: ${it.name}" } ?: "Episode $selectedEpisode", maxLines = 1)
+                }
+                DropdownMenu(expanded = episodeMenu, onDismissRequest = { episodeMenu = false }) {
+                    episodes.forEach { episode ->
+                        DropdownMenuItem(text = { Text("E${episode.number}: ${episode.name}") }, onClick = {
+                            episodeMenu = false
+                            selectedEpisode = episode.number
+                            onSelection(selectedSeason, selectedEpisode)
+                        })
+                    }
+                }
+            }
+        }
+        if (loadingEpisodes) LinearProgressIndicator(Modifier.fillMaxWidth(), color = CatalogueLime)
+        if (pickerError != null) Text(pickerError.orEmpty(), color = CatalogueMuted, fontSize = 11.sp)
+    }
+}
+
 private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispatchers.IO) {
     val typePath = if (item.mediaType == "movie") "movie" else "tv"
     val connection = URL("https://api.themoviedb.org/3/$typePath/${item.id}/external_ids?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
@@ -247,7 +362,7 @@ private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispa
     } finally { connection.disconnect() }
 }
 
-private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle): List<DiscoveredStream> = withContext(Dispatchers.IO) {
+private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int): List<DiscoveredStream> = withContext(Dispatchers.IO) {
     val prefs = context.getSharedPreferences("nexvio_addons", android.content.Context.MODE_PRIVATE)
     val installed = org.json.JSONArray(prefs.getString("installed", "[]") ?: "[]")
     val addons = (0 until installed.length()).mapNotNull { installed.optJSONObject(it) }
@@ -262,7 +377,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
     val resourceType = if (item.mediaType == "movie") "movie" else "series"
     // Stremio-compatible series endpoints require an episode ID. Phase 3C uses S1:E1
     // as the initial lookup; episode selection can be added in a later iteration.
-    val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:1:1"
+    val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
     val output = mutableListOf<DiscoveredStream>()
     for ((addonName, manifestUrl) in addons) {
         try {
@@ -297,20 +412,22 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
 }
 
 @Composable
-private fun StreamDiscoverySection(item: TmdbTitle, onPlay: (TvChannel) -> Unit) {
+private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var streams by remember(item.id, item.mediaType) { mutableStateOf<List<DiscoveredStream>>(emptyList()) }
     var loading by remember(item.id, item.mediaType) { mutableStateOf(false) }
     var searched by remember(item.id, item.mediaType) { mutableStateOf(false) }
     var error by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
+    var qualityFilter by remember(item.id, item.mediaType) { mutableStateOf("All qualities") }
+    var qualityMenu by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
         Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(
             if (item.mediaType == "movie") "Search enabled Stremio-compatible add-ons for playable sources."
-            else "Search enabled Stremio-compatible add-ons for season 1, episode 1. Episode selection is not available yet.",
+            else "Search enabled Stremio-compatible add-ons for season $seasonNumber, episode $episodeNumber.",
             color = CatalogueMuted, fontSize = 13.sp, lineHeight = 19.sp
         )
         Spacer(Modifier.height(12.dp))
@@ -322,7 +439,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, onPlay: (TvChannel) -> Unit)
                     error = null
                     streams = emptyList()
                     try {
-                        streams = fetchAddonStreams(context, item)
+                        streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber)
                         if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
                     } catch (e: Exception) {
                         error = e.message ?: "Stream discovery failed."
@@ -345,7 +462,23 @@ private fun StreamDiscoverySection(item: TmdbTitle, onPlay: (TvChannel) -> Unit)
         if (streams.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Text("${streams.size} source(s) found", color = CatalogueLime, fontWeight = FontWeight.SemiBold)
-            streams.forEach { stream ->
+            Spacer(Modifier.height(8.dp))
+            Box {
+                OutlinedButton(onClick = { qualityMenu = true }) { Text("Quality: $qualityFilter") }
+                DropdownMenu(expanded = qualityMenu, onDismissRequest = { qualityMenu = false }) {
+                    listOf("All qualities", "4K", "2160P", "1080P", "720P", "480P", "360P", "Quality unknown").forEach { option ->
+                        DropdownMenuItem(text = { Text(option) }, onClick = { qualityFilter = option; qualityMenu = false })
+                    }
+                }
+            }
+            val visibleStreams = streams.filter { stream ->
+                qualityFilter == "All qualities" ||
+                    (qualityFilter == "Quality unknown" && stream.quality == "Quality unknown") ||
+                    stream.quality.equals(qualityFilter, ignoreCase = true) ||
+                    (qualityFilter == "4K" && stream.quality.equals("2160P", ignoreCase = true))
+            }
+            if (visibleStreams.isEmpty()) Text("No sources match this quality filter.", color = CatalogueMuted, fontSize = 12.sp)
+            visibleStreams.forEach { stream ->
                 Spacer(Modifier.height(8.dp))
                 Row(
                     Modifier.fillMaxWidth().background(CatalogueInk, RoundedCornerShape(10.dp))
