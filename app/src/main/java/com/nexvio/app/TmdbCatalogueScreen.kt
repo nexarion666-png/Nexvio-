@@ -190,13 +190,13 @@ private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹  Back", color = CatalogueLime, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
-            Text("\${if (item.mediaType == "movie") "Movie" else "Series"} details", color = Color.White,
+            Text("${if (item.mediaType == "movie") "Movie" else "Series"} details", color = Color.White,
                 fontSize = 19.sp, fontWeight = FontWeight.Bold)
         }
         androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
             item {
                 Box(Modifier.fillMaxWidth().height(330.dp).background(CataloguePanel), contentAlignment = Alignment.Center) {
-                    AsyncImage(model = item.posterPath?.let { "\${TMDB_IMAGE_BASE}\$it" }, contentDescription = item.title, modifier = Modifier.fillMaxSize())
+                    AsyncImage(model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" }, contentDescription = item.title, modifier = Modifier.fillMaxSize())
                 }
             }
             item {
@@ -206,7 +206,7 @@ private fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(year, color = CatalogueMuted, fontSize = 14.sp)
                         Text("•", color = CatalogueMuted)
-                        Text("★ \$rating / 10", color = CatalogueLime, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("★ $rating / 10", color = CatalogueLime, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         Text("•", color = CatalogueMuted)
                         Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
                     }
