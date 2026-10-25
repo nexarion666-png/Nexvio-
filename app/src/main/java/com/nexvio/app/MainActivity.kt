@@ -165,27 +165,30 @@ class MainActivity : ComponentActivity() {
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
+    var featuredIndex by remember { mutableIntStateOf(0) }
+    val featuredTitles = remember(movies, series) { (movies + series).distinctBy { it.mediaType + "-" + it.id } }
     LaunchedEffect(Unit) {
         while (true) { watchEntries = historyStore.all(); delay(1500) }
     }
     LaunchedEffect(Unit) {
         try { movies = fetchTmdbTitles("movie", "").take(10); series = fetchTmdbTitles("tv", "").take(10) } catch (_: Exception) { }
     }
+    LaunchedEffect(featuredTitles.size) {
+        if (featuredTitles.size > 1) {
+            while (true) {
+                delay(5000)
+                featuredIndex = (featuredIndex + 1) % featuredTitles.size
+            }
+        }
+    }
     LazyColumn(contentPadding=PaddingValues(bottom=22.dp), verticalArrangement=Arrangement.spacedBy(20.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=18.dp).padding(top=20.dp), verticalAlignment=Alignment.CenterVertically) {
                 Brand()
-                Spacer(Modifier.weight(1f))
-                Text("⚙", color=Color.White, fontSize=21.sp, modifier=Modifier.background(Panel,RoundedCornerShape(12.dp)).clickable { onDetail("Settings") }.padding(10.dp))
             }
         }
         item {
-            Row(Modifier.fillMaxWidth().padding(horizontal=18.dp).background(Panel,RoundedCornerShape(14.dp)).clickable { onOpen("Movies") }.padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
-                Text("⌕",color=Muted,fontSize=22.sp); Spacer(Modifier.width(10.dp)); Text("Search movies and series",color=Muted)
-            }
-        }
-        item {
-            val featured = movies.firstOrNull()
+            val featured = featuredTitles.getOrNull(if (featuredTitles.isEmpty()) 0 else featuredIndex % featuredTitles.size)
             Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { onOpen("Movies") }) {
                 if (featured?.posterPath != null) AsyncImage(model="https://image.tmdb.org/t/p/w780${featured.posterPath}",contentDescription=featured.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color(0xCC101114),RoundedCornerShape(24.dp)))
