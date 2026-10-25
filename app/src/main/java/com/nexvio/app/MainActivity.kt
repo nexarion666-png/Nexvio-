@@ -130,7 +130,7 @@ class MainActivity : ComponentActivity() {
                     if (selectedTitle != null) {
                         TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it })
                     } else if (detail == "Content providers") {
-                        AddonManagerScreen(onBack = { detail = null })
+                        PluginRepositoryScreen(onBack = { detail = null })
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
                     } else if (detail != null) {
