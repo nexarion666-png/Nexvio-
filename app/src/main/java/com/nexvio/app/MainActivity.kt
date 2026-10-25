@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -148,12 +149,26 @@ class MainActivity : ComponentActivity() {
                         else -> SettingsScreen(onDetail={detail=it})
                     }
                 }
-                NavigationBar(containerColor=Panel) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)
+                        .background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
+                        .padding(horizontal = 5.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     listOf("Home","Search","Live TV","Library","Profile").forEach { item ->
-                        NavigationBarItem(selected=current==item, onClick={detail=null; current=item},
-                            icon={Text(when(item){"Home"->"⌂";"Search"->"⌕";"Live TV"->"◉";"Library"->"▤";else->"●"},fontSize=18.sp)},
-                            label={Text(item,fontSize=10.sp)},
-                            colors=NavigationBarItemDefaults.colors(selectedIconColor=Accent, selectedTextColor=Accent, indicatorColor=Ink))
+                        val selected = current == item && selectedTitle == null && detail == null
+                        Column(
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(32.dp))
+                                .background(if (selected) Ink else Color.Transparent)
+                                .clickable { detail = null; selectedTitle = null; current = item }
+                                .padding(vertical = 9.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(when(item) { "Home" -> "⌂"; "Search" -> "⌕"; "Live TV" -> "⊙"; "Library" -> "▤"; else -> "●" },
+                                color = if (selected) Accent else Muted, fontSize = 21.sp, lineHeight = 23.sp)
+                            Text(item, color = if (selected) Accent else Muted, fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                        }
                     }
                 }
             }
