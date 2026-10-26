@@ -242,7 +242,7 @@ internal object NuvioScraperEngine {
                             val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
                             NuvioDiscoveredStream(name, title, url, quality, headers)
                         }
-                        if (streams.isEmpty()) runSummaries[name] = "no streams (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})"
+                        if (streams.isEmpty()) runSummaries[name] = if (tracker.count > 0 && tracker.failed == tracker.count) "failed — all requests failed (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})" else "no streams (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})"
                         if (runActive.compareAndSet(true, false) && continuation.isActive) continuation.resume(streams)
                     } catch (e: Exception) {
                         if (continuation.isActive && runActive.compareAndSet(true, false)) {
