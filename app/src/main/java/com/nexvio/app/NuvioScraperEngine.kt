@@ -19,6 +19,9 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.TimeoutException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -53,12 +56,11 @@ internal data class NuvioRequestLog(val method: String, val url: String, val sta
  * Node built-ins and arbitrary require() modules are unavailable.
  */
 internal object NuvioScraperEngine {
-    const val ENGINE_VERSION = "engine-3"
+    const val ENGINE_VERSION = "engine-4"
     private const val MAX_BYTES = 1024 * 1024
     private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
     private const val LOGS_PER_PROVIDER = 30
     private val main = Handler(Looper.getMainLooper())
-    private val pool = Executors.newFixedThreadPool(16)
     private val requestLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<NuvioRequestLog>>()
     private val unsupportedModules = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
     fun requestLogs(provider: String): List<NuvioRequestLog> = synchronized(requestLogs) { requestLogs[provider]?.toList().orEmpty() }
@@ -71,9 +73,25 @@ internal object NuvioScraperEngine {
         @Volatile var count: Int = 0; private set
         @Volatile var pending: Int = 0; private set
         @Volatile var lastUrl: String = "(none)"; private set
-        @Synchronized fun started(url: String) { count++; pending++; lastUrl = url }
+        @Volatile var budgetExceeded: Boolean = false; private set
+        private val paths = linkedMapOf<String, Int>()
+        @Synchronized fun start(url: String, displayUrl: String): Boolean {
+            lastUrl = displayUrl
+            val key = try {
+                val uri = URI(url)
+                (uri.host ?: "(unknown-host)").lowercase() + (uri.rawPath.orEmpty().ifBlank { "/" })
+            } catch (_: Exception) { "(invalid-url)" }
+            paths[key] = (paths[key] ?: 0) + 1
+            if (count >= 150 || pending >= 6) { budgetExceeded = true; return false }
+            count++; pending++
+            return true
+        }
         @Synchronized fun finished() { pending = (pending - 1).coerceAtLeast(0) }
-        fun timeoutMessage(): String = NuvioDiagnosticFormat.timeoutMessage(count, lastUrl, pending > 0)
+        @Synchronized fun diagnostics(): String = paths.entries.sortedByDescending { it.value }.take(3)
+            .joinToString("; ") { "${it.key} (${it.value})" }.ifBlank { "(none)" }
+        fun budgetMessage(): String = "Provider stopped: request budget exceeded (${count} requests, last: ${lastUrl}); top host/paths: ${diagnostics()}"
+        fun failureMessage(reason: String): String = "${reason}; top host/paths: ${diagnostics()}"
+        fun timeoutMessage(): String = failureMessage(NuvioDiagnosticFormat.timeoutMessage(count, lastUrl, pending > 0))
     }
 
     suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}, providerFilter: String? = null, disabledProviders: Set<String> = emptySet()): List<NuvioDiscoveredStream> {
@@ -128,137 +146,186 @@ internal object NuvioScraperEngine {
             suspendCancellableCoroutine { continuation ->
                 val web = WebView(context)
                 val tracker = RequestTracker()
-                val bridge = Bridge(web, name, tracker)
+                val runActive = AtomicBoolean(true)
+                val executor = Executors.newFixedThreadPool(4)
+                lateinit var bridge: Bridge
+                val cleaned = AtomicBoolean(false)
+                fun cleanup() {
+                    if (!cleaned.compareAndSet(false, true)) return
+                    runActive.set(false)
+                    executor.shutdownNow()
+                    main.post {
+                        try { web.stopLoading() } catch (_: Exception) {}
+                        try { web.removeJavascriptInterface("NexvioBridge") } catch (_: Exception) {}
+                        try { web.destroy() } catch (_: Exception) {}
+                    }
+                }
+                fun failRun(message: String) {
+                    if (continuation.isActive && runActive.compareAndSet(true, false)) {
+                        continuation.resumeWithException(IllegalStateException(message))
+                    }
+                    cleanup()
+                }
+                bridge = Bridge(web, name, tracker, executor, runActive) {
+                    main.post { failRun(tracker.budgetMessage()) }
+                }
                 web.settings.javaScriptEnabled = true
                 web.settings.domStorageEnabled = false
                 web.settings.allowFileAccess = false
                 web.settings.allowContentAccess = false
                 web.webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String) {
-                        val src = JSONObject.quote(source)
-                        val id = JSONObject.quote(item.id.toString())
-                        val type = JSONObject.quote(if (item.mediaType == "movie") "movie" else "tv")
-                        val s = if (item.mediaType == "movie") "null" else season.toString()
-                        val e = if (item.mediaType == "movie") "null" else episode.toString()
-                        val cryptoJsSource = context.assets.open("crypto-js.min.js").bufferedReader().use { it.readText() }
-                        val js = context.assets.open("nexvio-prelude.js").bufferedReader().use { it.readText() }
-                            .replace("__NEXVIO_CRYPTO_JS__", cryptoJsSource)
-                            .replace("__NEXVIO_SOURCE_JSON__", src)
-                            .replace("__NEXVIO_ID_JSON__", id)
-                            .replace("__NEXVIO_TYPE_JSON__", type)
-                            .replace("__NEXVIO_SEASON__", s)
-                            .replace("__NEXVIO_EPISODE__", e)
-                        view.evaluateJavascript(js) { result ->
-                    android.util.Log.d("NexvioNuvio", "$name evaluateJavascript result: " + (result ?: "null"))
-                }
-                main.postDelayed({
-                    if (continuation.isActive && !bridge.scriptStarted) {
-                        continuation.resumeWithException(IllegalStateException("Injected script did not start (JS syntax error?)"))
-                        web.stopLoading()
-                        web.removeJavascriptInterface("NexvioBridge")
-                        web.destroy()
-                    }
-                }, 4_000)
+                        if (!runActive.get()) return
+                        try {
+                            val src = JSONObject.quote(source)
+                            val id = JSONObject.quote(item.id.toString())
+                            val type = JSONObject.quote(if (item.mediaType == "movie") "movie" else "tv")
+                            val s = if (item.mediaType == "movie") "null" else season.toString()
+                            val e = if (item.mediaType == "movie") "null" else episode.toString()
+                            val cryptoJsSource = context.assets.open("crypto-js.min.js").bufferedReader().use { it.readText() }
+                            val js = context.assets.open("nexvio-prelude.js").bufferedReader().use { it.readText() }
+                                .replace("__NEXVIO_CRYPTO_JS__", cryptoJsSource)
+                                .replace("__NEXVIO_SOURCE_JSON__", src)
+                                .replace("__NEXVIO_ID_JSON__", id)
+                                .replace("__NEXVIO_TYPE_JSON__", type)
+                                .replace("__NEXVIO_SEASON__", s)
+                                .replace("__NEXVIO_EPISODE__", e)
+                            view.evaluateJavascript(js) { result ->
+                                android.util.Log.d("NexvioNuvio", "$name evaluateJavascript result: " + (result ?: "null"))
+                            }
+                            main.postDelayed({
+                                if (continuation.isActive && runActive.get() && !bridge.scriptStarted) {
+                                    failRun(tracker.failureMessage("Injected script did not start (JS syntax error?)"))
+                                }
+                            }, 4_000)
+                        } catch (e: Exception) {
+                            failRun(tracker.failureMessage("Script setup failed: ${e.message ?: e.javaClass.simpleName}"))
+                        }
                     }
                 }
                 bridge.done = done@{ raw ->
-                    if (continuation.isActive) {
-                        val streams = try {
-                            val root = JSONObject(raw)
-                            if (!root.optBoolean("ok")) {
-                                val message = root.optString("error", "unknown provider error")
-                                android.util.Log.w("NexvioNuvio", "${name} failed: $message")
-                                throw IllegalStateException(message)
-                            }
-                            val parsed = root.optJSONArray("streams") ?: JSONArray()
-                            (0 until parsed.length()).mapNotNull { i ->
-                                val o = parsed.optJSONObject(i) ?: return@mapNotNull null
-                                val url = o.optString("url").trim()
-                                if (!publicHttp(url)) return@mapNotNull null
-                                val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { name }
-                                val quality = o.optString("quality").ifBlank {
-                                    Regex("(?i)(2160p|1080p|720p|480p|360p|4k|cam)").find(title)?.value?.uppercase() ?: "Quality unknown"
-                                }
-                                val headerObject = o.optJSONObject("headers")
-                                val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
-                                NuvioDiscoveredStream(name, title, url, quality, headers)
-                            }
-                        } catch (e: Exception) {
-                            continuation.resumeWithException(
-                                IllegalStateException("Provider response/runtime error: ${e.message ?: "invalid response"}", e)
-                            )
-                            main.post { web.stopLoading(); web.removeJavascriptInterface("NexvioBridge"); web.destroy() }
+                    if (!runActive.get() || !continuation.isActive) return@done
+                    try {
+                        val root = JSONObject(raw)
+                        if (!root.optBoolean("ok")) {
+                            val message = root.optString("error", "unknown provider error")
+                            android.util.Log.w("NexvioNuvio", "$name failed: $message")
+                            failRun(tracker.failureMessage("Provider response/runtime error: $message"))
                             return@done
                         }
-                        continuation.resume(streams)
-                    }
-                    main.post { web.stopLoading(); web.removeJavascriptInterface("NexvioBridge"); web.destroy() }
+                        val parsed = root.optJSONArray("streams") ?: JSONArray()
+                        val streams = (0 until parsed.length()).mapNotNull { i ->
+                            val o = parsed.optJSONObject(i) ?: return@mapNotNull null
+                            val url = o.optString("url").trim()
+                            if (!publicHttp(url)) return@mapNotNull null
+                            val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { name }
+                            val quality = o.optString("quality").ifBlank {
+                                Regex("(?i)(2160p|1080p|720p|480p|360p|4k|cam)").find(title)?.value?.uppercase() ?: "Quality unknown"
+                            }
+                            val headerObject = o.optJSONObject("headers")
+                            val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
+                            NuvioDiscoveredStream(name, title, url, quality, headers)
+                        }
+                        if (runActive.compareAndSet(true, false) && continuation.isActive) continuation.resume(streams)
+                    } catch (e: Exception) {
+                        if (continuation.isActive && runActive.compareAndSet(true, false)) {
+                            continuation.resumeWithException(IllegalStateException(tracker.failureMessage("Provider response/runtime error: ${e.message ?: "invalid response"}"), e))
+                        }
+                    } finally { cleanup() }
                 }
                 web.addJavascriptInterface(bridge, "NexvioBridge")
-                continuation.invokeOnCancellation { main.post { web.stopLoading(); web.destroy() } }
+                continuation.invokeOnCancellation { cleanup() }
                 main.postDelayed({
-                    if (continuation.isActive) {
-                        continuation.resumeWithException(TimeoutException(tracker.timeoutMessage()))
-                        web.stopLoading(); web.removeJavascriptInterface("NexvioBridge"); web.destroy()
-                    }
-                }, 60000)
+                    if (continuation.isActive && runActive.get()) failRun(tracker.timeoutMessage())
+                }, 60_000)
                 web.loadDataWithBaseURL("https://nexvio.invalid/", "<html><body></body></html>", "text/html", "UTF-8", null)
             }
         }
 
-    private class Bridge(private val web: WebView, private val provider: String, private val tracker: RequestTracker) {
+    private class Bridge(
+        private val web: WebView,
+        private val provider: String,
+        private val tracker: RequestTracker,
+        private val executor: java.util.concurrent.ExecutorService,
+        private val runActive: AtomicBoolean,
+        private val onBudgetExceeded: () -> Unit
+    ) {
         @Volatile var done: ((String) -> Unit)? = null
         @Volatile var scriptStarted: Boolean = false
-        @JavascriptInterface fun started() { scriptStarted = true }
-        @JavascriptInterface fun finish(result: String) { done?.invoke(result.take(512 * 1024)) }
-        @JavascriptInterface fun unsupportedModule(name: String) { recordUnsupportedModule(provider, name.take(120)) }
+        @JavascriptInterface fun started() { if (runActive.get()) scriptStarted = true }
+        @JavascriptInterface fun finish(result: String) { if (runActive.get()) done?.invoke(result.take(512 * 1024)) }
+        @JavascriptInterface fun unsupportedModule(name: String) { if (runActive.get()) recordUnsupportedModule(provider, name.take(120)) }
         @JavascriptInterface fun request(id: String, address: String, optionsText: String) {
+            if (!runActive.get()) return
             val safeUrl = safeLogUrl(address)
-            tracker.started(safeUrl)
-            pool.execute {
-                val startedAt = android.os.SystemClock.elapsedRealtime()
-                var methodForLog = "GET"
-                var statusForLog = 599
-                var bytesForLog = 0
-                var errorForLog: String? = null
-                val payload = try {
-                    val uri = URI(address.trim())
-                    require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
-                    val host = uri.host.lowercase()
-                    val ip = java.net.InetAddress.getByName(host)
-                    require(host != "localhost" && !host.endsWith(".local") && !ip.isAnyLocalAddress && !ip.isLoopbackAddress && !ip.isLinkLocalAddress && !ip.isSiteLocalAddress) { "Requests to local/private hosts are blocked." }
-                    val options = JSONObject(optionsText)
-                    val method = options.optString("method", "GET").uppercase()
-                    methodForLog = method
-                    require(method == "GET" || method == "POST" || method == "HEAD")
-                    val connection = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
-                    try {
-                        connection.connectTimeout = 10_000
-                        connection.readTimeout = 15_000
-                        connection.instanceFollowRedirects = options.optString("redirect", "follow") != "manual"
-                        connection.requestMethod = method
-                        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
-                        val headers = options.optJSONObject("headers")
-                        if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
-                        val body = options.optString("body")
-                        if (method == "POST" && body.isNotBlank()) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) } }
-                        val status = connection.responseCode
-                        statusForLog = status
-                        val stream = if (status >= 400) connection.errorStream else connection.inputStream
-                        val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
-                        bytesForLog = bytes.size
-                        JSONObject().put("status", status).put("body", bytes.toString(Charsets.UTF_8)).put("statusText", connection.responseMessage.orEmpty()).put("url", connection.url.toString()).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
-                    } finally { connection.disconnect() }
-                } catch (e: Exception) {
-                    errorForLog = safeLogError(e.message) ?: e.javaClass.simpleName
-                    JSONObject().put("status", 599).put("body", errorForLog ?: "Network request failed").put("error", errorForLog).toString()
-                } finally {
-                    recordRequest(provider, NuvioRequestLog(methodForLog, safeUrl, statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog))
-                    tracker.finished()
-                }
+            if (!tracker.start(address.trim(), safeUrl)) {
+                val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
-                val jsPayload = JSONObject.quote(payload)
-                main.post { web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + jsPayload + ")", null) }
+                main.post {
+                    if (runActive.get()) {
+                        web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + JSONObject.quote(payload) + ")") {
+                            if (runActive.get()) onBudgetExceeded()
+                        }
+                    }
+                }
+                return
+            }
+            try {
+                executor.execute {
+                    if (!runActive.get()) { tracker.finished(); return@execute }
+                    val startedAt = android.os.SystemClock.elapsedRealtime()
+                    var methodForLog = "GET"
+                    var statusForLog = 599
+                    var bytesForLog = 0
+                    var errorForLog: String? = null
+                    val payload = try {
+                        val uri = URI(address.trim())
+                        require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
+                        val host = uri.host.lowercase()
+                        val dnsTask = FutureTask { java.net.InetAddress.getByName(host) }
+                        Thread(dnsTask, "nexvio-dns-check").apply { isDaemon = true; start() }
+                        val ip = try { dnsTask.get(5, TimeUnit.SECONDS) } catch (e: Exception) { dnsTask.cancel(true); throw IllegalStateException("DNS lookup timed out or failed", e) }
+                        require(host != "localhost" && !host.endsWith(".local") && !ip.isAnyLocalAddress && !ip.isLoopbackAddress && !ip.isLinkLocalAddress && !ip.isSiteLocalAddress) { "Requests to local/private hosts are blocked." }
+                        if (!runActive.get()) throw InterruptedException("Provider run ended")
+                        val options = JSONObject(optionsText)
+                        val method = options.optString("method", "GET").uppercase()
+                        methodForLog = method
+                        require(method == "GET" || method == "POST" || method == "HEAD")
+                        val connection = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
+                        try {
+                            connection.connectTimeout = 10_000
+                            connection.readTimeout = 15_000
+                            connection.instanceFollowRedirects = options.optString("redirect", "follow") != "manual"
+                            connection.requestMethod = method
+                            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
+                            val headers = options.optJSONObject("headers")
+                            if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
+                            val body = options.optString("body")
+                            if (method == "POST" && body.isNotBlank()) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) } }
+                            if (!runActive.get()) throw InterruptedException("Provider run ended")
+                            val status = connection.responseCode
+                            statusForLog = status
+                            val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                            val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
+                            bytesForLog = bytes.size
+                            JSONObject().put("status", status).put("body", bytes.toString(Charsets.UTF_8)).put("statusText", connection.responseMessage.orEmpty()).put("url", connection.url.toString()).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
+                        } finally { connection.disconnect() }
+                    } catch (e: Exception) {
+                        errorForLog = safeLogError(e.message) ?: e.javaClass.simpleName
+                        JSONObject().put("status", 599).put("body", errorForLog ?: "Network request failed").put("error", errorForLog).toString()
+                    } finally {
+                        recordRequest(provider, NuvioRequestLog(methodForLog, safeUrl, statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog))
+                        tracker.finished()
+                    }
+                    if (runActive.get() && !Thread.currentThread().isInterrupted) {
+                        val jsId = JSONObject.quote(id)
+                        val jsPayload = JSONObject.quote(payload)
+                        main.post { if (runActive.get()) web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + jsPayload + ")", null) }
+                    }
+                }
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                tracker.finished()
+                main.post { if (runActive.get()) onBudgetExceeded() }
             }
         }
     }
