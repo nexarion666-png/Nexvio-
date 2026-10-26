@@ -65,7 +65,7 @@ internal object NuvioScraperEngine {
     private const val LOGS_PER_PROVIDER = 30
     private val consoleLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<String>>()
     fun consoleLogs(provider: String): List<String> = synchronized(consoleLogs) { consoleLogs[provider]?.toList().orEmpty() }
-    private fun recordConsole(provider: String, line: String) { synchronized(consoleLogs) { val lines = consoleLogs.getOrPut(provider) { java.util.ArrayDeque() }; lines.addLast(line.take(200)); while (lines.size > 50) lines.removeFirst() } }
+    private fun recordConsole(provider: String, line: String) { synchronized(consoleLogs) { val lines = consoleLogs.getOrPut(provider) { java.util.ArrayDeque<String>() }; lines.addLast(line.take(200)); while (lines.size > 50) lines.removeFirst() } }
     private val runSummaries = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val main = Handler(Looper.getMainLooper())
     private val requestLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<NuvioRequestLog>>()
@@ -73,7 +73,7 @@ internal object NuvioScraperEngine {
     fun requestLogs(provider: String): List<NuvioRequestLog> = synchronized(requestLogs) { requestLogs[provider]?.toList().orEmpty() }
     fun unsupportedModules(provider: String): Set<String> = unsupportedModules[provider]?.toSet().orEmpty()
     private fun streamDedupeKey(provider: String, url: String, title: String, quality: String, headers: Map<String, String>): String = listOf(provider, url, title, quality, headers.toSortedMap().entries.joinToString("&") { "${it.key}=${it.value}" }).joinToString("\u0000")
-    private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
+    private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque<NuvioRequestLog>() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
     private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(normalizeRequestUrl(address))
     private fun normalizeRequestUrl(raw: String): String {
@@ -166,7 +166,7 @@ internal object NuvioScraperEngine {
                             onStatus(providerName + ": failed — " + (e.message ?: e.javaClass.simpleName))
                             emptyList()
                         }
-                        if (!failed) { val summary = runSummaries.remove(providerName) ?: "no streams (0 requests, 0 failed, last error: none)"; val label = if (summary == "no requests made" && hasSettings) "needs provider settings" else summary; onStatus(if (found.isEmpty()) providerName + ": " + label else providerName + ": completed — " + found.size + " stream(s)") }
+                        if (!failed) { val summary = runSummaries.remove(providerName) ?: "no streams (0 requests, 0 failed, last error: none)"; val label = if (summary == "no requests made" && hasSettings) "no requests made — needs provider settings" else summary; onStatus(if (found.isEmpty()) providerName + ": " + label else providerName + ": completed — " + found.size + " stream(s)") }
                         if (found.isNotEmpty()) {
                             publishLock.withLock {
                                 results.addAll(found)
@@ -267,7 +267,6 @@ internal object NuvioScraperEngine {
                             android.util.Log.d("NexvioNuvio", "$name stream keys=$keys host=$host")
                             recordConsole(name, "stream keys=$keys host=$host")
                             recordRequest(name, NuvioRequestLog("STREAM", host, 200, 0, 0, streamShape = "keys=${keys.joinToString(",")}; host=$host"))
-                            recordRequest(name, NuvioRequestLog("STREAM", host, 200, 0, 0, streamShape = "keys=${keys.joinToString(",")}; host=$host"))
                             val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { o.optString("label") }.ifBlank { name }
                             val size = o.optString("size")
                             val qualitySource = listOf("quality","resolution","label","name","title","description").map { o.optString(it) }.plus(url).joinToString(" ")
@@ -310,8 +309,9 @@ internal object NuvioScraperEngine {
         @JavascriptInterface fun consoleLine(line: String) { if (runActive.get()) recordConsole(provider, safeLogError(line)?.take(200) ?: line.take(200)) }
         @JavascriptInterface fun request(id: String, address: String, optionsText: String) {
             if (!runActive.get()) return
-            val safeUrl = safeLogUrl(address)
-            if (!tracker.start(address.trim(), safeUrl)) {
+            val normalizedRequestAddress = normalizeRequestUrl(address)
+            val safeUrl = safeLogUrl(normalizedRequestAddress)
+            if (!tracker.start(normalizedRequestAddress, safeUrl)) {
                 val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
                 main.post {
@@ -328,7 +328,7 @@ internal object NuvioScraperEngine {
                     var bytesForLog = 0
                     var errorForLog: String? = null
                     var bodyPreview: String? = null
-                    var normalizedAddressForLog = normalizeRequestUrl(address)
+                    var normalizedAddressForLog = normalizedRequestAddress
                     val payload = try {
                         val normalizedAddress = normalizedAddressForLog
                         val uri = URI(normalizedAddress)
