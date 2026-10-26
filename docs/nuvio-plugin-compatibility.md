@@ -21,6 +21,8 @@ The runtime supplies browser/WebView APIs where available, plus a small set of c
 
 Provider diagnostics show the runtime engine stamp and recent sanitized request logs. Request logs omit query strings, headers, bodies, and full stream URLs. A provider may complete without streams when its site layout changes, it blocks automated requests, its extractor does not recognize the response, or a required module/API is unsupported. A timeout is not proof the site has no streams.
 
+The existing manifest-parser implementations were left unchanged in this runtime-focused patch; consolidation is deferred until the parser test suite can be run and compared.
+
 The runtime is deliberately restricted. Remote provider JavaScript can still be buggy or malicious, so review repositories before enabling them and disable providers you do not trust. Treat stream URLs and returned metadata as untrusted.
 
 ## Licensing note
