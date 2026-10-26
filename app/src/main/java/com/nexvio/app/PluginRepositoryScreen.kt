@@ -176,7 +176,7 @@ fun PluginRepositoryScreen(onBack: () -> Unit) {
                                 refresh()
                                 showAddDialog = false
                                 manifestUrl = ""
-                                message = "Repository added successfully. Provider execution is not available in this version."
+                                message = "Repository added successfully. Enabled compatible providers will be tried when you use Find streams."
                             } catch (error: Exception) {
                                 message = error.message?.takeIf { it.isNotBlank() } ?: "Could not add this repository."
                             } finally {
