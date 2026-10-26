@@ -72,10 +72,12 @@ internal object NuvioScraperEngine {
         fun timeoutMessage(): String = NuvioDiagnosticFormat.timeoutMessage(count, lastUrl, pending > 0)
     }
 
-    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}): List<NuvioDiscoveredStream> {
+    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}, providerFilter: String? = null, disabledProviders: Set<String> = emptySet()): List<NuvioDiscoveredStream> {
         // Run a small number of providers concurrently so one slow scraper does not
         // block faster providers from publishing their results.
-        val providers = PluginRepositoryStore(context).all()
+        val providers = PluginRepositoryStore(context).all().filter { (_, providerName, _) ->
+            (providerFilter == null || providerName.equals(providerFilter, ignoreCase = true)) && providerName !in disabledProviders
+        }
             .filter { it.enabled }
             .flatMap { repository ->
                 repository.providers.filter { it.enabled }
