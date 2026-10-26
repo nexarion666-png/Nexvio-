@@ -29,7 +29,7 @@ import kotlin.coroutines.resumeWithException
 internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String, val headers: Map<String, String> = emptyMap())
 internal object NuvioDiagnosticFormat {
     fun safeUrl(address: String): String = try {
-        val uri = URI(normalizeRequestUrl(address))
+        val uri = URI(NuvioScraperEngine.normalizeRequestUrl(address))
         require((uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrBlank())
         val host = uri.host.orEmpty()
         val port = if (uri.port >= 0) ":" + uri.port else ""
@@ -76,7 +76,7 @@ internal object NuvioScraperEngine {
     private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque<NuvioRequestLog>() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
     private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(normalizeRequestUrl(address))
-    private fun normalizeRequestUrl(raw: String): String {
+    internal fun normalizeRequestUrl(raw: String): String {
         val input = raw.trim()
         val authorityStart = input.indexOf("://").let { if (it < 0) -1 else it + 3 }
         val authorityEnd = if (authorityStart < 0) -1 else input.indexOfAny(charArrayOf('/', '?', '#'), authorityStart).let { if (it < 0) input.length else it }
