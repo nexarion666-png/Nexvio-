@@ -398,14 +398,15 @@ private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispa
     } finally { connection.disconnect() }
 }
 
-private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int): List<DiscoveredStream> = withContext(Dispatchers.IO) {
+private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onStreams: suspend (List<DiscoveredStream>) -> Unit): List<DiscoveredStream> = withContext(Dispatchers.IO) {
     val output = mutableListOf<DiscoveredStream>()
 
     // Nuvio plugin repositories are independent of Stremio add-ons. Always try them,
     // even when the Stremio add-on list is empty or its IMDb lookup fails.
     try {
-        NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber).forEach { stream ->
-            output.add(DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers))
+        NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber) { found ->
+            found.forEach { stream -> output.add(DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers)) }
+            onStreams(output.distinctBy { it.url }.take(50))
         }
     } catch (_: Exception) {
         // Keep trying Stremio add-ons even if the Nuvio adapter is unavailable.
@@ -452,6 +453,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                             val headersJson = stream.optJSONObject("headers")
                             val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
                             output.add(DiscoveredStream(addonName, label, url, quality, headers))
+                            onStreams(output.distinctBy { it.url }.take(50))
                         }
                     } finally { connection.disconnect() }
                 } catch (_: Exception) {
@@ -518,7 +520,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     error = null
                     streams = emptyList()
                     try {
-                        streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber)
+                        streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber) { found ->
+                            withContext(Dispatchers.Main) { streams = found; error = null }
+                        }
                         if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
                     } catch (e: Exception) {
                         error = e.message ?: "Stream discovery failed."
