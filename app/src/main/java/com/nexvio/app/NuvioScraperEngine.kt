@@ -281,7 +281,6 @@ internal object NuvioScraperEngine {
             if (!runActive.get()) return
             val safeUrl = safeLogUrl(address)
             if (!tracker.start(address.trim(), safeUrl)) {
-                tracker.reject()
                 val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
                 main.post {
