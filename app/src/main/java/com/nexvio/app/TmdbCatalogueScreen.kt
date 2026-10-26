@@ -423,7 +423,7 @@ private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispa
     } finally { connection.disconnect() }
 }
 
-private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onStreams: suspend (List<DiscoveredStream>) -> Unit, onProviderStatus: suspend (String, String) -> Unit): List<DiscoveredStream> = withContext(Dispatchers.IO) {
+private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onStreams: suspend (List<DiscoveredStream>) -> Unit, onProviderStatus: suspend (String, String) -> Unit, excludedProviders: Set<String> = emptySet(), onlyNuvioProvider: String? = null): List<DiscoveredStream> = withContext(Dispatchers.IO) {
     val output = java.util.Collections.synchronizedList(mutableListOf<DiscoveredStream>())
     val publishLock = kotlinx.coroutines.sync.Mutex()
 
@@ -452,7 +452,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                     val provider = if (separator > 0) message.substring(0, separator).trim() else "Nuvio provider"
                     val status = if (separator > 0) message.substring(separator + 1).trim() else message
                     onProviderStatus(provider, status)
-                })
+                }, onlyProvider = onlyNuvioProvider, excludedProviders = excludedProviders)
             } catch (_: Exception) {
                 // Stremio add-ons can still return results if Nuvio providers fail.
             }
@@ -461,7 +461,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
         val prefs = context.getSharedPreferences("nexvio_addons", android.content.Context.MODE_PRIVATE)
         val installed = org.json.JSONArray(prefs.getString("installed", "[]") ?: "[]")
         val addons = (0 until installed.length()).mapNotNull { installed.optJSONObject(it) }
-            .filter { it.optBoolean("enabled", true) }
+            .filter { it.optBoolean("enabled", true) && it.optString("name") !in excludedProviders && onlyNuvioProvider == null }
             .mapNotNull { obj ->
                 val name = obj.optString("name").ifBlank { "Add-on" }
                 val manifest = obj.optString("manifestUrl").trim()
@@ -545,7 +545,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
     val providerStatuses = remember(item.id, item.mediaType, seasonNumber, episodeNumber) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    var disabledProviders by remember(item.id, item.mediaType) { mutableStateOf<Set<String>>(emptySet()) }
     var selectedDiagnosticProvider by remember { mutableStateOf<String?>(null) }
+    var testPresetProvider by remember { mutableStateOf<String?>(null) }
     var loadingMessage by remember { mutableStateOf("Checking providers") }
     val loaderTransition = rememberInfiniteTransition(label = "stream-search-loader")
     val loaderRotation by loaderTransition.animateFloat(
@@ -573,7 +575,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         scope.launch {
             loading = true; searched = true; error = null; streams = emptyList(); providerStatuses.clear()
             try {
-                streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber, onStreams = { found ->
+                streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber, excludedProviders = disabledProviders, onStreams = { found ->
                     withContext(Dispatchers.Main) { streams = found; error = null }
                 }, onProviderStatus = { provider, status ->
                     withContext(Dispatchers.Main) { providerStatuses[provider] = status }
@@ -647,7 +649,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 Text("${providerStatuses.size} provider(s) reported • $completedCount completed • $failedCount failed", color = CatalogueMuted, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
                 providerStatuses.toSortedMap().forEach { (provider, status) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedDiagnosticProvider = provider }, verticalAlignment = Alignment.Top) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedDiagnosticProvider = provider }, verticalAlignment = Alignment.CenterVertically) {
                         val indicator = when {
                             status.startsWith("Completed", ignoreCase = true) -> "✓"
                             status.startsWith("Failed", ignoreCase = true) || status.contains("error", ignoreCase = true) -> "!"
@@ -660,8 +662,10 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                             Text(provider, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             Text(status, color = CatalogueMuted, fontSize = 11.sp, lineHeight = 15.sp)
                         }
+                        Checkbox(checked = provider !in disabledProviders, onCheckedChange = { enabled -> disabledProviders = if (enabled) disabledProviders - provider else disabledProviders + provider })
                     }
                 }
+                TextButton(onClick = { startSearch() }, enabled = !loading) { Text("Run all (respecting provider toggles)", color = CatalogueAccent) }
             }
         }
         if (error != null) {
