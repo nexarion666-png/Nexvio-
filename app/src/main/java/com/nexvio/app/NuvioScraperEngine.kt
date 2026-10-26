@@ -9,6 +9,10 @@ import android.webkit.WebViewClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -31,27 +35,41 @@ internal object NuvioScraperEngine {
     private val pool = Executors.newFixedThreadPool(4)
 
     suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}): List<NuvioDiscoveredStream> {
-        // Plugin repositories live in PluginRepositoryStore, not the Stremio add-ons preferences.
-        // Use the exact repository/provider enablement state shown in Settings → Plugin repositories.
-        val repositories = PluginRepositoryStore(context).all().filter { it.enabled }
-        val results = mutableListOf<NuvioDiscoveredStream>()
-        for (repository in repositories) {
-            for (provider in repository.providers.filter { it.enabled }.take(30)) {
-                val script = try { fetchText(provider.fileUrl, MAX_BYTES) } catch (_: Exception) { continue }
-                try {
-                    val providerStreams = execute(context, provider.name.ifBlank { repository.name }, script, item, season, episode)
-                    if (providerStreams.isNotEmpty()) {
-                        results += providerStreams
-                        val snapshot = results.distinctBy { it.url }.take(50)
-                        onStreams(snapshot)
-                    }
-                } catch (_: Exception) {
-                    // One incompatible provider must not block other enabled providers.
-                }
-                if (results.size >= 50) return results.distinctBy { it.url }.take(50)
+        // Run a small number of providers concurrently so one slow scraper does not
+        // block faster providers from publishing their results.
+        val providers = PluginRepositoryStore(context).all()
+            .filter { it.enabled }
+            .flatMap { repository ->
+                repository.providers.filter { it.enabled }.take(30)
+                    .map { provider -> Triple(repository.name, provider.name, provider.fileUrl) }
             }
+        val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
+        val publishLock = kotlinx.coroutines.sync.Mutex()
+        val concurrency = kotlinx.coroutines.sync.Semaphore(4)
+
+        return kotlinx.coroutines.coroutineScope {
+            val jobs = providers.map { (repositoryName, providerName, fileUrl) ->
+                kotlinx.coroutines.async {
+                    concurrency.withPermit {
+                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (_: Exception) { return@withPermit }
+                        val found = try {
+                            execute(context, providerName.ifBlank { repositoryName }, script, item, season, episode)
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                        if (found.isNotEmpty()) {
+                            publishLock.withLock {
+                                results.addAll(found)
+                                val snapshot = results.distinctBy { it.url }.take(50)
+                                onStreams(snapshot)
+                            }
+                        }
+                    }
+                }
+            }
+            jobs.forEach { job -> try { job.await() } catch (_: Exception) { } }
+            results.distinctBy { it.url }.take(50)
         }
-        return results.distinctBy { it.url }.take(50)
     }
 
     private suspend fun execute(context: Context, name: String, source: String, item: TmdbTitle, season: Int, episode: Int): List<NuvioDiscoveredStream> =
