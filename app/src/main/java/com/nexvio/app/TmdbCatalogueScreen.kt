@@ -648,6 +648,22 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(12.dp)).padding(12.dp)) {
                 Text("Provider diagnostics · ${NuvioScraperEngine.ENGINE_VERSION}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Text("${providerStatuses.size} provider(s) reported • $completedCount completed • $failedCount failed", color = CatalogueMuted, fontSize = 11.sp)
+                TextButton(onClick = {
+                    scope.launch {
+                        loading = true
+                        NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber,
+                            onStreams = { found ->
+                                streams = (streams + found.map { DiscoveredStream(it.providerName, it.title, it.url, it.quality, it.headers) }).distinctBy { it.url }
+                            },
+                            onStatus = { message ->
+                                val split = message.indexOf(":")
+                                if (split > 0) providerStatuses[message.substring(0, split).trim()] = message.substring(split + 1).trim()
+                            },
+                            disabledProviders = disabledProviders.filterValues { it }.keys
+                        )
+                        loading = false
+                    }
+                }) { Text("Run all enabled providers", color = CatalogueAccent) }
                 Spacer(Modifier.height(6.dp))
                 providerStatuses.toSortedMap().forEach { (provider, status) ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedDiagnosticProvider = provider }, verticalAlignment = Alignment.Top) {
