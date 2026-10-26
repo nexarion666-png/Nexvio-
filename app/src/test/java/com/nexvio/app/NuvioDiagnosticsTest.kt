@@ -14,6 +14,27 @@ class NuvioDiagnosticsTest {
         assertEquals("not-a-url", NuvioDiagnosticFormat.safeUrl("not-a-url?secret=1"))
     }
 
+    @Test fun normalizerPreservesEscapesReservedCharactersAndIpv6() {
+        assertEquals(
+            "https://[2001:db8::1]:8443/a%2Fb?x=a+b&next=%2F",
+            NuvioUrlNormalizer.normalize("https://[2001:db8::1]:8443/a%2Fb?x=a+b&next=%2F")
+        )
+    }
+
+    @Test fun normalizerPercentEncodesIllegalCharactersAndUnicode() {
+        assertEquals(
+            "https://example.com/a%20b/%7Btitle%7D/%C3%A9",
+            NuvioUrlNormalizer.normalize("https://example.com/a b/{title}/é")
+        )
+    }
+
+    @Test fun diagnosticFormatterDoesNotNeedScraperEngineInitialization() {
+        assertEquals(
+            "https://example.com:8443/api/streams",
+            NuvioDiagnosticFormat.safeUrl("https://user:secret@example.com:8443/api/streams?token=private")
+        )
+    }
+
     @Test fun requestLogFormatIncludesMetadataAndError() {
         val log = NuvioRequestLog("GET", "https://example.com/api", 503, 123, 27, "HTTP failure")
         val formatted = log.format()
