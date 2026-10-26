@@ -62,7 +62,7 @@ internal object NuvioScraperEngine {
                             onStatus(providerName + ": " + found.size + " stream(s)")
                             publishLock.withLock {
                                 results.addAll(found)
-                                val snapshot = results.distinctBy { it.url }.take(50)
+                                val snapshot = results.distinctBy { it.url }
                                 onStreams(snapshot)
                             }
                         }
