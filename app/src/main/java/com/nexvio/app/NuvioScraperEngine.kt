@@ -141,7 +141,6 @@ internal object NuvioScraperEngine {
                         val s = if (item.mediaType == "movie") "null" else season.toString()
                         val e = if (item.mediaType == "movie") "null" else episode.toString()
                         val cryptoJsSource = context.assets.open("crypto-js.min.js").bufferedReader().use { it.readText() }
-                        val cryptoJsSource = context.assets.open("crypto-js.min.js").bufferedReader().use { it.readText() }
                         val js = context.assets.open("nexvio-prelude.js").bufferedReader().use { it.readText() }
                             .replace("__NEXVIO_CRYPTO_JS__", cryptoJsSource)
                             .replace("__NEXVIO_SOURCE_JSON__", src)
