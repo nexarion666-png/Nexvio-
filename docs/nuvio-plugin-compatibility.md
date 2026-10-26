@@ -12,7 +12,7 @@ Provider scripts are downloaded over HTTP(S), capped at 1 MiB, and invoked throu
 - `cheerio` and `cheerio-without-node-native`: a limited DOMParser-backed jQuery/Cheerio-style adapter.
 - `console`: no-op logging methods.
 - `url`: WebView `URL` and `URLSearchParams`.
-- `crypto-js` and subpaths are not yet supported by this compatibility layer; providers that require them fail explicitly.
+- `crypto-js` is bundled as a local browser asset; common AES/hash/encoding APIs are checked by a runtime self-test. `crypto-js/aes`, `crypto-js/md5`, `crypto-js/sha256`, `crypto-js/hmac-sha256`, `crypto-js/enc-*`, `crypto-js/mode-*`, and `crypto-js/pad-*` subpaths are mapped where their corresponding property exists. This is not a Node module loader.
 - Other Node built-ins and arbitrary npm modules are unsupported.
 
 The runtime supplies browser/WebView APIs where available, plus a small set of compatibility shims. The Cheerio adapter supports only a subset of selectors and methods; it should not be treated as drop-in Cheerio. The fetch bridge implements a bounded HTTP request adapter, not the complete WHATWG Fetch API.
