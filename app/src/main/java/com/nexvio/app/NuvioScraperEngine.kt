@@ -181,6 +181,7 @@ internal object NuvioScraperEngine {
                 val tracker = RequestTracker()
                 val runActive = AtomicBoolean(true)
                 val cookieJar = java.util.concurrent.ConcurrentHashMap<String, String>()
+                val cookieJar = java.util.concurrent.ConcurrentHashMap<String, String>()
                 val executor = Executors.newFixedThreadPool(4)
                 lateinit var bridge: Bridge
                 val cleaned = AtomicBoolean(false)
@@ -356,7 +357,9 @@ internal object NuvioScraperEngine {
                                 connection.requestMethod = method
                                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
                                 val headers = options.optJSONObject("headers")
-                                if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
+                                var scriptSetCookie = false
+                                if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) { if (key.equals("cookie", true)) scriptSetCookie = true; connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } } }
+                                if (!scriptSetCookie) cookieJar[targetHost]?.let { connection.setRequestProperty("Cookie", it) }
                                 val body = options.optString("body")
                                 if (method == "POST" && body.isNotBlank() && redirects == 0) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) } }
                                 if (!runActive.get()) throw InterruptedException("Provider run ended")
@@ -371,6 +374,8 @@ internal object NuvioScraperEngine {
                                 }
                                 val contentLength = connection.getHeaderField("Content-Length")?.toLongOrNull()
                                 if (contentLength != null && contentLength > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB (Content-Length: " + contentLength + ")")
+                                val setCookies = connection.getHeaderFields().entries.filter { it.key.equals("Set-Cookie", true) }.flatMap { it.value.orEmpty() }
+                                if (setCookies.isNotEmpty()) cookieJar[targetHost] = setCookies.mapNotNull { line -> line.substringBefore(";").takeIf { it.contains("=") } }.joinToString("; ").take(4000)
                                 val stream = if (status >= 400) connection.errorStream else connection.inputStream
                                 val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; tracker.consumeBytes(n); if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB" + (contentLength?.let { " (Content-Length: " + it + ")" } ?: "")); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
                                 bytesForLog = bytes.size
