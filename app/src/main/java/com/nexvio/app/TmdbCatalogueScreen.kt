@@ -399,6 +399,18 @@ private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispa
 }
 
 private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int): List<DiscoveredStream> = withContext(Dispatchers.IO) {
+    val output = mutableListOf<DiscoveredStream>()
+
+    // Nuvio plugin repositories are independent of Stremio add-ons. Always try them,
+    // even when the Stremio add-on list is empty or its IMDb lookup fails.
+    try {
+        NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber).forEach { stream ->
+            output.add(DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers))
+        }
+    } catch (_: Exception) {
+        // Keep trying Stremio add-ons even if the Nuvio adapter is unavailable.
+    }
+
     val prefs = context.getSharedPreferences("nexvio_addons", android.content.Context.MODE_PRIVATE)
     val installed = org.json.JSONArray(prefs.getString("installed", "[]") ?: "[]")
     val addons = (0 until installed.length()).mapNotNull { installed.optJSONObject(it) }
@@ -408,52 +420,45 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             val manifest = obj.optString("manifestUrl").trim()
             if (manifest.startsWith("https://") || manifest.startsWith("http://")) name to manifest else null
         }
-    if (addons.isEmpty()) throw IllegalStateException("No enabled add-ons are installed. Open Settings → Content providers to install a compatible Stremio add-on.")
-    val imdbId = fetchTmdbImdbId(item)
-    val resourceType = if (item.mediaType == "movie") "movie" else "series"
-    // Stremio-compatible series endpoints require an episode ID. Phase 3C uses S1:E1
-    // as the initial lookup; episode selection can be added in a later iteration.
-    val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
-    val output = mutableListOf<DiscoveredStream>()
-    for ((addonName, manifestUrl) in addons) {
-        try {
-            val manifestUri = java.net.URI(manifestUrl)
-            val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
-            val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$path"
-            val streamUrl = "$base/stream/$resourceType/$streamId.json"
-            val connection = URL(streamUrl).openConnection() as HttpURLConnection
-            try {
-                connection.connectTimeout = 7000
-                connection.readTimeout = 9000
-                connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
-                connection.setRequestProperty("Accept", "application/json")
-                if (connection.responseCode !in 200..299) continue
-                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                val streams = json.optJSONArray("streams") ?: continue
-                for (i in 0 until streams.length()) {
-                    val stream = streams.optJSONObject(i) ?: continue
-                    val url = stream.optString("url").trim()
-                    if (!url.startsWith("https://") && !url.startsWith("http://")) continue
-                    val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
-                    val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
-                    val headersJson = stream.optJSONObject("headers")
-                    val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
-                    output.add(DiscoveredStream(addonName, label, url, quality, headers))
+
+    // No enabled Stremio add-ons is valid when plugin repositories are configured.
+    if (addons.isNotEmpty()) {
+        val imdbId = try { fetchTmdbImdbId(item) } catch (_: Exception) { null }
+        if (imdbId != null) {
+            val resourceType = if (item.mediaType == "movie") "movie" else "series"
+            val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
+            for ((addonName, manifestUrl) in addons) {
+                try {
+                    val manifestUri = java.net.URI(manifestUrl)
+                    val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
+                    val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$path"
+                    val streamUrl = "$base/stream/$resourceType/$streamId.json"
+                    val connection = URL(streamUrl).openConnection() as HttpURLConnection
+                    try {
+                        connection.connectTimeout = 7000
+                        connection.readTimeout = 9000
+                        connection.instanceFollowRedirects = true
+                        connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
+                        connection.setRequestProperty("Accept", "application/json")
+                        if (connection.responseCode !in 200..299) continue
+                        val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                        val streams = json.optJSONArray("streams") ?: continue
+                        for (i in 0 until streams.length()) {
+                            val stream = streams.optJSONObject(i) ?: continue
+                            val url = stream.optString("url").trim()
+                            if (!url.startsWith("https://") && !url.startsWith("http://")) continue
+                            val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
+                            val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
+                            val headersJson = stream.optJSONObject("headers")
+                            val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
+                            output.add(DiscoveredStream(addonName, label, url, quality, headers))
+                        }
+                    } finally { connection.disconnect() }
+                } catch (_: Exception) {
+                    // One unavailable add-on should not block results from other providers.
                 }
-            } finally { connection.disconnect() }
-        } catch (_: Exception) {
-            // A single unavailable add-on should not block results from other providers.
+            }
         }
-    }
-    // Phase 3E/3F: merge results from compatible Nuvio repository scrapers
-    // with the existing Stremio-compatible add-on results.
-    try {
-        NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber).forEach { stream ->
-            output.add(DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers))
-        }
-    } catch (_: Exception) {
-        // Stremio results remain available if the Nuvio adapter is unavailable.
     }
     output.distinctBy { it.url }.take(50)
 }
