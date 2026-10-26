@@ -544,6 +544,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
     val providerStatuses = remember(item.id, item.mediaType, seasonNumber, episodeNumber) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    var selectedDiagnosticProvider by remember { mutableStateOf<String?>(null) }
     var loadingMessage by remember { mutableStateOf("Checking providers") }
     val loaderTransition = rememberInfiniteTransition(label = "stream-search-loader")
     val loaderRotation by loaderTransition.animateFloat(
@@ -641,11 +642,11 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             val completedCount = providerStatuses.values.count { it.startsWith("Completed", ignoreCase = true) }
             val failedCount = providerStatuses.values.count { it.startsWith("Failed", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("timed out", ignoreCase = true) }
             Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(12.dp)).padding(12.dp)) {
-                Text("Provider diagnostics", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Provider diagnostics · ${NuvioScraperEngine.ENGINE_VERSION}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Text("${providerStatuses.size} provider(s) reported • $completedCount completed • $failedCount failed", color = CatalogueMuted, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
                 providerStatuses.toSortedMap().forEach { (provider, status) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedDiagnosticProvider = provider }, verticalAlignment = Alignment.Top) {
                         val indicator = when {
                             status.startsWith("Completed", ignoreCase = true) -> "✓"
                             status.startsWith("Failed", ignoreCase = true) || status.contains("error", ignoreCase = true) -> "!"
@@ -732,6 +733,39 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             Text("No playable sources found.", color = CatalogueMuted, fontSize = 12.sp)
         }
         Spacer(Modifier.height(8.dp))
+        Text("Tap a provider diagnostic row to inspect or copy its last 30 sanitized requests.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
         Text("Results combine Stremio add-ons with a restricted Nuvio JavaScript adapter. Some scrapers may require unsupported modules or host APIs.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
+    selectedDiagnosticProvider?.let { provider ->
+        val logs = NuvioScraperEngine.requestLogs(provider)
+        val modules = NuvioScraperEngine.unsupportedModules(provider)
+        AlertDialog(
+            onDismissRequest = { selectedDiagnosticProvider = null },
+            title = { Text("$provider request log") },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    if (modules.isNotEmpty()) Text("Unsupported modules: ${modules.sorted().joinToString()}", color = Color(0xFFFF9A80), fontSize = 12.sp)
+                    if (logs.isEmpty()) Text("No bridge requests recorded for this provider yet.", color = CatalogueMuted, fontSize = 12.sp)
+                    else androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                        items(logs.reversed()) { entry ->
+                            Text(entry.format(), color = CatalogueMuted, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(vertical = 4.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val text = buildString {
+                        appendLine("Nexvio ${NuvioScraperEngine.ENGINE_VERSION} — $provider")
+                        if (modules.isNotEmpty()) appendLine("Unsupported modules: ${modules.sorted().joinToString()}")
+                        logs.forEach { appendLine(it.format()) }
+                    }
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio provider request log", text))
+                }) { Text("Copy log") }
+            },
+            dismissButton = { TextButton(onClick = { selectedDiagnosticProvider = null }) { Text("Close") } }
+        )
+    }
+
     }
 }
