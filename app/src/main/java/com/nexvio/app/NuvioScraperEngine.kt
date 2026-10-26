@@ -76,7 +76,7 @@ internal object NuvioScraperEngine {
     private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque<NuvioRequestLog>() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
     private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(normalizeRequestUrl(address))
-    private fun normalizeRequestUrl(raw: String): String = NuvioUrlNormalizer.normalize(raw)
+    internal fun normalizeRequestUrl(raw: String): String = NuvioUrlNormalizer.normalize(raw)
 
 
     internal fun streamDedupeKey(s: NuvioDiscoveredStream): String = listOf(s.providerName, s.url, s.title, s.quality, s.headers.toSortedMap().entries.joinToString("&") { it.key + "=" + it.value }).joinToString("\u0000")
