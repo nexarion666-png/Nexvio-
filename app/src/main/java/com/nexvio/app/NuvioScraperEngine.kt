@@ -174,7 +174,7 @@ internal object NuvioScraperEngine {
                     }
                     cleanup()
                 }
-                bridge = Bridge(web, name, tracker, executor, runActive) {
+                bridge = Bridge(web, name, tracker, executor, runActive) { _, _ ->
                     main.post { failRun(tracker.budgetMessage()) }
                 }
                 web.settings.javaScriptEnabled = true
@@ -267,6 +267,7 @@ internal object NuvioScraperEngine {
         @JavascriptInterface fun started() { if (runActive.get()) scriptStarted = true }
         @JavascriptInterface fun finish(result: String) { if (runActive.get()) done?.invoke(result.take(512 * 1024)) }
         @JavascriptInterface fun unsupportedModule(name: String) { if (runActive.get()) recordUnsupportedModule(provider, name.take(120)) }
+        @JavascriptInterface fun consoleLine(line: String) { if (runActive.get()) recordConsole(provider, safeLogError(line)?.take(200) ?: line.take(200)) }
         @JavascriptInterface fun request(id: String, address: String, optionsText: String) {
             if (!runActive.get()) return
             val safeUrl = safeLogUrl(address)
@@ -291,6 +292,7 @@ internal object NuvioScraperEngine {
                     var statusForLog = 599
                     var bytesForLog = 0
                     var errorForLog: String? = null
+                    var bodyPreview: String? = null
                     val payload = try {
                         val uri = URI(address.trim())
                         require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
@@ -321,13 +323,17 @@ internal object NuvioScraperEngine {
                             val stream = if (status >= 400) connection.errorStream else connection.inputStream
                             val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
                             bytesForLog = bytes.size
-                            JSONObject().put("status", status).put("body", bytes.toString(Charsets.UTF_8)).put("statusText", connection.responseMessage.orEmpty()).put("url", connection.url.toString()).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
+                            val responseBody = bytes.toString(Charsets.UTF_8)
+                            val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
+                            val seen = repeatedRequests.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap() }.merge(repeatKey, 1) { a, b -> a + b } ?: 1
+                            if (seen >= 3) bodyPreview = responseBody.take(300)
+                            JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", connection.url.toString()).put("redirected", false).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
                         } finally { connection.disconnect() }
                     } catch (e: Exception) {
                         errorForLog = safeLogError(e.message) ?: e.javaClass.simpleName
                         JSONObject().put("status", 599).put("body", errorForLog ?: "Network request failed").put("error", errorForLog).toString()
                     } finally {
-                        recordRequest(provider, NuvioRequestLog(methodForLog, safeUrl, statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog))
+                        recordRequest(provider, NuvioRequestLog(methodForLog, safeUrl, statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog, bodyPreview))
                         tracker.finished()
                     }
                     if (runActive.get() && !Thread.currentThread().isInterrupted) {
