@@ -408,14 +408,14 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             val manifest = obj.optString("manifestUrl").trim()
             if (manifest.startsWith("https://") || manifest.startsWith("http://")) name to manifest else null
         }
-    if (addons.isEmpty()) throw IllegalStateException("No enabled add-ons are installed. Open Settings → Content providers to install a compatible Stremio add-on.")
-    val imdbId = fetchTmdbImdbId(item)
-    val resourceType = if (item.mediaType == "movie") "movie" else "series"
-    // Stremio-compatible series endpoints require an episode ID. Phase 3C uses S1:E1
-    // as the initial lookup; episode selection can be added in a later iteration.
-    val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
     val output = mutableListOf<DiscoveredStream>()
-    for ((addonName, manifestUrl) in addons) {
+    // Stremio add-ons are optional: do not stop discovery when the user has disabled them.
+    if (addons.isNotEmpty()) {
+        try {
+            val imdbId = fetchTmdbImdbId(item)
+            val resourceType = if (item.mediaType == "movie") "movie" else "series"
+            val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
+            for ((addonName, manifestUrl) in addons) {
         try {
             val manifestUri = java.net.URI(manifestUrl)
             val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
@@ -444,6 +444,10 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             } finally { connection.disconnect() }
         } catch (_: Exception) {
             // A single unavailable add-on should not block results from other providers.
+        }
+    }
+        } catch (_: Exception) {
+            // A missing IMDb ID or failed Stremio lookup must not block Nuvio providers.
         }
     }
     // Phase 3E/3F: merge results from compatible Nuvio repository scrapers
