@@ -49,7 +49,7 @@ internal object NuvioScraperEngine {
 
         return kotlinx.coroutines.coroutineScope {
             val jobs = providers.map { (repositoryName, providerName, fileUrl) ->
-                kotlinx.coroutines.async {
+                async {
                     concurrency.withPermit {
                         val script = try { fetchText(fileUrl, MAX_BYTES) } catch (_: Exception) { return@withPermit }
                         val found = try {
