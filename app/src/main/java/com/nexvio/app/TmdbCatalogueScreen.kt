@@ -273,7 +273,8 @@ private data class DiscoveredStream(
     val addonName: String,
     val title: String,
     val url: String,
-    val quality: String
+    val quality: String,
+    val headers: Map<String, String> = emptyMap()
 )
 
 private data class TmdbSeason(val number: Int, val name: String, val episodeCount: Int)
@@ -436,7 +437,9 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                     if (!url.startsWith("https://") && !url.startsWith("http://")) continue
                     val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
                     val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
-                    output.add(DiscoveredStream(addonName, label, url, quality))
+                    val headersJson = stream.optJSONObject("headers")
+                    val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
+                    output.add(DiscoveredStream(addonName, label, url, quality, headers))
                 }
             } finally { connection.disconnect() }
         } catch (_: Exception) {
@@ -447,7 +450,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
     // with the existing Stremio-compatible add-on results.
     try {
         NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber).forEach { stream ->
-            output.add(DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality))
+            output.add(DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers))
         }
     } catch (_: Exception) {
         // Stremio results remain available if the Nuvio adapter is unavailable.
@@ -563,7 +566,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                                 category = stream.addonName,
                                 tvgId = null,
                                 tvgName = stream.title,
-                                isFavorite = false
+                                isFavorite = false,
+                                requestHeaders = stream.headers
                             ))
                             },
                             onLongClick = { downloadTarget = stream }
