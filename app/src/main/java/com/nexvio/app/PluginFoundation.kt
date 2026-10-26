@@ -29,7 +29,8 @@ data class PluginProvider(
     val name: String,
     val description: String = "",
     val fileUrl: String,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val hasSettings: Boolean = false
 )
 
 data class PluginManifest(
@@ -93,7 +94,8 @@ object PluginManifestParser {
                     id = id,
                     name = providerName,
                     description = item.optString("description").trim(),
-                    fileUrl = fileUrl
+                    fileUrl = fileUrl,
+                    hasSettings = item.optBoolean("hasSettings", item.optJSONObject("settings") != null)
                 ))
             }
         }
