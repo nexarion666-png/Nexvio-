@@ -217,7 +217,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
 }
 
 @Composable
-internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit) {
+internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit, onFindStreams: (TmdbTitle, Int, Int) -> Unit = { _, _, _ -> }) {
     val context = LocalContext.current
     val watchlist = remember(context) { WatchlistStore(context) }
     var savedToWatchlist by remember(item.id, item.mediaType) { mutableStateOf(watchlist.contains(item)) }
@@ -262,7 +262,7 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                         })
                         Spacer(Modifier.height(14.dp))
                     }
-                    StreamDiscoverySection(item = item, seasonNumber = selectedSeason, episodeNumber = selectedEpisode, onPlay = onPlay)
+                    Button(onClick = { onFindStreams(item, selectedSeason, selectedEpisode) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = CatalogueAccent, contentColor = CatalogueInk)) { Text("▶  Find streams") }
                     Spacer(Modifier.height(20.dp))
                 }
             }
@@ -270,6 +270,22 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
     }
 }
 
+
+@Composable
+internal fun StreamSearchPage(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onBack: () -> Unit, onPlay: (TvChannel) -> Unit) {
+    Column(Modifier.fillMaxSize().background(CatalogueInk)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("‹  Back", color = CatalogueAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Find streams", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text(item.title, color = CatalogueMuted, fontSize = 13.sp, maxLines = 1)
+            }
+        }
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+            item { StreamDiscoverySection(item, seasonNumber, episodeNumber, onPlay, autoStart = true, fullPage = true) }
+        }
+    }
+}
 
 private data class DiscoveredStream(
     val addonName: String,
@@ -486,7 +502,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit) {
+private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit, autoStart: Boolean = false, fullPage: Boolean = false) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var streams by remember(item.id, item.mediaType) { mutableStateOf<List<DiscoveredStream>>(emptyList()) }
@@ -497,6 +513,23 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var qualityMenu by remember { mutableStateOf(false) }
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
+
+    fun startSearch() {
+        if (loading) return
+        scope.launch {
+            loading = true; searched = true; error = null; streams = emptyList()
+            try {
+                streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber) { found ->
+                    withContext(Dispatchers.Main) { streams = found; error = null }
+                }
+                if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
+            } catch (e: Exception) { error = e.message ?: "Stream discovery failed." }
+            finally { loading = false }
+        }
+    }
+    LaunchedEffect(item.id, item.mediaType, seasonNumber, episodeNumber, autoStart) {
+        if (autoStart && !searched) startSearch()
+    }
 
     downloadTarget?.let { target ->
         AlertDialog(
@@ -522,8 +555,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         AlertDialog(onDismissRequest = { downloadMessage = null }, title = { Text("Nexvio downloads") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { downloadMessage = null }) { Text("OK") } })
     }
 
-    Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
-        Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+    Column(if (fullPage) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
+        if (!fullPage) Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(
             if (item.mediaType == "movie") "Search enabled Stremio add-ons and compatible Nuvio repository scrapers for playable sources."
@@ -531,31 +564,11 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             color = CatalogueMuted, fontSize = 13.sp, lineHeight = 19.sp
         )
         Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = {
-                scope.launch {
-                    loading = true
-                    searched = true
-                    error = null
-                    streams = emptyList()
-                    try {
-                        streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber) { found ->
-                            withContext(Dispatchers.Main) { streams = found; error = null }
-                        }
-                        if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
-                    } catch (e: Exception) {
-                        error = e.message ?: "Stream discovery failed."
-                    } finally { loading = false }
-                }
-            },
-            enabled = !loading,
-            colors = ButtonDefaults.buttonColors(containerColor = CatalogueAccent, contentColor = CatalogueInk)
-        ) {
-            if (loading) {
-                CircularProgressIndicator(Modifier.size(18.dp), color = CatalogueInk, strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
+        if (!fullPage) {
+            Button(onClick = { startSearch() }, enabled = !loading, colors = ButtonDefaults.buttonColors(containerColor = CatalogueAccent, contentColor = CatalogueInk)) {
+                if (loading) { CircularProgressIndicator(Modifier.size(18.dp), color = CatalogueInk, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
+                Text(if (loading) "Finding streams…" else "Find streams")
             }
-            Text(if (loading) "Finding streams…" else "Find streams")
         }
         if (error != null) {
             Spacer(Modifier.height(8.dp))
