@@ -34,7 +34,7 @@ internal object NuvioScraperEngine {
     private val main = Handler(Looper.getMainLooper())
     private val pool = Executors.newFixedThreadPool(4)
 
-    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}): List<NuvioDiscoveredStream> {
+    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}): List<NuvioDiscoveredStream> {
         // Run a small number of providers concurrently so one slow scraper does not
         // block faster providers from publishing their results.
         val providers = PluginRepositoryStore(context).all()
@@ -51,13 +51,15 @@ internal object NuvioScraperEngine {
             val jobs = providers.map { (repositoryName, providerName, fileUrl) ->
                 async {
                     concurrency.withPermit {
-                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (_: Exception) { return@withPermit }
+                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": download failed (" + (e.message ?: "network error") + ")"); return@withPermit }
                         val found = try {
-                            execute(context, providerName.ifBlank { repositoryName }, script, item, season, episode)
-                        } catch (_: Exception) {
+                            execute(context, providerName.ifBlank { repositoryName }, script, item, season, episode, onStatus)
+                        } catch (e: Exception) {
+                            onStatus(providerName + ": failed (" + (e.message ?: "runtime error") + ")")
                             emptyList()
                         }
                         if (found.isNotEmpty()) {
+                            onStatus(providerName + ": " + found.size + " stream(s)")
                             publishLock.withLock {
                                 results.addAll(found)
                                 val snapshot = results.distinctBy { it.url }.take(50)
@@ -72,7 +74,7 @@ internal object NuvioScraperEngine {
         }
     }
 
-    private suspend fun execute(context: Context, name: String, source: String, item: TmdbTitle, season: Int, episode: Int): List<NuvioDiscoveredStream> =
+    private suspend fun execute(context: Context, name: String, source: String, item: TmdbTitle, season: Int, episode: Int, onStatus: suspend (String) -> Unit): List<NuvioDiscoveredStream> =
         withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
                 val web = WebView(context)
@@ -91,7 +93,13 @@ internal object NuvioScraperEngine {
                         val js = "(function(){var module={exports:{}},exports=module.exports;var __fetchCallbacks={};" +
                             "window.__nexvioFetchDone=function(id,payload){var cb=__fetchCallbacks[id];if(!cb)return;delete __fetchCallbacks[id];try{var d=JSON.parse(payload);cb.resolve({ok:d.status>=200&&d.status<300,status:d.status,text:function(){return Promise.resolve(d.body)},json:function(){try{return Promise.resolve(JSON.parse(d.body))}catch(e){return Promise.reject(e)}}})}catch(e){cb.reject(e)}};" +
                             "window.fetch=function(input,opts){return new Promise(function(resolve,reject){var id=String(Date.now())+Math.random().toString(36).slice(2);__fetchCallbacks[id]={resolve:resolve,reject:reject};NexvioBridge.request(id,String(input),JSON.stringify(opts||{}))})};" +
-                            "var require=function(n){throw new Error('Unsupported module: '+n)};" +
+                            "var __axios=function(config){config=config||{};var method=String(config.method||'GET').toUpperCase();var url=config.url||'';var headers=config.headers||{};var body=config.data;if(body&&typeof body!=='string')body=JSON.stringify(body);return window.fetch(url,{method:method,headers:headers,body:method==='GET'||method==='HEAD'?undefined:body}).then(function(r){return r.text().then(function(t){var data=t;try{data=JSON.parse(t)}catch(e){};return {data:data,status:r.status,statusText:'',headers:{},config:config,request:null}})}).then(function(r){if(r.status<200||r.status>=300){var e=new Error('Request failed with status code '+r.status);e.response=r;throw e}return r})};" +
+                            "__axios.get=function(url,config){return __axios(Object.assign({},config||{},{url:url,method:'GET'}))};" +
+                            "__axios.post=function(url,data,config){return __axios(Object.assign({},config||{},{url:url,data:data,method:'POST'}))};" +
+                            "__axios.head=function(url,config){return __axios(Object.assign({},config||{},{url:url,method:'HEAD'}))};" +
+                            "var __cheerio={load:function(html){var doc=new DOMParser().parseFromString(String(html||''),'text/html');function wrap(nodes){nodes=Array.prototype.slice.call(nodes||[]);var api={length:nodes.length,each:function(fn){nodes.forEach(function(n,i){fn.call(n,i,n)});return api},map:function(fn){return wrap(nodes.map(function(n,i){return fn.call(n,i,n)}))},get:function(i){return i==null?nodes:nodes[i<0?nodes.length+i:i]},toArray:function(){return nodes},find:function(sel){var a=[];nodes.forEach(function(n){a=a.concat(Array.prototype.slice.call(n.querySelectorAll(sel)))});return wrap(a)},first:function(){return wrap(nodes.slice(0,1))},last:function(){return wrap(nodes.slice(-1))},eq:function(i){return wrap([api.get(i)].filter(Boolean))},text:function(){return nodes.map(function(n){return n&&n.textContent||''}).join('')},html:function(){return nodes[0]&&nodes[0].innerHTML||null},attr:function(k){return nodes[0]&&nodes[0].getAttribute?nodes[0].getAttribute(k):undefined},val:function(){return nodes[0]&&nodes[0].value||''},remove:function(){nodes.forEach(function(n){if(n&&n.remove)n.remove()});return api},children:function(sel){var a=[];nodes.forEach(function(n){a=a.concat(Array.prototype.slice.call(n.children||[]))});return wrap(sel?a.filter(function(n){return n.matches(sel)}):a)},parent:function(){return wrap(nodes.map(function(n){return n.parentElement}).filter(Boolean))},filter:function(sel){return wrap(nodes.filter(function(n){return n.matches&&n.matches(sel)}))},toString:function(){return api.html()||api.text()}};return api}function $(selector){if(typeof selector==='string'){if(selector.trim().charAt(0)==='<'){var tmp=new DOMParser().parseFromString(selector,'text/html');return wrap(Array.prototype.slice.call(tmp.body.children))}return wrap(doc.querySelectorAll(selector))}return wrap(selector?[selector]:[])}$.html=function(){return doc.documentElement.outerHTML};$.root=function(){return wrap([doc])};return $}};" +
+                            "var __console={log:function(){},info:function(){},warn:function(){},error:function(){}};" +
+                            "var require=function(n){if(n==='axios')return __axios;if(n==='console')return __console;if(n==='url')return {URL:URL,URLSearchParams:URLSearchParams};if(n==='cheerio'||n==='cheerio-without-node-native')return __cheerio;throw new Error('Unsupported module: '+n+' (Nexvio supports axios, cheerio, console and url only)')};" +
                             "try{(new Function('module','exports','require'," + src + "))(module,exports,require);" +
                             "var fn=module.exports&&module.exports.getStreams;if(typeof fn!=='function')throw new Error('Missing getStreams export');" +
                             "Promise.resolve(fn(" + id + "," + type + "," + s + "," + e + ")).then(function(v){" +
@@ -106,7 +114,10 @@ internal object NuvioScraperEngine {
                         val parsed = try {
                             val root = JSONObject(raw)
                             val arr = root.optJSONArray("streams") ?: JSONArray()
-                            if (!root.optBoolean("ok")) JSONArray() else arr
+                            if (!root.optBoolean("ok")) {
+                                android.util.Log.w("NexvioNuvio", "${name} failed: ${root.optString("error", "unknown provider error")}")
+                                JSONArray()
+                            } else arr
                         } catch (_: Exception) { JSONArray() }
                         val streams = (0 until parsed.length()).mapNotNull { i ->
                             val o = parsed.optJSONObject(i) ?: return@mapNotNull null

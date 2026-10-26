@@ -14,6 +14,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -436,11 +442,11 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
     kotlinx.coroutines.coroutineScope {
         val nuvioJob = async {
             try {
-                NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber) { found ->
+                NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber, onStreams = { found ->
                     publish(found.map { stream ->
                         DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers)
                     })
-                }
+                })
             } catch (_: Exception) {
                 // Stremio add-ons can still return results if Nuvio providers fail.
             }
@@ -461,38 +467,51 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             if (imdbId != null) {
                 val resourceType = if (item.mediaType == "movie") "movie" else "series"
                 val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
-                for ((addonName, manifestUrl) in addons) {
-                    try {
-                        val manifestUri = java.net.URI(manifestUrl)
-                        val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
-                        val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$path"
-                        val streamUrl = "$base/stream/$resourceType/$streamId.json"
-                        val connection = URL(streamUrl).openConnection() as HttpURLConnection
+                // Query all enabled add-ons concurrently so a slow source cannot
+                // prevent faster sources from publishing results.
+                val addonJobs = addons.map { (addonName, manifestUrl) ->
+                    async(Dispatchers.IO) {
                         try {
-                            connection.connectTimeout = 7000
-                            connection.readTimeout = 9000
-                            connection.instanceFollowRedirects = true
-                            connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
-                            connection.setRequestProperty("Accept", "application/json")
-                            if (connection.responseCode !in 200..299) continue
-                            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                            val streams = json.optJSONArray("streams") ?: continue
-                            val found = (0 until streams.length()).mapNotNull { i ->
-                                val stream = streams.optJSONObject(i) ?: return@mapNotNull null
-                                val url = stream.optString("url").trim()
-                                if (!url.startsWith("https://") && !url.startsWith("http://")) return@mapNotNull null
-                                val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
-                                val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
-                                val headersJson = stream.optJSONObject("headers")
-                                val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
-                                DiscoveredStream(addonName, label, url, quality, headers)
-                            }
-                            publish(found)
-                        } finally { connection.disconnect() }
-                    } catch (_: Exception) {
-                        // A single failed add-on should not block the remaining sources.
+                            val manifestUri = java.net.URI(manifestUrl)
+                            val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
+                            val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$path"
+                            val streamUrl = "$base/stream/$resourceType/$streamId.json"
+                            val connection = URL(streamUrl).openConnection() as HttpURLConnection
+                            try {
+                                connection.connectTimeout = 7000
+                                connection.readTimeout = 9000
+                                connection.instanceFollowRedirects = true
+                                connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
+                                connection.setRequestProperty("Accept", "application/json")
+                                val code = connection.responseCode
+                                if (code !in 200..299) {
+                                    android.util.Log.w("NexvioStreams", "$addonName returned HTTP $code")
+                                    return@async
+                                }
+                                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                                val streams = json.optJSONArray("streams") ?: run {
+                                    android.util.Log.w("NexvioStreams", "$addonName response has no streams array")
+                                    return@async
+                                }
+                                val found = (0 until streams.length()).mapNotNull { i ->
+                                    val stream = streams.optJSONObject(i) ?: return@mapNotNull null
+                                    val url = stream.optString("url").trim()
+                                    if (!url.startsWith("https://") && !url.startsWith("http://")) return@mapNotNull null
+                                    val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
+                                    val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
+                                    val headersJson = stream.optJSONObject("headers")
+                                    val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
+                                    DiscoveredStream(addonName, label, url, quality, headers)
+                                }
+                                publish(found)
+                                android.util.Log.i("NexvioStreams", "$addonName returned ${found.size} streams")
+                            } finally { connection.disconnect() }
+                        } catch (e: Exception) {
+                            android.util.Log.w("NexvioStreams", "$addonName failed: ${e.message}")
+                        }
                     }
                 }
+                addonJobs.forEach { job -> try { job.await() } catch (_: Exception) { } }
             }
         }
         nuvioJob.await()
@@ -514,6 +533,27 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var qualityMenu by remember { mutableStateOf(false) }
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
+    var loadingMessage by remember { mutableStateOf("Checking providers") }
+    val loaderTransition = rememberInfiniteTransition(label = "stream-search-loader")
+    val loaderRotation by loaderTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "stream-search-rotation"
+    )
+    LaunchedEffect(loading) {
+        if (loading) {
+            val messages = listOf("Checking providers", "Searching for playable links", "Waiting for source responses", "Collecting stream details")
+            var index = 0
+            while (true) {
+                loadingMessage = messages[index % messages.size]
+                index++
+                delay(1500)
+            }
+        } else {
+            loadingMessage = if (streams.isEmpty()) "Search complete" else "Streams found"
+        }
+    }
 
     fun startSearch() {
         if (loading) return
@@ -571,9 +611,24 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 Text(if (loading) "Finding streams…" else "Find streams")
             }
         }
+        if (loading) {
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(25.dp).rotate(loaderRotation), color = CatalogueAccent, strokeWidth = 3.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(loadingMessage, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("${streams.size} stream(s) found so far", color = CatalogueMuted, fontSize = 12.sp)
+                }
+                Text("LIVE", color = CatalogueAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            }
+        }
         if (error != null) {
             Spacer(Modifier.height(8.dp))
             Text(error.orEmpty(), color = CatalogueMuted, fontSize = 12.sp, lineHeight = 17.sp)
+            if (!loading && searched) {
+                TextButton(onClick = { startSearch() }) { Text("Retry search", color = CatalogueAccent) }
+            }
         }
         if (streams.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
