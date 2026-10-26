@@ -27,6 +27,7 @@ internal data class NuvioDiscoveredStream(val providerName: String, val title: S
 internal object NuvioDiagnosticFormat {
     fun safeUrl(address: String): String = try {
         val uri = URI(address.trim())
+        require((uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrBlank())
         val host = uri.host.orEmpty()
         val port = if (uri.port >= 0) ":" + uri.port else ""
         val path = uri.rawPath.orEmpty()
