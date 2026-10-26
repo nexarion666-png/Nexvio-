@@ -62,7 +62,7 @@ fun PluginRepositoryScreen(onBack: () -> Unit) {
             Text("Plugin repositories", fontSize = 21.sp, fontWeight = FontWeight.Bold)
         }
         Text(
-            "Add an HTTPS manifest URL to register a plugin repository. This version manages repository metadata only; provider code is not executed yet.",
+            "Add an HTTPS Nuvio-compatible manifest. Enabled providers are tried when you use Find streams; providers requiring unsupported Node modules may not work.",
             color = Color(0xFF9A9DA6),
             fontSize = 13.sp,
             lineHeight = 19.sp,

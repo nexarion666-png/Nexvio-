@@ -31,34 +31,18 @@ internal object NuvioScraperEngine {
     private val pool = Executors.newFixedThreadPool(4)
 
     suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int): List<NuvioDiscoveredStream> {
-        val prefs = context.getSharedPreferences("nexvio_addons", Context.MODE_PRIVATE)
-        val saved = JSONArray(prefs.getString("installed", "[]") ?: "[]")
-        val repositories = (0 until saved.length()).mapNotNull { i ->
-            val obj = saved.optJSONObject(i) ?: return@mapNotNull null
-            val url = obj.optString("manifestUrl")
-            if (!obj.optBoolean("enabled", true) || !(url.startsWith("https://") || url.startsWith("http://"))) null
-            else obj.optString("name", "Repository") to url
-        }
+        // Plugin repositories live in PluginRepositoryStore, not the Stremio add-ons preferences.
+        // Use the exact repository/provider enablement state shown in Settings → Plugin repositories.
+        val repositories = PluginRepositoryStore(context).all().filter { it.enabled }
         val results = mutableListOf<NuvioDiscoveredStream>()
-        for ((repoName, manifestUrl) in repositories) {
-            val manifest = try { JSONObject(fetchText(manifestUrl, MAX_BYTES)) } catch (_: Exception) { continue }
-            val scrapers = manifest.optJSONArray("scrapers") ?: continue
-            val base = try {
-                val uri = URI(manifestUrl)
-                uri.scheme + "://" + uri.rawAuthority + uri.path.orEmpty().substringBeforeLast('/', "") + "/"
-            } catch (_: Exception) { continue }
-            for (i in 0 until minOf(scrapers.length(), 30)) {
-                val scraper = scrapers.optJSONObject(i) ?: continue
-                if (!scraper.optBoolean("enabled", true)) continue
-                val types = scraper.optJSONArray("supportedTypes")
-                val type = if (item.mediaType == "movie") "movie" else "tv"
-                if (types != null && (0 until types.length()).none { types.optString(it).equals(type, true) }) continue
-                val filename = scraper.optString("filename")
-                if (filename.isBlank()) continue
-                val scriptUrl = try { URL(URL(manifestUrl), filename).toString() } catch (_: Exception) { base + filename }
-                val script = try { fetchText(scriptUrl, MAX_BYTES) } catch (_: Exception) { continue }
-                val name = scraper.optString("name").ifBlank { scraper.optString("id").ifBlank { repoName } }
-                try { results += execute(context, name, script, item, season, episode) } catch (_: Exception) { }
+        for (repository in repositories) {
+            for (provider in repository.providers.filter { it.enabled }.take(30)) {
+                val script = try { fetchText(provider.fileUrl, MAX_BYTES) } catch (_: Exception) { continue }
+                try {
+                    results += execute(context, provider.name.ifBlank { repository.name }, script, item, season, episode)
+                } catch (_: Exception) {
+                    // One incompatible provider must not block other enabled providers.
+                }
                 if (results.size >= 50) return results.distinctBy { it.url }.take(50)
             }
         }
