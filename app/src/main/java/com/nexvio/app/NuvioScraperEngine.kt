@@ -40,7 +40,7 @@ internal object NuvioScraperEngine {
         val providers = PluginRepositoryStore(context).all()
             .filter { it.enabled }
             .flatMap { repository ->
-                repository.providers.filter { it.enabled }.take(30)
+                repository.providers.filter { it.enabled }
                     .map { provider -> Triple(repository.name, provider.name, provider.fileUrl) }
             }
         val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
@@ -51,15 +51,18 @@ internal object NuvioScraperEngine {
             val jobs = providers.map { (repositoryName, providerName, fileUrl) ->
                 async {
                     concurrency.withPermit {
-                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": download failed (" + (e.message ?: "network error") + ")"); return@withPermit }
+                        onStatus(providerName + ": waiting for search slot")
+                        onStatus(providerName + ": downloading script")
+                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": network/download error — " + (e.message ?: "network error")); return@withPermit }
                         val found = try {
+                            onStatus(providerName + ": script downloaded; searching")
                             execute(context, providerName.ifBlank { repositoryName }, script, item, season, episode, onStatus)
                         } catch (e: Exception) {
-                            onStatus(providerName + ": failed (" + (e.message ?: "runtime error") + ")")
+                            onStatus(providerName + ": failed — " + (e.message ?: "runtime error"))
                             emptyList()
                         }
+                        onStatus(if (found.isEmpty()) providerName + ": completed — no streams" else providerName + ": completed — " + found.size + " stream(s)")
                         if (found.isNotEmpty()) {
-                            onStatus(providerName + ": " + found.size + " stream(s)")
                             publishLock.withLock {
                                 results.addAll(found)
                                 val snapshot = results.distinctBy { it.url }
