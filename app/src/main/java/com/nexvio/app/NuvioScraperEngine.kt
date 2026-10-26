@@ -140,14 +140,18 @@ internal object NuvioScraperEngine {
                     it.enabled &&
                         (providerFilter == null || it.name.equals(providerFilter, true)) &&
                         it.name !in disabledProviders
-                }.map { provider -> Triple(repository.name, provider.name, provider.fileUrl) }
+                }.map { provider -> listOf(repository.name, provider.name, provider.fileUrl, provider.hasSettings) }
             }
         val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
         val publishLock = kotlinx.coroutines.sync.Mutex()
         val concurrency = kotlinx.coroutines.sync.Semaphore(6)
 
         return kotlinx.coroutines.coroutineScope {
-            val jobs = providers.map { (repositoryName, providerName, fileUrl) ->
+            val jobs = providers.map { providerEntry ->
+                val repositoryName = providerEntry[0] as String
+                val providerName = providerEntry[1] as String
+                val fileUrl = providerEntry[2] as String
+                val hasSettings = providerEntry[3] as Boolean
                 async {
                     concurrency.withPermit {
                         onStatus(providerName + ": waiting for search slot")
@@ -162,7 +166,7 @@ internal object NuvioScraperEngine {
                             onStatus(providerName + ": failed — " + (e.message ?: e.javaClass.simpleName))
                             emptyList()
                         }
-                        if (!failed) onStatus(if (found.isEmpty()) providerName + ": " + (runSummaries.remove(providerName) ?: "no streams (0 requests, 0 failed, last error: none)") else providerName + ": completed — " + found.size + " stream(s)")
+                        if (!failed) { val summary = runSummaries.remove(providerName) ?: "no streams (0 requests, 0 failed, last error: none)"; val label = if (summary == "no requests made" && hasSettings) "needs provider settings" else summary; onStatus(if (found.isEmpty()) providerName + ": " + label else providerName + ": completed — " + found.size + " stream(s)") }
                         if (found.isNotEmpty()) {
                             publishLock.withLock {
                                 results.addAll(found)
@@ -324,8 +328,9 @@ internal object NuvioScraperEngine {
                     var bytesForLog = 0
                     var errorForLog: String? = null
                     var bodyPreview: String? = null
+                    var normalizedAddressForLog = normalizeRequestUrl(address)
                     val payload = try {
-                        val normalizedAddress = normalizeRequestUrl(address)
+                        val normalizedAddress = normalizedAddressForLog
                         val uri = URI(normalizedAddress)
                         require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
                         val host = uri.host.lowercase()
@@ -385,7 +390,6 @@ internal object NuvioScraperEngine {
                                 val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB" + if (contentLength >= 0) " (Content-Length: $contentLength)" else ""); tracker.addResponseBytes(n); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
                                 bytesForLog = bytes.size
                                 val responseBody = bytes.toString(Charsets.UTF_8)
-                                val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
                                 val seen = tracker.repeated(method, uri.toString())
                                 if (status >= 400) bodyPreview = responseBody.take(300) else if (seen == 3) bodyPreview = responseBody.take(300)
                                 responseJson = JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", targetUri.toString()).put("redirected", redirects > 0).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
@@ -397,7 +401,7 @@ internal object NuvioScraperEngine {
                         JSONObject().put("status", 599).put("body", errorForLog ?: "Network request failed").put("error", errorForLog).toString()
                     } finally {
                         tracker.recordOutcome(statusForLog, errorForLog)
-                        recordRequest(provider, NuvioRequestLog(methodForLog, safeLogUrl(normalizedAddress), statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog, bodyPreview))
+                        recordRequest(provider, NuvioRequestLog(methodForLog, safeLogUrl(normalizedAddressForLog), statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog, bodyPreview))
                         tracker.finished()
                     }
                     if (runActive.get() && !Thread.currentThread().isInterrupted) {
