@@ -431,7 +431,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
         publishLock.withLock {
             val snapshot = synchronized(output) {
                 output.addAll(newStreams)
-                output.distinctBy { it.url }.take(50)
+                output.distinctBy { it.url }
             }
             onStreams(snapshot)
         }
