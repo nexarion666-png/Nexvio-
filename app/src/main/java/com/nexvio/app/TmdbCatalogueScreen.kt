@@ -546,6 +546,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var downloadMessage by remember { mutableStateOf<String?>(null) }
     val providerStatuses = remember(item.id, item.mediaType, seasonNumber, episodeNumber) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
     var selectedDiagnosticProvider by remember { mutableStateOf<String?>(null) }
+    var testPreset by remember { mutableStateOf("Selected title") }
+    var providerTestMessage by remember { mutableStateOf<String?>(null) }
+    val disabledProviders = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
     var loadingMessage by remember { mutableStateOf("Checking providers") }
     val loaderTransition = rememberInfiniteTransition(label = "stream-search-loader")
     val loaderRotation by loaderTransition.animateFloat(
@@ -660,6 +663,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                             Text(provider, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             Text(status, color = CatalogueMuted, fontSize = 11.sp, lineHeight = 15.sp)
                         }
+                        Checkbox(checked = disabledProviders[provider] != true, onCheckedChange = { enabled -> disabledProviders[provider] = !enabled }, modifier = Modifier.size(32.dp))
                     }
                 }
             }
@@ -745,6 +749,13 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     if (modules.isNotEmpty()) Text("Unsupported modules: ${modules.sorted().joinToString()}", color = Color(0xFFFF9A80), fontSize = 12.sp)
+                    Text("Test title: $testPreset", color = Color.White, fontSize = 12.sp)
+                    Row {
+                        TextButton(onClick = { testPreset = "Selected title" }) { Text("Current") }
+                        TextButton(onClick = { testPreset = "Game of Thrones S1E1" }) { Text("GoT S1E1") }
+                        TextButton(onClick = { testPreset = "Inception" }) { Text("Inception") }
+                    }
+                    providerTestMessage?.let { Text(it, color = CatalogueMuted, fontSize = 11.sp) }
                     if (logs.isEmpty()) Text("No bridge requests recorded for this provider yet.", color = CatalogueMuted, fontSize = 12.sp)
                     else androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 360.dp)) {
                         items(logs.reversed()) { entry ->
@@ -764,7 +775,28 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio provider request log", text))
                 }) { Text("Copy log") }
             },
-            dismissButton = { TextButton(onClick = { selectedDiagnosticProvider = null }) { Text("Close") } }
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        scope.launch {
+                            val target = when (testPreset) {
+                                "Game of Thrones S1E1" -> TmdbTitle(139, "Game of Thrones", "", null, "2011", 9.2, "tv")
+                                "Inception" -> TmdbTitle(27205, "Inception", "", null, "2010", 8.4, "movie")
+                                else -> item
+                            }
+                            val s = if (testPreset == "Game of Thrones S1E1") 1 else seasonNumber
+                            val ep = if (testPreset == "Game of Thrones S1E1") 1 else episodeNumber
+                            providerTestMessage = "Testing $provider…"
+                            NuvioScraperEngine.discover(context, target, s, ep, providerFilter = provider, onStatus = { message ->
+                                val split = message.indexOf(":")
+                                if (split > 0) providerStatuses[message.substring(0, split).trim()] = message.substring(split + 1).trim()
+                            })
+                            providerTestMessage = "Test finished for $provider"
+                        }
+                    }) { Text("Test this provider") }
+                    TextButton(onClick = { selectedDiagnosticProvider = null }) { Text("Close") }
+                }
+            }
         )
     }
 
