@@ -1,19 +1,28 @@
 # Nuvio plugin compatibility
 
-Nexvio treats Nuvio JavaScript-plugin repositories as a separate format from Stremio add-ons.
+Nexvio executes Nuvio-style provider JavaScript in a restricted Android WebView adapter. It is not a full Node.js, Hermes, or Cheerio implementation. Repository manifests and provider scripts are third-party inputs and must be treated as untrusted code.
 
-## Manifest shape
+## Runtime contract
 
-A repository manifest has root `name` and `version` fields and a `scrapers` array. Each provider entry can include `id`, `name`, `description`, `version`, `filename`, `enabled`, `hasSettings`, `supportedTypes`, `formats`, `contentLanguage`, `author`, `limited`, `notes`, `disabledPlatforms`, and `supportsExternalPlayer`.
+Provider scripts are downloaded over HTTP(S), capped at 1 MiB, and invoked through `getStreams(tmdbId, mediaType, season, episode)`. Network response bodies are capped at 2 MiB. The bridge blocks localhost and resolved private/loopback/link-local addresses and permits only HTTP(S) URLs. Do not remove these limits when adding compatibility.
 
-The parser added in this change recognizes these fields, resolves each `filename` relative to the HTTPS manifest URL, applies size/count limits, and keeps optional metadata optional.
+## Supported `require()` modules
 
-## Important current limitation
+- `axios`: basic GET, POST, and HEAD adapter.
+- `cheerio` and `cheerio-without-node-native`: a limited DOMParser-backed jQuery/Cheerio-style adapter.
+- `console`: no-op logging methods.
+- `url`: WebView `URL` and `URLSearchParams`.
+- `crypto-js` and subpaths are not yet supported by this compatibility layer; providers that require them fail explicitly.
+- Other Node built-ins and arbitrary npm modules are unsupported.
 
-This change is manifest compatibility only. It does **not** execute downloaded provider JavaScript, implement Nuvio's `getStreams(tmdbId, mediaType, season, episode)` contract, or make plugin results playable. The Nuvio runtime also provides JavaScript polyfills and modules (including `fetch`, timers, URL/base64/crypto helpers, HTML parsing and `require` shims); parsing a manifest alone cannot provide that behavior.
+The runtime supplies browser/WebView APIs where available, plus a small set of compatibility shims. The Cheerio adapter supports only a subset of selectors and methods; it should not be treated as drop-in Cheerio. The fetch bridge implements a bounded HTTP request adapter, not the complete WHATWG Fetch API.
 
-The next implementation step is a separately reviewed JavaScript runtime with bounded execution, restricted host bindings, provider settings, and a normalized stream result model connected to Nexvio's existing Media3 player. Remote JavaScript must be treated as untrusted code. Nexvio should not claim full Nuvio compatibility until that end-to-end path is implemented and tested.
+## Diagnostics and known limitations
 
-## Upstream reference
+Provider diagnostics show the runtime engine stamp and recent sanitized request logs. Request logs omit query strings, headers, bodies, and full stream URLs. A provider may complete without streams when its site layout changes, it blocks automated requests, its extractor does not recognize the response, or a required module/API is unsupported. A timeout is not proof the site has no streams.
 
-The Nuvio project is GPL-3.0 licensed. This compatibility layer was written independently and does not copy Nuvio runtime source. Review upstream license obligations before adapting or distributing any upstream implementation.
+The runtime is deliberately restricted. Remote provider JavaScript can still be buggy or malicious, so review repositories before enabling them and disable providers you do not trust. Treat stream URLs and returned metadata as untrusted.
+
+## Licensing note
+
+Nuvio-compatible manifests and provider scripts are third-party content. This adapter is maintained independently; review each upstream project's license and terms before redistributing bundled provider code or adapting upstream runtime code.
