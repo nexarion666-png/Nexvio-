@@ -27,9 +27,33 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String, val headers: Map<String, String> = emptyMap())
+internal object NuvioUrlNormalizer {
+    fun normalize(raw: String): String {
+        val input = raw.trim()
+        val authorityStart = input.indexOf("://").let { if (it < 0) -1 else it + 3 }
+        val authorityEnd = if (authorityStart < 0) -1 else input.indexOfAny(charArrayOf('/', '?', '#'), authorityStart).let { if (it < 0) input.length else it }
+        val out = StringBuilder(input.length + 16)
+        var i = 0
+        while (i < input.length) {
+            val c = input[i]
+            val inAuthority = authorityStart >= 0 && i >= authorityStart && i < authorityEnd
+            if (c == '%' && i + 2 < input.length && input[i + 1].digitToIntOrNull(16) != null && input[i + 2].digitToIntOrNull(16) != null) { out.append(input, i, i + 3); i += 3; continue }
+            if (c.code > 127) {
+                val cp = input.codePointAt(i)
+                String(Character.toChars(cp)).toByteArray(Charsets.UTF_8).forEach { b -> out.append('%').append(String.format(java.util.Locale.ROOT, "%02X", b.toInt() and 0xff)) }
+                i += Character.charCount(cp); continue
+            }
+            val keepBracket = inAuthority && (c == '[' || c == ']')
+            if (!keepBracket && (c.isWhitespace() || c == '"' || c == '<' || c == '>' || c == '^' || c == '`' || c == '{' || c == '}' || c == '|' || c == '\\' || (!inAuthority && (c == '[' || c == ']')))) out.append('%').append(String.format(java.util.Locale.ROOT, "%02X", c.code)) else out.append(c)
+            i++
+        }
+        return out.toString()
+    }
+}
+
 internal object NuvioDiagnosticFormat {
     fun safeUrl(address: String): String = try {
-        val uri = URI(NuvioScraperEngine.normalizeRequestUrl(address))
+        val uri = URI(NuvioUrlNormalizer.normalize(address))
         require((uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrBlank())
         val host = uri.host.orEmpty()
         val port = if (uri.port >= 0) ":" + uri.port else ""
@@ -76,27 +100,7 @@ internal object NuvioScraperEngine {
     private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque<NuvioRequestLog>() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
     private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(normalizeRequestUrl(address))
-    internal fun normalizeRequestUrl(raw: String): String {
-        val input = raw.trim()
-        val authorityStart = input.indexOf("://").let { if (it < 0) -1 else it + 3 }
-        val authorityEnd = if (authorityStart < 0) -1 else input.indexOfAny(charArrayOf('/', '?', '#'), authorityStart).let { if (it < 0) input.length else it }
-        val out = StringBuilder(input.length + 16)
-        var i = 0
-        while (i < input.length) {
-            val c = input[i]
-            val inAuthority = authorityStart >= 0 && i >= authorityStart && i < authorityEnd
-            if (c == '%' && i + 2 < input.length && input[i + 1].digitToIntOrNull(16) != null && input[i + 2].digitToIntOrNull(16) != null) { out.append(input, i, i + 3); i += 3; continue }
-            if (c.code > 127) {
-                val cp = input.codePointAt(i)
-                String(Character.toChars(cp)).toByteArray(Charsets.UTF_8).forEach { b -> out.append('%').append(String.format(java.util.Locale.ROOT, "%02X", b.toInt() and 0xff)) }
-                i += Character.charCount(cp); continue
-            }
-            val keepBracket = inAuthority && (c == '[' || c == ']')
-            if (!keepBracket && (c.isWhitespace() || c == '"' || c == '<' || c == '>' || c == '^' || c == '`' || c == '{' || c == '}' || c == '|' || c == '\\' || (!inAuthority && (c == '[' || c == ']')))) out.append('%').append(String.format(java.util.Locale.ROOT, "%02X", c.code)) else out.append(c)
-            i++
-        }
-        return out.toString()
-    }
+    internal fun normalizeRequestUrl(raw: String): String = NuvioUrlNormalizer.normalize(raw)
 
 
     internal fun streamDedupeKey(s: NuvioDiscoveredStream): String = listOf(s.providerName, s.url, s.title, s.quality, s.headers.toSortedMap().entries.joinToString("&") { it.key + "=" + it.value }).joinToString("\u0000")
@@ -112,7 +116,7 @@ internal object NuvioScraperEngine {
         private val paths = linkedMapOf<String, Int>()
         private val repeated = linkedMapOf<String, Int>()
         private var totalResponseBytes = 0L
-        @Synchronized fun addResponseBytes(n: Int) { totalResponseBytes += n; if (totalResponseBytes > MAX_RUN_RESPONSE_BYTES) throw IllegalStateException("Total response exceeds 24 MB") }
+        @Synchronized fun addResponseBytes(n: Int, contentLength: Long = -1L) { totalResponseBytes += n; if (totalResponseBytes > MAX_RUN_RESPONSE_BYTES) throw IllegalStateException("Total response exceeds 24 MB" + if (contentLength >= 0) " (Content-Length: $contentLength)" else "") }
         @Synchronized fun totalBytes(): Long = totalResponseBytes
         @Synchronized fun recordOutcome(status: Int, error: String?) { if (status == 599 || status >= 400) { failed++; lastError = error ?: "HTTP $status" } }
         @Synchronized fun reject() { rejected++ }
@@ -387,11 +391,11 @@ internal object NuvioScraperEngine {
                                 val contentLength = connection.getHeaderFieldLong("Content-Length", -1L)
                                 if (contentLength > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB (Content-Length: $contentLength)")
                                 if (contentLength >= 0 && tracker.totalBytes() + contentLength > MAX_RUN_RESPONSE_BYTES) throw IllegalStateException("Total response exceeds 24 MB (Content-Length: $contentLength)")
-                                val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB" + if (contentLength >= 0) " (Content-Length: $contentLength)" else ""); tracker.addResponseBytes(n); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
+                                val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB" + if (contentLength >= 0) " (Content-Length: $contentLength)" else ""); tracker.addResponseBytes(n, contentLength); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
                                 bytesForLog = bytes.size
                                 val responseBody = bytes.toString(Charsets.UTF_8)
                                 val seen = tracker.repeated(method, uri.toString())
-                                if (status >= 400) bodyPreview = responseBody.take(300) else if (seen == 3) bodyPreview = responseBody.take(300)
+                                if (status >= 400) bodyPreview = safeLogError(responseBody)?.take(300) else if (seen == 3) bodyPreview = safeLogError(responseBody)?.take(300)
                                 responseJson = JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", targetUri.toString()).put("redirected", redirects > 0).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
                             } finally { connection.disconnect() }
                         }
