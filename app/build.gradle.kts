@@ -50,4 +50,7 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    // Android's org.json methods are stubs in local JVM unit tests. Supply a real
+    // implementation so manifest parsers can be tested without an emulator.
+    testImplementation("org.json:json:20240303")
 }
