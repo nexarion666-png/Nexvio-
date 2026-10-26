@@ -17,7 +17,7 @@ import java.net.URL
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 
-internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String)
+internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String, val headers: Map<String, String> = emptyMap())
 
 /**
  * Runs compatible Nuvio CommonJS providers in a disposable JavaScript WebView.
@@ -109,7 +109,9 @@ internal object NuvioScraperEngine {
                             val quality = o.optString("quality").ifBlank {
                                 Regex("(?i)(2160p|1080p|720p|480p|360p|4k|cam)").find(title)?.value?.uppercase() ?: "Quality unknown"
                             }
-                            NuvioDiscoveredStream(name, title, url, quality)
+                            val headerObject = o.optJSONObject("headers")
+                            val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
+                            NuvioDiscoveredStream(name, title, url, quality, headers)
                         }
                         continuation.resume(streams)
                     }

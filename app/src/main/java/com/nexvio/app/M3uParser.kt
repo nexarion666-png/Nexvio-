@@ -10,7 +10,9 @@ data class TvChannel(
     val category: String? = null,
     val tvgId: String? = null,
     val tvgName: String? = null,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    /** HTTP request headers required by provider streams (for example Referer). */
+    val requestHeaders: Map<String, String> = emptyMap()
 )
 
 data class ParsedPlaylist(val channels: List<TvChannel>, val error: String? = null)
