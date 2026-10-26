@@ -294,8 +294,6 @@ internal fun StreamSearchPage(item: TmdbTitle, seasonNumber: Int, episodeNumber:
     }
 }
 
-private fun streamDedupeKey(s: DiscoveredStream): String = listOf(s.providerName, s.url, s.title, s.quality, s.headers.toSortedMap().entries.joinToString("&") { it.key + "=" + it.value }).joinToString("\u0000")
-
 private data class DiscoveredStream(
     val addonName: String,
     val title: String,
