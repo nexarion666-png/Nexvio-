@@ -72,7 +72,7 @@ internal object NuvioScraperEngine {
         fun timeoutMessage(): String = NuvioDiagnosticFormat.timeoutMessage(count, lastUrl, pending > 0)
     }
 
-    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}): List<NuvioDiscoveredStream> {
+    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}, onlyProvider: String? = null, excludedProviders: Set<String> = emptySet()): List<NuvioDiscoveredStream> {
         // Run a small number of providers concurrently so one slow scraper does not
         // block faster providers from publishing their results.
         val providers = PluginRepositoryStore(context).all()
@@ -81,6 +81,7 @@ internal object NuvioScraperEngine {
                 repository.providers.filter { it.enabled }
                     .map { provider -> Triple(repository.name, provider.name, provider.fileUrl) }
             }
+            .filter { (_, providerName, _) -> (onlyProvider == null || providerName.equals(onlyProvider, true)) && excludedProviders.none { it.equals(providerName, true) } }
         val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
         val publishLock = kotlinx.coroutines.sync.Mutex()
         val concurrency = kotlinx.coroutines.sync.Semaphore(6)
