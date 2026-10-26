@@ -585,6 +585,24 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             finally { loading = false }
         }
     }
+    fun runProviderTest(provider: String, target: TmdbTitle, season: Int, episode: Int) {
+        testPresetProvider = null
+        selectedDiagnosticProvider = null
+        if (loading) return
+        scope.launch {
+            loading = true; searched = true; error = null; streams = emptyList(); providerStatuses.clear()
+            try {
+                streams = fetchAddonStreams(context, target, season, episode,
+                    onStreams = { found -> withContext(Dispatchers.Main) { streams = found; error = null } },
+                    onProviderStatus = { name, status -> withContext(Dispatchers.Main) { providerStatuses[name] = status } },
+                    excludedProviders = disabledProviders,
+                    onlyNuvioProvider = provider)
+                if (streams.isEmpty()) error = "$provider returned no streams for this test preset."
+            } catch (e: Exception) { error = e.message ?: "Provider test failed." }
+            finally { loading = false }
+        }
+    }
+
     LaunchedEffect(item.id, item.mediaType, seasonNumber, episodeNumber, autoStart) {
         if (autoStart && !searched) startSearch()
     }
@@ -758,17 +776,35 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    val text = buildString {
-                        appendLine("Nexvio ${NuvioScraperEngine.ENGINE_VERSION} — $provider")
-                        if (modules.isNotEmpty()) appendLine("Unsupported modules: ${modules.sorted().joinToString()}")
-                        logs.forEach { appendLine(it.format()) }
-                    }
-                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio provider request log", text))
-                }) { Text("Copy log") }
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { testPresetProvider = provider; selectedDiagnosticProvider = null }) { Text("Test this provider") }
+                    TextButton(onClick = {
+                        val text = buildString {
+                            appendLine("Nexvio ${NuvioScraperEngine.ENGINE_VERSION} — $provider")
+                            if (modules.isNotEmpty()) appendLine("Unsupported modules: ${modules.sorted().joinToString()}")
+                            logs.forEach { appendLine(it.format()) }
+                        }
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio provider request log", text))
+                    }) { Text("Copy log") }
+                }
             },
             dismissButton = { TextButton(onClick = { selectedDiagnosticProvider = null }) { Text("Close") } }
+        )
+    }
+    testPresetProvider?.let { provider ->
+        AlertDialog(
+            onDismissRequest = { testPresetProvider = null },
+            title = { Text("Test $provider") },
+            text = { Text("Choose a diagnostic title. This runs only the selected Nuvio provider and records its requests.") },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { runProviderTest(provider, item, seasonNumber, episodeNumber) }) { Text("Current title") }
+                    TextButton(onClick = { runProviderTest(provider, TmdbTitle(1399, "Game of Thrones", "Built-in test preset", null, "2011", 9.2, "tv"), 1, 1) }) { Text("Game of Thrones · S1E1") }
+                    TextButton(onClick = { runProviderTest(provider, TmdbTitle(27205, "Inception", "Built-in test preset", null, "2010", 8.8, "movie"), 1, 1) }) { Text("Inception (movie)") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { testPresetProvider = null }) { Text("Cancel") } }
         )
     }
 
