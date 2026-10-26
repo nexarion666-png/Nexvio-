@@ -259,10 +259,15 @@ internal object NuvioScraperEngine {
             if (!runActive.get()) return
             val safeUrl = safeLogUrl(address)
             if (!tracker.start(address.trim(), safeUrl)) {
-                main.post { if (runActive.get()) onBudgetExceeded() }
                 val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
-                main.post { if (runActive.get()) web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + JSONObject.quote(payload) + ")", null) }
+                main.post {
+                    if (runActive.get()) {
+                        web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + JSONObject.quote(payload) + ")") {
+                            if (runActive.get()) onBudgetExceeded()
+                        }
+                    }
+                }
                 return
             }
             try {
