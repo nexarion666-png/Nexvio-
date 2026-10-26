@@ -234,6 +234,7 @@ internal object NuvioScraperEngine {
                             android.util.Log.d("NexvioNuvio", "$name stream keys=$keys host=$host")
                             recordConsole(name, "stream keys=$keys host=$host")
                             recordRequest(name, NuvioRequestLog("STREAM", host, 200, 0, 0, streamShape = "keys=${keys.joinToString(",")}; host=$host"))
+                            recordRequest(name, NuvioRequestLog("STREAM", host, 200, 0, 0, streamShape = "keys=${keys.joinToString(",")}; host=$host"))
                             val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { o.optString("label") }.ifBlank { name }
                             val size = o.optString("size")
                             val qualitySource = listOf("quality","resolution","label","name","title","description").map { o.optString(it) }.plus(url).joinToString(" ")
