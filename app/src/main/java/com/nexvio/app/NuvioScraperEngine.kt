@@ -34,7 +34,7 @@ internal object NuvioScraperEngine {
     private val main = Handler(Looper.getMainLooper())
     private val pool = Executors.newFixedThreadPool(4)
 
-    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}): List<NuvioDiscoveredStream> {
+    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}): List<NuvioDiscoveredStream> {
         // Run a small number of providers concurrently so one slow scraper does not
         // block faster providers from publishing their results.
         val providers = PluginRepositoryStore(context).all()
@@ -51,13 +51,15 @@ internal object NuvioScraperEngine {
             val jobs = providers.map { (repositoryName, providerName, fileUrl) ->
                 async {
                     concurrency.withPermit {
-                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (_: Exception) { return@withPermit }
+                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": download failed (" + (e.message ?: "network error") + ")"); return@withPermit }
                         val found = try {
-                            execute(context, providerName.ifBlank { repositoryName }, script, item, season, episode)
-                        } catch (_: Exception) {
+                            execute(context, providerName.ifBlank { repositoryName }, script, item, season, episode, onStatus)
+                        } catch (e: Exception) {
+                            onStatus(providerName + ": failed (" + (e.message ?: "runtime error") + ")")
                             emptyList()
                         }
                         if (found.isNotEmpty()) {
+                            onStatus(providerName + ": " + found.size + " stream(s)")
                             publishLock.withLock {
                                 results.addAll(found)
                                 val snapshot = results.distinctBy { it.url }.take(50)
@@ -72,7 +74,7 @@ internal object NuvioScraperEngine {
         }
     }
 
-    private suspend fun execute(context: Context, name: String, source: String, item: TmdbTitle, season: Int, episode: Int): List<NuvioDiscoveredStream> =
+    private suspend fun execute(context: Context, name: String, source: String, item: TmdbTitle, season: Int, episode: Int, onStatus: suspend (String) -> Unit): List<NuvioDiscoveredStream> =
         withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
                 val web = WebView(context)
