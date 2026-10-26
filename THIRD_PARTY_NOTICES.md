@@ -2,7 +2,9 @@ Third-party notices
 
 CryptoJS
 --------
-Version: upstream minified browser bundle (exact version not established in this repository; upstream project: https://github.com/brix/crypto-js)
+Version: exact version not established in this repository
+Source file: https://github.com/GideonSenku/Scriptable/blob/master/crypto-js.min.js
+Upstream project: https://github.com/brix/crypto-js
 License: MIT
 Copyright (c) 2009-2013 Jeff Mott
 Copyright (c) 2013-2016 Evan Vosberg
