@@ -598,7 +598,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 (qualityFilter == "All qualities" ||
                     (qualityFilter == "Quality unknown" && stream.quality == "Quality unknown") ||
                     stream.quality.equals(qualityFilter, ignoreCase = true) ||
-                    (qualityFilter == "4K" && stream.quality.equals("2160P", ignoreCase = true))
+                    (qualityFilter == "4K" && stream.quality.equals("2160P", ignoreCase = true)))
             }
             if (visibleStreams.isEmpty()) Text("No sources match this quality filter.", color = CatalogueMuted, fontSize = 12.sp)
             visibleStreams.forEach { stream ->
