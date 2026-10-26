@@ -526,7 +526,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         isPlaying = false
         playbackError = null
         playbackDetails = null
-        Log.i(PLAYBACK_TAG, "Preparing channel name=${channel.name} streamUrl=${channel.streamUrl}")
+        Log.i(PLAYBACK_TAG, "Preparing channel name=${channel.name} host=${Uri.parse(channel.streamUrl).host ?: "unknown"}")
         var createdPlayer: ExoPlayer? = null
         try {
             val httpFactory = DefaultHttpDataSource.Factory()
@@ -588,7 +588,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             instance.playWhenReady = shouldResumePlayback
             instance.prepare()
         } catch (e: Exception) {
-            Log.e(PLAYBACK_TAG, "Player initialization failed for channel=${channel.name} streamUrl=${channel.streamUrl}", e)
+            Log.e(PLAYBACK_TAG, "Player initialization failed for channel=${channel.name} host=${Uri.parse(channel.streamUrl).host ?: "unknown"}", e)
             createdPlayer?.release()
             createdPlayer = null
             player = null
