@@ -796,7 +796,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     TextButton(onClick = {
                         scope.launch {
                             val target = when (testPreset) {
-                                "Game of Thrones S1E1" -> TmdbTitle(139, "Game of Thrones", "", null, "2011", 9.2, "tv")
+                                "Game of Thrones S1E1" -> TmdbTitle(1399, "Game of Thrones", "", null, "2011", 9.2, "tv")
                                 "Inception" -> TmdbTitle(27205, "Inception", "", null, "2010", 8.4, "movie")
                                 else -> item
                             }
