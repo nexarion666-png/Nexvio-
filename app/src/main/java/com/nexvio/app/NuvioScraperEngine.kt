@@ -24,6 +24,18 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String, val headers: Map<String, String> = emptyMap())
+internal object NuvioDiagnosticFormat {
+    fun safeUrl(address: String): String = try {
+        val uri = URI(address.trim())
+        val host = uri.host.orEmpty()
+        val port = if (uri.port >= 0) ":" + uri.port else ""
+        uri.scheme + "://" + host + port + uri.rawPath.orEmpty().take(240)
+    } catch (_: Exception) { address.substringBefore('?').take(300) }
+
+    fun timeoutMessage(count: Int, lastUrl: String, pending: Boolean): String =
+        String.format(java.util.Locale.ROOT, "Provider timed out (%d requests, last: %s; request pending: %s)", count, lastUrl, pending)
+}
+
 internal data class NuvioRequestLog(val method: String, val url: String, val status: Int, val elapsedMs: Long, val responseBytes: Int, val error: String? = null) {
     fun format(): String = buildString {
         append(method).append(' ').append(url).append(" → ").append(status)
@@ -50,14 +62,14 @@ internal object NuvioScraperEngine {
     fun unsupportedModules(provider: String): Set<String> = unsupportedModules[provider]?.toSet().orEmpty()
     private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
-    private fun safeLogUrl(address: String): String = try { val uri = URI(address.trim()); val host = uri.host.orEmpty(); val port = if (uri.port >= 0) ":" + uri.port else ""; uri.scheme + "://" + host + port + uri.rawPath.orEmpty().take(240) } catch (_: Exception) { address.substringBefore('?').take(300) }
+    private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(address)
     private class RequestTracker {
         @Volatile var count: Int = 0; private set
         @Volatile var pending: Int = 0; private set
         @Volatile var lastUrl: String = "(none)"; private set
         @Synchronized fun started(url: String) { count++; pending++; lastUrl = url }
         @Synchronized fun finished() { pending = (pending - 1).coerceAtLeast(0) }
-        fun timeoutMessage(): String = String.format(java.util.Locale.ROOT, "Provider timed out (%d requests, last: %s; request pending: %s)", count, lastUrl, pending > 0)
+        fun timeoutMessage(): String = NuvioDiagnosticFormat.timeoutMessage(count, lastUrl, pending > 0)
     }
 
     suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}): List<NuvioDiscoveredStream> {
