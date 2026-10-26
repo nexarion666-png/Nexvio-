@@ -595,7 +595,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 streams = fetchAddonStreams(context, target, season, episode,
                     onStreams = { found -> withContext(Dispatchers.Main) { streams = found; error = null } },
                     onProviderStatus = { name, status -> withContext(Dispatchers.Main) { providerStatuses[name] = status } },
-                    excludedProviders = disabledProviders,
+                    excludedProviders = disabledProviders - provider,
                     onlyNuvioProvider = provider)
                 if (streams.isEmpty()) error = "$provider returned no streams for this test preset."
             } catch (e: Exception) { error = e.message ?: "Provider test failed." }
