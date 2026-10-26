@@ -636,6 +636,32 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 Text("LIVE", color = CatalogueAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
             }
         }
+        if (providerStatuses.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            val completedCount = providerStatuses.values.count { it.startsWith("Completed", ignoreCase = true) }
+            val failedCount = providerStatuses.values.count { it.startsWith("Failed", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("timed out", ignoreCase = true) }
+            Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(12.dp)).padding(12.dp)) {
+                Text("Provider diagnostics", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("${providerStatuses.size} provider(s) reported • $completedCount completed • $failedCount failed", color = CatalogueMuted, fontSize = 11.sp)
+                Spacer(Modifier.height(6.dp))
+                providerStatuses.toSortedMap().forEach { (provider, status) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                        val indicator = when {
+                            status.startsWith("Completed", ignoreCase = true) -> "✓"
+                            status.startsWith("Failed", ignoreCase = true) || status.contains("error", ignoreCase = true) -> "!"
+                            status.contains("waiting", ignoreCase = true) || status.contains("requesting", ignoreCase = true) || status.contains("searching", ignoreCase = true) || status.contains("downloading", ignoreCase = true) -> "…"
+                            else -> "•"
+                        }
+                        Text(indicator, color = if (indicator == "!") Color(0xFFFF9A80) else CatalogueAccent, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(provider, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(status, color = CatalogueMuted, fontSize = 11.sp, lineHeight = 15.sp)
+                        }
+                    }
+                }
+            }
+        }
         if (error != null) {
             Spacer(Modifier.height(8.dp))
             Text(error.orEmpty(), color = CatalogueMuted, fontSize = 12.sp, lineHeight = 17.sp)
