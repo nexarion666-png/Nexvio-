@@ -125,6 +125,7 @@ class MainActivity : ComponentActivity() {
     var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
     var selectedTitle by remember { mutableStateOf<TmdbTitle?>(null) }
+    var streamSearch by remember { mutableStateOf<Triple<TmdbTitle, Int, Int>?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
@@ -132,8 +133,11 @@ class MainActivity : ComponentActivity() {
                 PlayerScreen(channel = playing!!, onBack = { playing = null })
             } else Column {
                 Box(Modifier.weight(1f)) {
-                    if (selectedTitle != null) {
-                        TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it })
+                    if (streamSearch != null) {
+                        val request = streamSearch!!
+                        StreamSearchPage(item = request.first, seasonNumber = request.second, episodeNumber = request.third, onBack = { streamSearch = null }, onPlay = { playing = it })
+                    } else if (selectedTitle != null) {
+                        TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it }, onFindStreams = { item, season, episode -> streamSearch = Triple(item, season, episode) })
                     } else if (detail == "Content providers") {
                         ContentProvidersScreen(
                             onOpenAddons = { detail = "Add-ons" },
