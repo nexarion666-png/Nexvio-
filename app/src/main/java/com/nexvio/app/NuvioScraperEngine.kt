@@ -28,8 +28,28 @@ import kotlin.coroutines.resumeWithException
 
 internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String, val headers: Map<String, String> = emptyMap())
 internal object NuvioDiagnosticFormat {
+    fun normalizeUrl(address: String): String {
+        val input = address.trim()
+        val sep = input.indexOf("://")
+        val authorityStart = if (sep < 0) -1 else sep + 3
+        val authorityEnd = if (authorityStart < 0) -1 else input.indexOfAny(charArrayOf('/', '?', '#'), authorityStart).let { if (it < 0) input.length else it }
+        val out = StringBuilder()
+        var i = 0
+        while (i < input.length) {
+            val c = input[i]
+            val inAuthority = authorityStart >= 0 && i >= authorityStart && i < authorityEnd
+            if (c == '%' && i + 2 < input.length && input[i + 1].digitToIntOrNull(16) != null && input[i + 2].digitToIntOrNull(16) != null) {
+                out.append(input, i, i + 3); i += 3; continue
+            }
+            val illegal = c.code <= 0x20 || c.code >= 0x7f || c == '"' || c == '<' || c == '>' || c == '^' || c.code == 96 || c == '{' || c == '}' || c == '|' || c == '\\' || ((c == '[' || c == ']') && !inAuthority)
+            if (illegal) c.toString().toByteArray(Charsets.UTF_8).forEach { b -> out.append("%%%02X".format(b.toInt() and 0xff)) } else out.append(c)
+            i++
+        }
+        return out.toString()
+    }
+
     fun safeUrl(address: String): String = try {
-        val uri = URI(address.trim())
+        val uri = URI(normalizeUrl(address))
         require((uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrBlank())
         val host = uri.host.orEmpty()
         val port = if (uri.port >= 0) ":" + uri.port else ""
@@ -47,9 +67,8 @@ internal data class NuvioRequestLog(val method: String, val url: String, val sta
         append(method).append(' ').append(url).append(" → ").append(status)
         append(" • ").append(elapsedMs).append(" ms • ").append(responseBytes).append(" bytes")
         if (!error.isNullOrBlank()) append(" • ").append(error)
-        if (!bodyPreview.isNullOrBlank()) append("\n  repeated-response: ").append(bodyPreview)
-        if (!streamShape.isNullOrBlank()) append("\n  stream: ").append(streamShape)
         if (!bodyPreview.isNullOrBlank()) append("\n  response preview: ").append(bodyPreview)
+        if (!streamShape.isNullOrBlank()) append("\n  stream: ").append(streamShape)
     }
 }
 
@@ -59,9 +78,10 @@ internal data class NuvioRequestLog(val method: String, val url: String, val sta
  * Node built-ins and arbitrary require() modules are unavailable.
  */
 internal object NuvioScraperEngine {
-    const val ENGINE_VERSION = "engine-5"
+    const val ENGINE_VERSION = "engine-6"
     private const val MAX_BYTES = 1024 * 1024
-    private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+    private const val MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+    private const val MAX_TOTAL_RESPONSE_BYTES = 24 * 1024 * 1024
     private const val LOGS_PER_PROVIDER = 30
     private val consoleLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<String>>()
     fun consoleLogs(provider: String): List<String> = synchronized(consoleLogs) { consoleLogs[provider]?.toList().orEmpty() }
@@ -88,6 +108,8 @@ internal object NuvioScraperEngine {
         @Volatile var lastError: String = "none"; private set
         private val paths = linkedMapOf<String, Int>()
         private val repeated = linkedMapOf<String, Int>()
+        private var totalBytes = 0
+        @Synchronized fun consumeBytes(bytes: Int) { totalBytes += bytes; if (totalBytes > MAX_TOTAL_RESPONSE_BYTES) throw IllegalStateException("Total response data exceeds 24 MB per run") }
         @Synchronized fun recordOutcome(status: Int, error: String?) { if (status == 599 || status >= 400) { failed++; lastError = error ?: "HTTP $status" } }
         @Synchronized fun reject() { rejected++ }
         @Synchronized fun repeated(method: String, url: String): Int { val key = try { val u = URI(url); method.uppercase() + " " + (u.host ?: "") + (u.rawPath.orEmpty().ifBlank { "/" }) } catch (_: Exception) { method.uppercase() + " (invalid-url)" }; val next = (repeated[key] ?: 0) + 1; repeated[key] = next; return next }
@@ -158,12 +180,14 @@ internal object NuvioScraperEngine {
                 val web = WebView(context)
                 val tracker = RequestTracker()
                 val runActive = AtomicBoolean(true)
+                val cookieJar = java.util.concurrent.ConcurrentHashMap<String, String>()
                 val executor = Executors.newFixedThreadPool(4)
                 lateinit var bridge: Bridge
                 val cleaned = AtomicBoolean(false)
                 fun cleanup() {
                     if (!cleaned.compareAndSet(false, true)) return
                     runActive.set(false)
+                    cookieJar.clear()
                     executor.shutdownNow()
                     main.post {
                         try { web.stopLoading() } catch (_: Exception) {}
@@ -177,7 +201,7 @@ internal object NuvioScraperEngine {
                     }
                     cleanup()
                 }
-                bridge = Bridge(web, name, tracker, executor, runActive) { _, _ ->
+                bridge = Bridge(web, name, tracker, executor, runActive, cookieJar) { _, _ ->
                     main.post { failRun(tracker.budgetMessage()) }
                 }
                 web.settings.javaScriptEnabled = true
@@ -265,6 +289,7 @@ internal object NuvioScraperEngine {
         private val tracker: RequestTracker,
         private val executor: java.util.concurrent.ExecutorService,
         private val runActive: AtomicBoolean,
+        private val cookieJar: java.util.concurrent.ConcurrentHashMap<String, String>,
         private val onBudgetExceeded: (Int, Int) -> Unit
     ) {
         @Volatile var done: ((String) -> Unit)? = null
@@ -275,7 +300,8 @@ internal object NuvioScraperEngine {
         @JavascriptInterface fun consoleLine(line: String) { if (runActive.get()) recordConsole(provider, safeLogError(line)?.take(200) ?: line.take(200)) }
         @JavascriptInterface fun request(id: String, address: String, optionsText: String) {
             if (!runActive.get()) return
-            val safeUrl = safeLogUrl(address)
+            val normalizedAddress = NuvioDiagnosticFormat.normalizeUrl(address)
+            val safeUrl = safeLogUrl(normalizedAddress)
             if (!tracker.start(address.trim(), safeUrl)) {
                 val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
@@ -298,7 +324,7 @@ internal object NuvioScraperEngine {
                     var errorForLog: String? = null
                     var bodyPreview: String? = null
                     val payload = try {
-                        val uri = URI(address.trim())
+                        val uri = URI(NuvioDiagnosticFormat.normalizeUrl(address))
                         require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
                         val host = uri.host.lowercase()
                         val dnsTask = FutureTask { java.net.InetAddress.getByName(host) }
@@ -322,7 +348,7 @@ internal object NuvioScraperEngine {
                             val addresses = try { dnsTask.get(5, TimeUnit.SECONDS) } catch (ex: Exception) { dnsTask.cancel(true); throw IllegalStateException("DNS lookup timed out or failed", ex) }
                             require(targetUri.scheme.equals("http", true) || targetUri.scheme.equals("https", true))
                             require(targetHost != "localhost" && !targetHost.endsWith(".local") && addresses.isNotEmpty() && addresses.all { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress }) { "Requests to local/private hosts are blocked." }
-                            val connection = URL(targetUri.toASCIIString()).openConnection() as HttpURLConnection
+                            val connection = URL(NuvioDiagnosticFormat.normalizeUrl(targetUri.toString())).openConnection() as HttpURLConnection
                             try {
                                 connection.connectTimeout = 10_000
                                 connection.readTimeout = 15_000
@@ -340,7 +366,7 @@ internal object NuvioScraperEngine {
                                 if (status in 300..399 && redirectMode == "error") throw IllegalStateException("Redirect encountered with redirect: error")
                                 if (status in 300..399 && redirectMode == "follow" && !location.isNullOrBlank()) {
                                     if (++redirects > 10) throw IllegalStateException("Too many redirects")
-                                    targetUri = targetUri.resolve(location)
+                                    targetUri = URI(NuvioDiagnosticFormat.normalizeUrl(targetUri.resolve(location).toString()))
                                     continue
                                 }
                                 val stream = if (status >= 400) connection.errorStream else connection.inputStream
