@@ -6,6 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NuvioDiagnosticsTest {
+    @Test fun urlNormalizerEncodesIllegalCharactersAndPreservesEscapes() {
+        assertEquals("https://example.com/a%20b%7Bq%7D/%5Bv%5D/%C3%A9%20%22", NuvioUrlNormalizer.normalize("https://example.com/a b{q}/[v]/é \""))
+        assertEquals("https://example.com/a%2Fb?x=a&y=b#part", NuvioUrlNormalizer.normalize("https://example.com/a%2Fb?x=a&y=b#part"))
+    }
     @Test fun safeUrlDropsQueryAndCredentials() {
         assertEquals("https://example.com:8443/api/streams", NuvioDiagnosticFormat.safeUrl("https://user:secret@example.com:8443/api/streams?token=private&key=secret"))
     }
