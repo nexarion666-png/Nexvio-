@@ -29,7 +29,7 @@ import kotlin.coroutines.resumeWithException
 internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String, val headers: Map<String, String> = emptyMap())
 internal object NuvioDiagnosticFormat {
     fun safeUrl(address: String): String = try {
-        val uri = URI(normalizeRequestUrl(address))
+        val uri = URI(NuvioUrlNormalizer.normalize(address))
         require((uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !uri.host.isNullOrBlank())
         val host = uri.host.orEmpty()
         val port = if (uri.port >= 0) ":" + uri.port else ""
@@ -76,27 +76,7 @@ internal object NuvioScraperEngine {
     private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque<NuvioRequestLog>() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
     private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(normalizeRequestUrl(address))
-    private fun normalizeRequestUrl(raw: String): String {
-        val input = raw.trim()
-        val authorityStart = input.indexOf("://").let { if (it < 0) -1 else it + 3 }
-        val authorityEnd = if (authorityStart < 0) -1 else input.indexOfAny(charArrayOf('/', '?', '#'), authorityStart).let { if (it < 0) input.length else it }
-        val out = StringBuilder(input.length + 16)
-        var i = 0
-        while (i < input.length) {
-            val c = input[i]
-            val inAuthority = authorityStart >= 0 && i >= authorityStart && i < authorityEnd
-            if (c == '%' && i + 2 < input.length && input[i + 1].digitToIntOrNull(16) != null && input[i + 2].digitToIntOrNull(16) != null) { out.append(input, i, i + 3); i += 3; continue }
-            if (c.code > 127) {
-                val cp = input.codePointAt(i)
-                String(Character.toChars(cp)).toByteArray(Charsets.UTF_8).forEach { b -> out.append('%').append(String.format(java.util.Locale.ROOT, "%02X", b.toInt() and 0xff)) }
-                i += Character.charCount(cp); continue
-            }
-            val keepBracket = inAuthority && (c == '[' || c == ']')
-            if (!keepBracket && (c.isWhitespace() || c == '"' || c == '<' || c == '>' || c == '^' || c == '`' || c == '{' || c == '}' || c == '|' || c == '\\' || (!inAuthority && (c == '[' || c == ']')))) out.append('%').append(String.format(java.util.Locale.ROOT, "%02X", c.code)) else out.append(c)
-            i++
-        }
-        return out.toString()
-    }
+    private fun normalizeRequestUrl(raw: String): String = NuvioUrlNormalizer.normalize(raw)
 
 
     internal fun streamDedupeKey(s: NuvioDiscoveredStream): String = listOf(s.providerName, s.url, s.title, s.quality, s.headers.toSortedMap().entries.joinToString("&") { it.key + "=" + it.value }).joinToString("\u0000")
