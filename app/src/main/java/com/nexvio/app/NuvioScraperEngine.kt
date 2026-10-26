@@ -29,7 +29,9 @@ internal object NuvioDiagnosticFormat {
         val uri = URI(address.trim())
         val host = uri.host.orEmpty()
         val port = if (uri.port >= 0) ":" + uri.port else ""
-        uri.scheme + "://" + host + port + uri.rawPath.orEmpty().take(240)
+        val path = uri.rawPath.orEmpty()
+        val safePath = if (path.matches(Regex("(?i).*\\.(m3u8|mpd|mp4|mkv|webm|ts|m4v|mp3|aac)(\\..*)?$")) || path.length > 180) "/[stream-or-long-path]" else path.take(240)
+        uri.scheme + "://" + host + port + safePath
     } catch (_: Exception) { address.substringBefore('?').take(300) }
 
     fun timeoutMessage(count: Int, lastUrl: String, pending: Boolean): String =
@@ -63,6 +65,7 @@ internal object NuvioScraperEngine {
     private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
     private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(address)
+    private fun safeLogError(message: String?): String? = message?.replace(Regex("https?://[^\\s\\\"'<>]+"), { match -> safeLogUrl(match.value) })?.take(300)
     private class RequestTracker {
         @Volatile var count: Int = 0; private set
         @Volatile var pending: Int = 0; private set
@@ -260,7 +263,7 @@ function $(selector){if(typeof selector==='string'){if(selector.trim().charAt(0)
                         JSONObject().put("status", status).put("body", bytes.toString(Charsets.UTF_8)).put("statusText", connection.responseMessage.orEmpty()).put("url", connection.url.toString()).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
                     } finally { connection.disconnect() }
                 } catch (e: Exception) {
-                    errorForLog = e.message ?: e.javaClass.simpleName
+                    errorForLog = safeLogError(e.message) ?: e.javaClass.simpleName
                     JSONObject().put("status", 599).put("body", errorForLog ?: "Network request failed").put("error", errorForLog).toString()
                 } finally {
                     recordRequest(provider, NuvioRequestLog(methodForLog, safeUrl, statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog))
