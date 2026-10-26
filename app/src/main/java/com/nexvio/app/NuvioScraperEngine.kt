@@ -254,7 +254,7 @@ function $(selector){if(typeof selector==='string'){if(selector.trim().charAt(0)
                         connection.readTimeout = 15_000
                         connection.instanceFollowRedirects = options.optString("redirect", "follow") != "manual"
                         connection.requestMethod = method
-                        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
+                        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
                         val headers = options.optJSONObject("headers")
                         if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
                         val body = options.optString("body")
@@ -297,7 +297,7 @@ function $(selector){if(typeof selector==='string'){if(selector.trim().charAt(0)
         val c = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 10_000; c.readTimeout = 15_000; c.instanceFollowRedirects = true
-            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
             if (c.responseCode !in 200..299) throw IllegalStateException("HTTP " + c.responseCode)
             if (c.contentLengthLong > limit) throw IllegalStateException("Provider file exceeds size limit")
             c.inputStream.use { input ->
