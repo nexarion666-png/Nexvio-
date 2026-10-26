@@ -42,11 +42,13 @@ internal object NuvioDiagnosticFormat {
         String.format(java.util.Locale.ROOT, "Provider timed out (%d requests, last: %s; request pending: %s)", count, lastUrl, pending)
 }
 
-internal data class NuvioRequestLog(val method: String, val url: String, val status: Int, val elapsedMs: Long, val responseBytes: Int, val error: String? = null) {
+internal data class NuvioRequestLog(val method: String, val url: String, val status: Int, val elapsedMs: Long, val responseBytes: Int, val error: String? = null, val bodyPreview: String? = null, val streamShape: String? = null) {
     fun format(): String = buildString {
         append(method).append(' ').append(url).append(" → ").append(status)
         append(" • ").append(elapsedMs).append(" ms • ").append(responseBytes).append(" bytes")
         if (!error.isNullOrBlank()) append(" • ").append(error)
+        if (!bodyPreview.isNullOrBlank()) append("\n  repeated-response: ").append(bodyPreview)
+        if (!streamShape.isNullOrBlank()) append("\n  stream: ").append(streamShape)
     }
 }
 
@@ -56,40 +58,48 @@ internal data class NuvioRequestLog(val method: String, val url: String, val sta
  * Node built-ins and arbitrary require() modules are unavailable.
  */
 internal object NuvioScraperEngine {
-    const val ENGINE_VERSION = "engine-4"
+    const val ENGINE_VERSION = "engine-5"
     private const val MAX_BYTES = 1024 * 1024
     private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
     private const val LOGS_PER_PROVIDER = 30
+    private val consoleLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<String>>()
+    fun consoleLogs(provider: String): List<String> = synchronized(consoleLogs) { consoleLogs[provider]?.toList().orEmpty() }
+    private fun recordConsole(provider: String, line: String) { synchronized(consoleLogs) { val lines = consoleLogs.getOrPut(provider) { java.util.ArrayDeque() }; lines.addLast(line.take(200)); while (lines.size > 50) lines.removeFirst() } }
+    private val runSummaries = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val main = Handler(Looper.getMainLooper())
     private val requestLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<NuvioRequestLog>>()
     private val unsupportedModules = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
     fun requestLogs(provider: String): List<NuvioRequestLog> = synchronized(requestLogs) { requestLogs[provider]?.toList().orEmpty() }
     fun unsupportedModules(provider: String): Set<String> = unsupportedModules[provider]?.toSet().orEmpty()
+    private fun streamDedupeKey(provider: String, url: String, title: String, quality: String, headers: Map<String, String>): String = listOf(provider, url, title, quality, headers.toSortedMap().entries.joinToString("&") { "${it.key}=${it.value}" }).joinToString("\u0000")
     private fun recordRequest(provider: String, entry: NuvioRequestLog) { synchronized(requestLogs) { val logs = requestLogs.getOrPut(provider) { java.util.ArrayDeque() }; logs.addLast(entry); while (logs.size > LOGS_PER_PROVIDER) logs.removeFirst() } }
     private fun recordUnsupportedModule(provider: String, module: String) { unsupportedModules.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(module) }
     private fun safeLogUrl(address: String): String = NuvioDiagnosticFormat.safeUrl(address)
+    internal fun streamDedupeKey(s: NuvioDiscoveredStream): String = listOf(s.providerName, s.url, s.title, s.quality, s.headers.toSortedMap().entries.joinToString("&") { it.key + "=" + it.value }).joinToString("\u0000")
     private fun safeLogError(message: String?): String? = message?.replace(Regex("https?://[^\\s\\\"'<>]+"), { match -> safeLogUrl(match.value) })?.take(300)
     private class RequestTracker {
         @Volatile var count: Int = 0; private set
         @Volatile var pending: Int = 0; private set
         @Volatile var lastUrl: String = "(none)"; private set
         @Volatile var budgetExceeded: Boolean = false; private set
+        @Volatile var rejected: Int = 0; private set
+        @Volatile var failed: Int = 0; private set
+        @Volatile var lastError: String = "none"; private set
         private val paths = linkedMapOf<String, Int>()
+        private val repeated = linkedMapOf<String, Int>()
+        @Synchronized fun recordOutcome(status: Int, error: String?) { if (status == 599 || status >= 400) { failed++; lastError = error ?: "HTTP $status" } }
+        @Synchronized fun reject() { rejected++ }
+        @Synchronized fun repeated(method: String, url: String): Int { val key = try { val u = URI(url); method.uppercase() + " " + (u.host ?: "") + (u.rawPath.orEmpty().ifBlank { "/" }) } catch (_: Exception) { method.uppercase() + " (invalid-url)" }; val next = (repeated[key] ?: 0) + 1; repeated[key] = next; return next }
         @Synchronized fun start(url: String, displayUrl: String): Boolean {
             lastUrl = displayUrl
-            val key = try {
-                val uri = URI(url)
-                (uri.host ?: "(unknown-host)").lowercase() + (uri.rawPath.orEmpty().ifBlank { "/" })
-            } catch (_: Exception) { "(invalid-url)" }
+            val key = try { val uri = URI(url); (uri.host ?: "(unknown-host)").lowercase() + (uri.rawPath.orEmpty().ifBlank { "/" }) } catch (_: Exception) { "(invalid-url)" }
             paths[key] = (paths[key] ?: 0) + 1
-            if (count >= 150 || pending >= 6) { budgetExceeded = true; return false }
-            count++; pending++
-            return true
+            if (count >= 150 || pending >= 6) { budgetExceeded = true; rejected++; return false }
+            count++; pending++; return true
         }
         @Synchronized fun finished() { pending = (pending - 1).coerceAtLeast(0) }
-        @Synchronized fun diagnostics(): String = paths.entries.sortedByDescending { it.value }.take(3)
-            .joinToString("; ") { "${it.key} (${it.value})" }.ifBlank { "(none)" }
-        fun budgetMessage(): String = "Provider stopped: request budget exceeded (${count} requests, last: ${lastUrl}); top host/paths: ${diagnostics()}"
+        @Synchronized fun diagnostics(): String = paths.entries.sortedByDescending { it.value }.take(3).joinToString("; ") { "${it.key} (${it.value})" }.ifBlank { "(none)" }
+        fun budgetMessage(): String = "Provider stopped: request budget exceeded (${count} requests made, ${rejected} attempts rejected, last: ${lastUrl}); top host/paths: ${diagnostics()}"
         fun failureMessage(reason: String): String = "${reason}; top host/paths: ${diagnostics()}"
         fun timeoutMessage(): String = failureMessage(NuvioDiagnosticFormat.timeoutMessage(count, lastUrl, pending > 0))
     }
@@ -125,11 +135,11 @@ internal object NuvioScraperEngine {
                             onStatus(providerName + ": failed — " + (e.message ?: e.javaClass.simpleName))
                             emptyList()
                         }
-                        if (!failed) onStatus(if (found.isEmpty()) providerName + ": completed — no streams" else providerName + ": completed — " + found.size + " stream(s)")
+                        if (!failed) onStatus(if (found.isEmpty()) providerName + ": " + (runSummaries.remove(providerName) ?: "no streams (0 requests, 0 failed, last error: none)") else providerName + ": completed — " + found.size + " stream(s)")
                         if (found.isNotEmpty()) {
                             publishLock.withLock {
                                 results.addAll(found)
-                                val snapshot = results.distinctBy { it.url }
+                                val snapshot = results.distinctBy { streamDedupeKey(it.providerName, it.url, it.title, it.quality, it.headers) }
                                 onStreams(snapshot)
                             }
                         }
@@ -137,7 +147,7 @@ internal object NuvioScraperEngine {
                 }
             }
             jobs.forEach { job -> try { job.await() } catch (_: Exception) { } }
-            results.distinctBy { it.url }.take(50)
+            results.distinctBy { streamDedupeKey(it.providerName, it.url, it.title, it.quality, it.headers) }.take(50)
         }
     }
 
@@ -166,7 +176,7 @@ internal object NuvioScraperEngine {
                     }
                     cleanup()
                 }
-                bridge = Bridge(web, name, tracker, executor, runActive) {
+                bridge = Bridge(web, name, tracker, executor, runActive) { _, _ ->
                     main.post { failRun(tracker.budgetMessage()) }
                 }
                 web.settings.javaScriptEnabled = true
@@ -190,6 +200,7 @@ internal object NuvioScraperEngine {
                                 .replace("__NEXVIO_TYPE_JSON__", type)
                                 .replace("__NEXVIO_SEASON__", s)
                                 .replace("__NEXVIO_EPISODE__", e)
+                                .replace("__NEXVIO_PROVIDER_JSON__", JSONObject.quote(name))
                             view.evaluateJavascript(js) { result ->
                                 android.util.Log.d("NexvioNuvio", "$name evaluateJavascript result: " + (result ?: "null"))
                             }
@@ -218,14 +229,21 @@ internal object NuvioScraperEngine {
                             val o = parsed.optJSONObject(i) ?: return@mapNotNull null
                             val url = o.optString("url").trim()
                             if (!publicHttp(url)) return@mapNotNull null
-                            val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { name }
-                            val quality = o.optString("quality").ifBlank {
-                                Regex("(?i)(2160p|1080p|720p|480p|360p|4k|cam)").find(title)?.value?.uppercase() ?: "Quality unknown"
-                            }
+                            val keys = o.keys().asSequence().toList().sorted()
+                            val host = try { URI(url).host ?: "unknown" } catch (_: Exception) { "unknown" }
+                            android.util.Log.d("NexvioNuvio", "$name stream keys=$keys host=$host")
+                            recordConsole(name, "stream keys=$keys host=$host")
+                            recordRequest(name, NuvioRequestLog("STREAM", host, 200, 0, 0, streamShape = "keys=${keys.joinToString(",")}; host=$host"))
+                            recordRequest(name, NuvioRequestLog("STREAM", host, 200, 0, 0, streamShape = "keys=${keys.joinToString(",")}; host=$host"))
+                            val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { o.optString("label") }.ifBlank { name }
+                            val size = o.optString("size")
+                            val qualitySource = listOf("quality","resolution","label","name","title","description").map { o.optString(it) }.plus(url).joinToString(" ")
+                            val quality = Regex("(?i)(2160p|4k|1080p|720p|480p|360p)").find(qualitySource)?.value?.uppercase() ?: "$host${if (size.isNotBlank()) " • $size" else ""}"
                             val headerObject = o.optJSONObject("headers")
                             val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
                             NuvioDiscoveredStream(name, title, url, quality, headers)
                         }
+                        if (streams.isEmpty()) runSummaries[name] = if (tracker.count > 0 && tracker.failed == tracker.count) "Failed — all requests failed (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})" else "no streams (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})"
                         if (runActive.compareAndSet(true, false) && continuation.isActive) continuation.resume(streams)
                     } catch (e: Exception) {
                         if (continuation.isActive && runActive.compareAndSet(true, false)) {
@@ -248,13 +266,14 @@ internal object NuvioScraperEngine {
         private val tracker: RequestTracker,
         private val executor: java.util.concurrent.ExecutorService,
         private val runActive: AtomicBoolean,
-        private val onBudgetExceeded: () -> Unit
+        private val onBudgetExceeded: (Int, Int) -> Unit
     ) {
         @Volatile var done: ((String) -> Unit)? = null
         @Volatile var scriptStarted: Boolean = false
         @JavascriptInterface fun started() { if (runActive.get()) scriptStarted = true }
         @JavascriptInterface fun finish(result: String) { if (runActive.get()) done?.invoke(result.take(512 * 1024)) }
         @JavascriptInterface fun unsupportedModule(name: String) { if (runActive.get()) recordUnsupportedModule(provider, name.take(120)) }
+        @JavascriptInterface fun consoleLine(line: String) { if (runActive.get()) recordConsole(provider, safeLogError(line)?.take(200) ?: line.take(200)) }
         @JavascriptInterface fun request(id: String, address: String, optionsText: String) {
             if (!runActive.get()) return
             val safeUrl = safeLogUrl(address)
@@ -262,11 +281,7 @@ internal object NuvioScraperEngine {
                 val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
                 main.post {
-                    if (runActive.get()) {
-                        web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + JSONObject.quote(payload) + ")") {
-                            if (runActive.get()) onBudgetExceeded()
-                        }
-                    }
+                    if (runActive.get()) onBudgetExceeded(tracker.count, tracker.rejected)
                 }
                 return
             }
@@ -278,6 +293,7 @@ internal object NuvioScraperEngine {
                     var statusForLog = 599
                     var bytesForLog = 0
                     var errorForLog: String? = null
+                    var bodyPreview: String? = null
                     val payload = try {
                         val uri = URI(address.trim())
                         require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
@@ -289,32 +305,58 @@ internal object NuvioScraperEngine {
                         if (!runActive.get()) throw InterruptedException("Provider run ended")
                         val options = JSONObject(optionsText)
                         val method = options.optString("method", "GET").uppercase()
+                        val redirectMode = options.optString("redirect", "follow")
+                        require(redirectMode == "manual" || redirectMode == "follow" || redirectMode == "error") { "Invalid redirect mode" }
                         methodForLog = method
                         require(method == "GET" || method == "POST" || method == "HEAD")
-                        val connection = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
-                        try {
-                            connection.connectTimeout = 10_000
-                            connection.readTimeout = 15_000
-                            connection.instanceFollowRedirects = options.optString("redirect", "follow") != "manual"
-                            connection.requestMethod = method
-                            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
-                            val headers = options.optJSONObject("headers")
-                            if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
-                            val body = options.optString("body")
-                            if (method == "POST" && body.isNotBlank()) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) } }
-                            if (!runActive.get()) throw InterruptedException("Provider run ended")
-                            val status = connection.responseCode
-                            statusForLog = status
-                            val stream = if (status >= 400) connection.errorStream else connection.inputStream
-                            val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
-                            bytesForLog = bytes.size
-                            JSONObject().put("status", status).put("body", bytes.toString(Charsets.UTF_8)).put("statusText", connection.responseMessage.orEmpty()).put("url", connection.url.toString()).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
-                        } finally { connection.disconnect() }
+                        var targetUri = uri
+                        var redirects = 0
+                        var responseJson: String? = null
+                        while (responseJson == null) {
+                            val targetHost = targetUri.host?.lowercase() ?: throw IllegalArgumentException("Invalid redirect target")
+                            val dnsTask = FutureTask { java.net.InetAddress.getAllByName(targetHost).toList() }
+                            Thread(dnsTask, "nexvio-dns-check").apply { isDaemon = true; start() }
+                            val addresses = try { dnsTask.get(5, TimeUnit.SECONDS) } catch (ex: Exception) { dnsTask.cancel(true); throw IllegalStateException("DNS lookup timed out or failed", ex) }
+                            require(targetUri.scheme.equals("http", true) || targetUri.scheme.equals("https", true))
+                            require(targetHost != "localhost" && !targetHost.endsWith(".local") && addresses.isNotEmpty() && addresses.all { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress }) { "Requests to local/private hosts are blocked." }
+                            val connection = URL(targetUri.toASCIIString()).openConnection() as HttpURLConnection
+                            try {
+                                connection.connectTimeout = 10_000
+                                connection.readTimeout = 15_000
+                                connection.instanceFollowRedirects = false
+                                connection.requestMethod = method
+                                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
+                                val headers = options.optJSONObject("headers")
+                                if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
+                                val body = options.optString("body")
+                                if (method == "POST" && body.isNotBlank() && redirects == 0) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) } }
+                                if (!runActive.get()) throw InterruptedException("Provider run ended")
+                                val status = connection.responseCode
+                                statusForLog = status
+                                val location = connection.getHeaderField("Location")
+                                if (status in 300..399 && redirectMode == "error") throw IllegalStateException("Redirect encountered with redirect: error")
+                                if (status in 300..399 && redirectMode == "follow" && !location.isNullOrBlank()) {
+                                    if (++redirects > 10) throw IllegalStateException("Too many redirects")
+                                    targetUri = targetUri.resolve(location)
+                                    continue
+                                }
+                                val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                                val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
+                                bytesForLog = bytes.size
+                                val responseBody = bytes.toString(Charsets.UTF_8)
+                                val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
+                                val seen = tracker.repeated(method, uri.toString())
+                                if (seen == 3) bodyPreview = responseBody.take(300)
+                                responseJson = JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", targetUri.toString()).put("redirected", redirects > 0).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
+                            } finally { connection.disconnect() }
+                        }
+                        responseJson ?: throw IllegalStateException("No response received")
                     } catch (e: Exception) {
                         errorForLog = safeLogError(e.message) ?: e.javaClass.simpleName
                         JSONObject().put("status", 599).put("body", errorForLog ?: "Network request failed").put("error", errorForLog).toString()
                     } finally {
-                        recordRequest(provider, NuvioRequestLog(methodForLog, safeUrl, statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog))
+                        tracker.recordOutcome(statusForLog, errorForLog)
+                        recordRequest(provider, NuvioRequestLog(methodForLog, safeUrl, statusForLog, android.os.SystemClock.elapsedRealtime() - startedAt, bytesForLog, errorForLog, bodyPreview))
                         tracker.finished()
                     }
                     if (runActive.get() && !Thread.currentThread().isInterrupted) {
@@ -325,7 +367,7 @@ internal object NuvioScraperEngine {
                 }
             } catch (_: java.util.concurrent.RejectedExecutionException) {
                 tracker.finished()
-                main.post { if (runActive.get()) onBudgetExceeded() }
+                main.post { if (runActive.get()) onBudgetExceeded(tracker.count, tracker.rejected) }
             }
         }
     }

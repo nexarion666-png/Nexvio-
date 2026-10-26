@@ -432,7 +432,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
         publishLock.withLock {
             val snapshot = synchronized(output) {
                 output.addAll(newStreams)
-                output.distinctBy { it.url }
+                output.distinctBy(::streamDedupeKey)
             }
             onStreams(snapshot)
         }
@@ -527,8 +527,12 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
         }
         nuvioJob.await()
     }
-    synchronized(output) { output.distinctBy { it.url } }
+    synchronized(output) { output.distinctBy(::streamDedupeKey) }
 }
+
+private fun streamDedupeKey(stream: DiscoveredStream): String =
+    listOf(stream.addonName, stream.url, stream.title, stream.quality,
+        stream.headers.toSortedMap().entries.joinToString("&") { "${it.key}=${it.value}" }).joinToString("\u0000")
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -653,7 +657,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                         loading = true
                         NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber,
                             onStreams = { found ->
-                                streams = (streams + found.map { DiscoveredStream(it.providerName, it.title, it.url, it.quality, it.headers) }).distinctBy { it.url }
+                                streams = (streams + found.map { DiscoveredStream(it.providerName, it.title, it.url, it.quality, it.headers) }).distinctBy(::streamDedupeKey)
                             },
                             onStatus = { message ->
                                 val split = message.indexOf(":")
@@ -759,6 +763,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     selectedDiagnosticProvider?.let { provider ->
         val logs = NuvioScraperEngine.requestLogs(provider)
         val modules = NuvioScraperEngine.unsupportedModules(provider)
+        val console = NuvioScraperEngine.consoleLogs(provider)
         AlertDialog(
             onDismissRequest = { selectedDiagnosticProvider = null },
             title = { Text("$provider request log") },
@@ -772,6 +777,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                         TextButton(onClick = { testPreset = "Inception" }) { Text("Inception") }
                     }
                     providerTestMessage?.let { Text(it, color = CatalogueMuted, fontSize = 11.sp) }
+                    if (console.isNotEmpty()) { Text("Provider console", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp); console.forEach { Text(it, color = CatalogueMuted, fontSize = 10.sp, lineHeight = 13.sp) } }
                     if (logs.isEmpty()) Text("No bridge requests recorded for this provider yet.", color = CatalogueMuted, fontSize = 12.sp)
                     else androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 360.dp)) {
                         items(logs.reversed()) { entry ->
@@ -785,6 +791,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     val text = buildString {
                         appendLine("Nexvio ${NuvioScraperEngine.ENGINE_VERSION} — $provider")
                         if (modules.isNotEmpty()) appendLine("Unsupported modules: ${modules.sorted().joinToString()}")
+                        if (console.isNotEmpty()) { appendLine("Provider console:"); console.forEach { appendLine(it) } }
                         logs.forEach { appendLine(it.format()) }
                     }
                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
