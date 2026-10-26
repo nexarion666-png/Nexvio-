@@ -684,7 +684,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                     Text("Technical details: ${playbackDetails}", color=Muted, fontSize=11.sp)
                     TextButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio playback error", playbackDetails))
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio playback error", playbackDetails.orEmpty()))
                     }) { Text("Copy", color=Accent) }
                 }
                 Spacer(Modifier.height(12.dp))
