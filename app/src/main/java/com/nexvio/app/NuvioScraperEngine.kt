@@ -19,7 +19,9 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeoutException
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal data class NuvioDiscoveredStream(val providerName: String, val title: String, val url: String, val quality: String, val headers: Map<String, String> = emptyMap())
 
@@ -54,14 +56,16 @@ internal object NuvioScraperEngine {
                         onStatus(providerName + ": waiting for search slot")
                         onStatus(providerName + ": downloading script")
                         val script = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": network/download error — " + (e.message ?: "network error")); return@withPermit }
+                        var failed = false
                         val found = try {
                             onStatus(providerName + ": script downloaded; searching")
                             execute(context, providerName.ifBlank { repositoryName }, script, item, season, episode, onStatus)
                         } catch (e: Exception) {
-                            onStatus(providerName + ": failed — " + (e.message ?: "runtime error"))
+                            failed = true
+                            onStatus(providerName + ": failed — " + (e.message ?: e.javaClass.simpleName))
                             emptyList()
                         }
-                        onStatus(if (found.isEmpty()) providerName + ": completed — no streams" else providerName + ": completed — " + found.size + " stream(s)")
+                        if (!failed) onStatus(if (found.isEmpty()) providerName + ": completed — no streams" else providerName + ": completed — " + found.size + " stream(s)")
                         if (found.isNotEmpty()) {
                             publishLock.withLock {
                                 results.addAll(found)
@@ -118,10 +122,13 @@ internal object NuvioScraperEngine {
                             val root = JSONObject(raw)
                             val arr = root.optJSONArray("streams") ?: JSONArray()
                             if (!root.optBoolean("ok")) {
-                                android.util.Log.w("NexvioNuvio", "${name} failed: ${root.optString("error", "unknown provider error")}")
-                                JSONArray()
+                                val message = root.optString("error", "unknown provider error")
+                                android.util.Log.w("NexvioNuvio", "${name} failed: $message")
+                                throw IllegalStateException(message)
                             } else arr
-                        } catch (_: Exception) { JSONArray() }
+                        } catch (e: Exception) {
+                            throw IllegalStateException("Invalid provider response: ${e.message ?: "JSON parse error"}", e)
+                        }
                         val streams = (0 until parsed.length()).mapNotNull { i ->
                             val o = parsed.optJSONObject(i) ?: return@mapNotNull null
                             val url = o.optString("url").trim()
@@ -142,7 +149,7 @@ internal object NuvioScraperEngine {
                 continuation.invokeOnCancellation { main.post { web.stopLoading(); web.destroy() } }
                 main.postDelayed({
                     if (continuation.isActive) {
-                        continuation.resume(emptyList())
+                        continuation.resumeWithException(TimeoutException("Provider execution timed out after 25 seconds"))
                         web.stopLoading(); web.removeJavascriptInterface("NexvioBridge"); web.destroy()
                     }
                 }, 25000)
