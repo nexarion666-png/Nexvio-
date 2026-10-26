@@ -75,8 +75,8 @@ internal object NuvioScraperEngine {
         @Volatile var lastUrl: String = "(none)"; private set
         @Volatile var budgetExceeded: Boolean = false; private set
         private val paths = linkedMapOf<String, Int>()
-        @Synchronized fun start(url: String): Boolean {
-            lastUrl = url
+        @Synchronized fun start(url: String, displayUrl: String): Boolean {
+            lastUrl = displayUrl
             val key = try {
                 val uri = URI(url)
                 (uri.host ?: "(unknown-host)").lowercase() + (uri.rawPath.orEmpty().ifBlank { "/" })
@@ -258,7 +258,7 @@ internal object NuvioScraperEngine {
         @JavascriptInterface fun request(id: String, address: String, optionsText: String) {
             if (!runActive.get()) return
             val safeUrl = safeLogUrl(address)
-            if (!tracker.start(safeUrl)) {
+            if (!tracker.start(address.trim(), safeUrl)) {
                 main.post { if (runActive.get()) onBudgetExceeded() }
                 val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
