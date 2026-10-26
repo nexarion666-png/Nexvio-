@@ -14,6 +14,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -527,6 +533,27 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var qualityMenu by remember { mutableStateOf(false) }
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
+    var loadingMessage by remember { mutableStateOf("Checking providers") }
+    val loaderTransition = rememberInfiniteTransition(label = "stream-search-loader")
+    val loaderRotation by loaderTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "stream-search-rotation"
+    )
+    LaunchedEffect(loading) {
+        if (loading) {
+            val messages = listOf("Checking providers", "Searching for playable links", "Waiting for source responses", "Collecting stream details")
+            var index = 0
+            while (true) {
+                loadingMessage = messages[index % messages.size]
+                index++
+                delay(1500)
+            }
+        } else {
+            loadingMessage = if (streams.isEmpty()) "Search complete" else "Streams found"
+        }
+    }
 
     fun startSearch() {
         if (loading) return
@@ -584,9 +611,24 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 Text(if (loading) "Finding streams…" else "Find streams")
             }
         }
+        if (loading) {
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(25.dp).rotate(loaderRotation), color = CatalogueAccent, strokeWidth = 3.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(loadingMessage, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("${streams.size} stream(s) found so far", color = CatalogueMuted, fontSize = 12.sp)
+                }
+                Text("LIVE", color = CatalogueAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            }
+        }
         if (error != null) {
             Spacer(Modifier.height(8.dp))
             Text(error.orEmpty(), color = CatalogueMuted, fontSize = 12.sp, lineHeight = 17.sp)
+            if (!loading && searched) {
+                TextButton(onClick = { startSearch() }) { Text("Retry search", color = CatalogueAccent) }
+            }
         }
         if (streams.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
