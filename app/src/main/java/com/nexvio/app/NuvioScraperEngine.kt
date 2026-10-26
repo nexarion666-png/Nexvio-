@@ -266,7 +266,7 @@ internal object NuvioScraperEngine {
                             val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
                             NuvioDiscoveredStream(name, title, url, quality, headers)
                         }
-                        if (streams.isEmpty()) runSummaries[name] = if (tracker.count > 0 && tracker.failed == tracker.count) "Failed — all requests failed (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})" else "no streams (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})"
+                        if (streams.isEmpty()) runSummaries[name] = if (tracker.count == 0) "no requests made" else if (tracker.count > 0 && tracker.failed == tracker.count) "failed — all requests failed (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})" else "no streams (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})"
                         if (runActive.compareAndSet(true, false) && continuation.isActive) continuation.resume(streams)
                     } catch (e: Exception) {
                         if (continuation.isActive && runActive.compareAndSet(true, false)) {
@@ -369,13 +369,15 @@ internal object NuvioScraperEngine {
                                     targetUri = URI(NuvioDiagnosticFormat.normalizeUrl(targetUri.resolve(location).toString()))
                                     continue
                                 }
+                                val contentLength = connection.getHeaderField("Content-Length")?.toLongOrNull()
+                                if (contentLength != null && contentLength > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB (Content-Length: " + contentLength + ")")
                                 val stream = if (status >= 400) connection.errorStream else connection.inputStream
-                                val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
+                                val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; tracker.consumeBytes(n); if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB" + (contentLength?.let { " (Content-Length: " + it + ")" } ?: "")); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
                                 bytesForLog = bytes.size
                                 val responseBody = bytes.toString(Charsets.UTF_8)
                                 val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
-                                val seen = tracker.repeated(method, uri.toString())
-                                if (seen >= 3) bodyPreview = responseBody.take(300)
+                                val seen = tracker.repeated(method, targetUri.toString())
+                                if (status >= 400 || seen >= 3) bodyPreview = responseBody.take(300)
                                 responseJson = JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", targetUri.toString()).put("redirected", redirects > 0).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
                             } finally { connection.disconnect() }
                         }
@@ -402,7 +404,7 @@ internal object NuvioScraperEngine {
     }
 
     private fun publicHttp(value: String): Boolean = try {
-        val uri = URI(value)
+        val uri = URI(NuvioDiagnosticFormat.normalizeUrl(value))
         if (!(uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) || uri.host.isNullOrBlank() || uri.userInfo != null) false
         else {
             val host = uri.host.lowercase()
@@ -413,7 +415,7 @@ internal object NuvioScraperEngine {
     } catch (_: Exception) { false }
 
     private suspend fun fetchText(address: String, limit: Int): String = withContext(Dispatchers.IO) {
-        val uri = URI(address)
+        val uri = URI(NuvioDiagnosticFormat.normalizeUrl(address))
         require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
         val c = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
         try {
