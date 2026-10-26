@@ -11,11 +11,11 @@ Provider scripts are downloaded over HTTP(S), capped at 1 MiB, and invoked throu
 - `axios`: basic GET, POST, and HEAD adapter.
 - `cheerio` and `cheerio-without-node-native`: a limited DOMParser-backed jQuery/Cheerio-style adapter.
 - `console`: no-op logging methods.
-- `url`: WebView `URL` and `URLSearchParams`.
+- `url`: WebView `URL` and `URLSearchParams`, with minimal fallbacks if missing.
 - `crypto-js` and subpaths are not yet supported by this compatibility layer; providers that require them fail explicitly.
 - Other Node built-ins and arbitrary npm modules are unsupported.
 
-The runtime supplies browser/WebView APIs where available, plus a small set of compatibility shims. The Cheerio adapter supports only a subset of selectors and methods; it should not be treated as drop-in Cheerio. The fetch bridge implements a bounded HTTP request adapter, not the complete WHATWG Fetch API.
+The runtime supplies browser/WebView APIs where available, plus minimal `global`, `process`, timer, base64, text encoding, `Buffer`, and `AbortController` compatibility shims. The Cheerio adapter supports common traversal/filtering methods and `:contains()`, `:first`, `:last`, and `:eq(n)` fragments, but is not drop-in Cheerio. The fetch bridge implements a bounded HTTP request adapter, not the complete WHATWG Fetch API; abort rejects the JavaScript promise but does not cancel an already-running native socket request.
 
 ## Diagnostics and known limitations
 
