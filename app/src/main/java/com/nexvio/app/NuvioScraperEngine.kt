@@ -64,7 +64,6 @@ internal object NuvioScraperEngine {
     private val consoleLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<String>>()
     fun consoleLogs(provider: String): List<String> = synchronized(consoleLogs) { consoleLogs[provider]?.toList().orEmpty() }
     private fun recordConsole(provider: String, line: String) { synchronized(consoleLogs) { val lines = consoleLogs.getOrPut(provider) { java.util.ArrayDeque() }; lines.addLast(line.take(200)); while (lines.size > 50) lines.removeFirst() } }
-    private val repeatedRequests = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Int>>()
     private val runSummaries = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val main = Handler(Looper.getMainLooper())
     private val requestLogs = java.util.concurrent.ConcurrentHashMap<String, java.util.ArrayDeque<NuvioRequestLog>>()
@@ -87,6 +86,8 @@ internal object NuvioScraperEngine {
         @Synchronized fun recordOutcome(status: Int, error: String?) { if (status == 599 || status >= 400) { failed++; lastError = error ?: "HTTP $status" } }
         @Synchronized fun reject() { rejected++ }
         private val paths = linkedMapOf<String, Int>()
+        private val repeated = linkedMapOf<String, Int>()
+        @Synchronized fun repeated(method: String, url: String): Int { val key = try { val u = URI(url); method.uppercase() + " " + (u.host ?: "") + (u.rawPath.orEmpty().ifBlank { "/" }) } catch (_: Exception) { method.uppercase() + " (invalid-url)" }; val next = (repeated[key] ?: 0) + 1; repeated[key] = next; return next }
         @Synchronized fun start(url: String, displayUrl: String): Boolean {
             lastUrl = displayUrl
             val key = try {
@@ -234,6 +235,7 @@ internal object NuvioScraperEngine {
                             val keys = o.keys().asSequence().toList().sorted()
                             val host = try { URI(url).host ?: "unknown" } catch (_: Exception) { "unknown" }
                             android.util.Log.d("NexvioNuvio", "$name stream keys=$keys host=$host")
+                            recordConsole(name, "stream keys=$keys host=$host")
                             val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { o.optString("label") }.ifBlank { name }
                             val size = o.optString("size")
                             val qualitySource = listOf("quality","resolution","label","name","title","description").map { o.optString(it) }.plus(url).joinToString(" ")
@@ -242,7 +244,7 @@ internal object NuvioScraperEngine {
                             val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
                             NuvioDiscoveredStream(name, title, url, quality, headers)
                         }
-                        if (streams.isEmpty()) runSummaries[name] = if (tracker.count > 0 && tracker.failed == tracker.count) "failed — all requests failed (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})" else "no streams (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})"
+                        if (streams.isEmpty()) runSummaries[name] = if (tracker.count > 0 && tracker.failed == tracker.count) "Failed — all requests failed (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})" else "no streams (${tracker.count} requests, ${tracker.failed} failed, last error: ${tracker.lastError})"
                         if (runActive.compareAndSet(true, false) && continuation.isActive) continuation.resume(streams)
                     } catch (e: Exception) {
                         if (continuation.isActive && runActive.compareAndSet(true, false)) {
@@ -349,7 +351,7 @@ internal object NuvioScraperEngine {
                                 bytesForLog = bytes.size
                                 val responseBody = bytes.toString(Charsets.UTF_8)
                                 val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
-                                val seen = repeatedRequests.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap() }.merge(repeatKey, 1) { a, b -> a + b } ?: 1
+                                val seen = tracker.repeated(method, uri.toString())
                                 if (seen >= 3) bodyPreview = responseBody.take(300)
                                 responseJson = JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", targetUri.toString()).put("redirected", redirects > 0).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
                             } finally { connection.disconnect() }
