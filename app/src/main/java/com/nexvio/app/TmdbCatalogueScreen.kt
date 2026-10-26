@@ -422,7 +422,7 @@ private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispa
     } finally { connection.disconnect() }
 }
 
-private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onStreams: suspend (List<DiscoveredStream>) -> Unit): List<DiscoveredStream> = withContext(Dispatchers.IO) {
+private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onStreams: suspend (List<DiscoveredStream>) -> Unit, onProviderStatus: suspend (String, String) -> Unit): List<DiscoveredStream> = withContext(Dispatchers.IO) {
     val output = java.util.Collections.synchronizedList(mutableListOf<DiscoveredStream>())
     val publishLock = kotlinx.coroutines.sync.Mutex()
 
@@ -446,6 +446,11 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                     publish(found.map { stream ->
                         DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers)
                     })
+                }, onStatus = { message ->
+                    val separator = message.indexOf(":")
+                    val provider = if (separator > 0) message.substring(0, separator).trim() else "Nuvio provider"
+                    val status = if (separator > 0) message.substring(separator + 1).trim() else message
+                    onProviderStatus(provider, status)
                 })
             } catch (_: Exception) {
                 // Stremio add-ons can still return results if Nuvio providers fail.
@@ -471,6 +476,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                 // prevent faster sources from publishing results.
                 val addonJobs = addons.map { (addonName, manifestUrl) ->
                     async(Dispatchers.IO) {
+                        onProviderStatus(addonName, "Requesting streams")
                         try {
                             val manifestUri = java.net.URI(manifestUrl)
                             val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
@@ -485,11 +491,13 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                                 connection.setRequestProperty("Accept", "application/json")
                                 val code = connection.responseCode
                                 if (code !in 200..299) {
+                                    onProviderStatus(addonName, "Failed — HTTP $code")
                                     android.util.Log.w("NexvioStreams", "$addonName returned HTTP $code")
                                     return@async
                                 }
                                 val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                                 val streams = json.optJSONArray("streams") ?: run {
+                                    onProviderStatus(addonName, "Failed — response has no streams array")
                                     android.util.Log.w("NexvioStreams", "$addonName response has no streams array")
                                     return@async
                                 }
@@ -504,9 +512,11 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                                     DiscoveredStream(addonName, label, url, quality, headers)
                                 }
                                 publish(found)
+                                onProviderStatus(addonName, if (found.isEmpty()) "Completed — no streams" else "Completed — ${found.size} stream(s)")
                                 android.util.Log.i("NexvioStreams", "$addonName returned ${found.size} streams")
                             } finally { connection.disconnect() }
                         } catch (e: Exception) {
+                            onProviderStatus(addonName, "Failed — ${e.message ?: "network or parsing error"}")
                             android.util.Log.w("NexvioStreams", "$addonName failed: ${e.message}")
                         }
                     }
@@ -516,7 +526,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
         }
         nuvioJob.await()
     }
-    synchronized(output) { output.distinctBy { it.url }.take(50) }
+    synchronized(output) { output.distinctBy { it.url } }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -533,6 +543,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var qualityMenu by remember { mutableStateOf(false) }
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
+    val providerStatuses = remember(item.id, item.mediaType, seasonNumber, episodeNumber) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
     var loadingMessage by remember { mutableStateOf("Checking providers") }
     val loaderTransition = rememberInfiniteTransition(label = "stream-search-loader")
     val loaderRotation by loaderTransition.animateFloat(
@@ -558,11 +569,13 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     fun startSearch() {
         if (loading) return
         scope.launch {
-            loading = true; searched = true; error = null; streams = emptyList()
+            loading = true; searched = true; error = null; streams = emptyList(); providerStatuses.clear()
             try {
-                streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber) { found ->
+                streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber, onStreams = { found ->
                     withContext(Dispatchers.Main) { streams = found; error = null }
-                }
+                }, onProviderStatus = { provider, status ->
+                    withContext(Dispatchers.Main) { providerStatuses[provider] = status }
+                })
                 if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
             } catch (e: Exception) { error = e.message ?: "Stream discovery failed." }
             finally { loading = false }
