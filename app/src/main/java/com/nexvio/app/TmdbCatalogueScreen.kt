@@ -510,6 +510,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var searched by remember(item.id, item.mediaType) { mutableStateOf(false) }
     var error by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
     var qualityFilter by remember(item.id, item.mediaType) { mutableStateOf("All qualities") }
+    var selectedProvider by remember(item.id, item.mediaType) { mutableStateOf("All") }
     var qualityMenu by remember { mutableStateOf(false) }
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
@@ -577,6 +578,12 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         if (streams.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Text("${streams.size} source(s) found", color = CatalogueAccent, fontWeight = FontWeight.SemiBold)
+            val providers = listOf("All") + streams.map { it.addonName }.distinct()
+            ScrollableTabRow(selectedTabIndex = providers.indexOf(selectedProvider).coerceAtLeast(0), edgePadding = 0.dp, containerColor = CatalogueInk, contentColor = CatalogueAccent) {
+                providers.forEach { provider ->
+                    Tab(selected = selectedProvider == provider, onClick = { selectedProvider = provider }, text = { Text(provider, maxLines = 1) })
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Box {
                 OutlinedButton(onClick = { qualityMenu = true }) { Text("Quality: $qualityFilter") }
@@ -587,7 +594,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                 }
             }
             val visibleStreams = streams.filter { stream ->
-                qualityFilter == "All qualities" ||
+                (selectedProvider == "All" || stream.addonName == selectedProvider) &&
+                (qualityFilter == "All qualities" ||
                     (qualityFilter == "Quality unknown" && stream.quality == "Quality unknown") ||
                     stream.quality.equals(qualityFilter, ignoreCase = true) ||
                     (qualityFilter == "4K" && stream.quality.equals("2160P", ignoreCase = true))
