@@ -30,7 +30,7 @@ internal object NuvioScraperEngine {
     private val main = Handler(Looper.getMainLooper())
     private val pool = Executors.newFixedThreadPool(4)
 
-    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int): List<NuvioDiscoveredStream> {
+    suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}): List<NuvioDiscoveredStream> {
         // Plugin repositories live in PluginRepositoryStore, not the Stremio add-ons preferences.
         // Use the exact repository/provider enablement state shown in Settings → Plugin repositories.
         val repositories = PluginRepositoryStore(context).all().filter { it.enabled }
@@ -39,7 +39,12 @@ internal object NuvioScraperEngine {
             for (provider in repository.providers.filter { it.enabled }.take(30)) {
                 val script = try { fetchText(provider.fileUrl, MAX_BYTES) } catch (_: Exception) { continue }
                 try {
-                    results += execute(context, provider.name.ifBlank { repository.name }, script, item, season, episode)
+                    val providerStreams = execute(context, provider.name.ifBlank { repository.name }, script, item, season, episode)
+                    if (providerStreams.isNotEmpty()) {
+                        results += providerStreams
+                        val snapshot = results.distinctBy { it.url }.take(50)
+                        onStreams(snapshot)
+                    }
                 } catch (_: Exception) {
                     // One incompatible provider must not block other enabled providers.
                 }
