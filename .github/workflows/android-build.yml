@@ -18,6 +18,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js for JavaScript syntax checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check Nuvio JavaScript assets
+        run: |
+          node --check app/src/main/assets/nexvio-prelude.js
+          node --check app/src/main/assets/crypto-js.min.js
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
