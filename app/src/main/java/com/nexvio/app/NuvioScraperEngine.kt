@@ -311,32 +311,50 @@ internal object NuvioScraperEngine {
                         val method = options.optString("method", "GET").uppercase()
                         methodForLog = method
                         require(method == "GET" || method == "POST" || method == "HEAD")
-                        val connection = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
-                        try {
-                            connection.connectTimeout = 10_000
-                            connection.readTimeout = 15_000
-                            val redirectMode = options.optString("redirect", "follow")
-                            require(redirectMode == "manual" || redirectMode == "follow" || redirectMode == "error") { "Invalid redirect mode" }
-                            connection.instanceFollowRedirects = redirectMode == "follow"
-                            connection.requestMethod = method
-                            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
-                            val headers = options.optJSONObject("headers")
-                            if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
-                            val body = options.optString("body")
-                            if (method == "POST" && body.isNotBlank()) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) } }
-                            if (!runActive.get()) throw InterruptedException("Provider run ended")
-                            val status = connection.responseCode
-                            if (redirectMode == "error" && status in 300..399) throw IllegalStateException("Redirect encountered with redirect: error")
-                            statusForLog = status
-                            val stream = if (status >= 400) connection.errorStream else connection.inputStream
-                            val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
-                            bytesForLog = bytes.size
-                            val responseBody = bytes.toString(Charsets.UTF_8)
-                            val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
-                            val seen = repeatedRequests.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap() }.merge(repeatKey, 1) { a, b -> a + b } ?: 1
-                            if (seen >= 3) bodyPreview = responseBody.take(300)
-                            JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", connection.url.toString()).put("redirected", connection.url.toString() != uri.toString()).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
-                        } finally { connection.disconnect() }
+                        val redirectMode = options.optString("redirect", "follow")
+                        require(redirectMode == "manual" || redirectMode == "follow" || redirectMode == "error") { "Invalid redirect mode" }
+                        var targetUri = uri
+                        var redirects = 0
+                        var responseJson: String? = null
+                        while (responseJson == null) {
+                            val targetHost = targetUri.host?.lowercase() ?: throw IllegalArgumentException("Invalid redirect target")
+                            val dnsTask = FutureTask { java.net.InetAddress.getAllByName(targetHost).toList() }
+                            Thread(dnsTask, "nexvio-dns-check").apply { isDaemon = true; start() }
+                            val addresses = try { dnsTask.get(5, TimeUnit.SECONDS) } catch (ex: Exception) { dnsTask.cancel(true); throw IllegalStateException("DNS lookup timed out or failed", ex) }
+                            require(targetUri.scheme.equals("http", true) || targetUri.scheme.equals("https", true))
+                            require(targetHost != "localhost" && !targetHost.endsWith(".local") && addresses.isNotEmpty() && addresses.all { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress }) { "Requests to local/private hosts are blocked." }
+                            val connection = URL(targetUri.toASCIIString()).openConnection() as HttpURLConnection
+                            try {
+                                connection.connectTimeout = 10_000
+                                connection.readTimeout = 15_000
+                                connection.instanceFollowRedirects = false
+                                connection.requestMethod = method
+                                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.88 Mobile Safari/537.36")
+                                val headers = options.optJSONObject("headers")
+                                if (headers != null) { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); if (!key.equals("host", true) && !key.equals("content-length", true)) connection.setRequestProperty(key.take(80), headers.optString(key).take(2000)) } }
+                                val body = options.optString("body")
+                                if (method == "POST" && body.isNotBlank() && redirects == 0) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8).take(256 * 1024).toByteArray()) } }
+                                if (!runActive.get()) throw InterruptedException("Provider run ended")
+                                val status = connection.responseCode
+                                statusForLog = status
+                                val location = connection.getHeaderField("Location")
+                                if (status in 300..399 && redirectMode == "error") throw IllegalStateException("Redirect encountered with redirect: error")
+                                if (status in 300..399 && redirectMode == "follow" && !location.isNullOrBlank()) {
+                                    if (++redirects > 10) throw IllegalStateException("Too many redirects")
+                                    targetUri = targetUri.resolve(location)
+                                    continue
+                                }
+                                val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                                val bytes = stream?.use { input -> val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(4096); var total = 0; while (true) { val n = input.read(buffer); if (n < 0) break; total += n; if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 2 MB"); out.write(buffer, 0, n) }; out.toByteArray() } ?: ByteArray(0)
+                                bytesForLog = bytes.size
+                                val responseBody = bytes.toString(Charsets.UTF_8)
+                                val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
+                                val seen = repeatedRequests.computeIfAbsent(provider) { java.util.concurrent.ConcurrentHashMap() }.merge(repeatKey, 1) { a, b -> a + b } ?: 1
+                                if (seen >= 3) bodyPreview = responseBody.take(300)
+                                responseJson = JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", targetUri.toString()).put("redirected", redirects > 0).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
+                            } finally { connection.disconnect() }
+                        }
+                        responseJson ?: throw IllegalStateException("No response received")
                     } catch (e: Exception) {
                         errorForLog = safeLogError(e.message) ?: e.javaClass.simpleName
                         JSONObject().put("status", 599).put("body", errorForLog ?: "Network request failed").put("error", errorForLog).toString()
