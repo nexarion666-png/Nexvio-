@@ -91,7 +91,12 @@ internal object NuvioScraperEngine {
                         val js = "(function(){var module={exports:{}},exports=module.exports;var __fetchCallbacks={};" +
                             "window.__nexvioFetchDone=function(id,payload){var cb=__fetchCallbacks[id];if(!cb)return;delete __fetchCallbacks[id];try{var d=JSON.parse(payload);cb.resolve({ok:d.status>=200&&d.status<300,status:d.status,text:function(){return Promise.resolve(d.body)},json:function(){try{return Promise.resolve(JSON.parse(d.body))}catch(e){return Promise.reject(e)}}})}catch(e){cb.reject(e)}};" +
                             "window.fetch=function(input,opts){return new Promise(function(resolve,reject){var id=String(Date.now())+Math.random().toString(36).slice(2);__fetchCallbacks[id]={resolve:resolve,reject:reject};NexvioBridge.request(id,String(input),JSON.stringify(opts||{}))})};" +
-                            "var require=function(n){throw new Error('Unsupported module: '+n)};" +
+                            "var __axios=function(config){config=config||{};var method=String(config.method||'GET').toUpperCase();var url=config.url||'';var headers=config.headers||{};var body=config.data;if(body&&typeof body!=='string')body=JSON.stringify(body);return window.fetch(url,{method:method,headers:headers,body:method==='GET'||method==='HEAD'?undefined:body}).then(function(r){return r.text().then(function(t){var data=t;try{data=JSON.parse(t)}catch(e){};return {data:data,status:r.status,statusText:'',headers:{},config:config,request:null}})}).then(function(r){if(r.status<200||r.status>=300){var e=new Error('Request failed with status code '+r.status);e.response=r;throw e}return r})};" +
+                            "__axios.get=function(url,config){return __axios(Object.assign({},config||{},{url:url,method:'GET'}))};" +
+                            "__axios.post=function(url,data,config){return __axios(Object.assign({},config||{},{url:url,data:data,method:'POST'}))};" +
+                            "__axios.head=function(url,config){return __axios(Object.assign({},config||{},{url:url,method:'HEAD'}))};" +
+                            "var __console={log:function(){},info:function(){},warn:function(){},error:function(){}};" +
+                            "var require=function(n){if(n==='axios')return __axios;if(n==='console')return __console;if(n==='url')return {URL:URL,URLSearchParams:URLSearchParams};throw new Error('Unsupported module: '+n+' (Nexvio supports axios, console and url only)')};" +
                             "try{(new Function('module','exports','require'," + src + "))(module,exports,require);" +
                             "var fn=module.exports&&module.exports.getStreams;if(typeof fn!=='function')throw new Error('Missing getStreams export');" +
                             "Promise.resolve(fn(" + id + "," + type + "," + s + "," + e + ")).then(function(v){" +
@@ -106,7 +111,10 @@ internal object NuvioScraperEngine {
                         val parsed = try {
                             val root = JSONObject(raw)
                             val arr = root.optJSONArray("streams") ?: JSONArray()
-                            if (!root.optBoolean("ok")) JSONArray() else arr
+                            if (!root.optBoolean("ok")) {
+                                android.util.Log.w("NexvioNuvio", "${name} failed: ${root.optString("error", "unknown provider error")}")
+                                JSONArray()
+                            } else arr
                         } catch (_: Exception) { JSONArray() }
                         val streams = (0 until parsed.length()).mapNotNull { i ->
                             val o = parsed.optJSONObject(i) ?: return@mapNotNull null
