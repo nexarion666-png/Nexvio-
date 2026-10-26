@@ -116,30 +116,34 @@ internal object NuvioScraperEngine {
                         view.evaluateJavascript(js, null)
                     }
                 }
-                bridge.done = { raw ->
+                bridge.done = done@{ raw ->
                     if (continuation.isActive) {
-                        val parsed = try {
+                        val streams = try {
                             val root = JSONObject(raw)
-                            val arr = root.optJSONArray("streams") ?: JSONArray()
                             if (!root.optBoolean("ok")) {
                                 val message = root.optString("error", "unknown provider error")
                                 android.util.Log.w("NexvioNuvio", "${name} failed: $message")
                                 throw IllegalStateException(message)
-                            } else arr
-                        } catch (e: Exception) {
-                            throw IllegalStateException("Invalid provider response: ${e.message ?: "JSON parse error"}", e)
-                        }
-                        val streams = (0 until parsed.length()).mapNotNull { i ->
-                            val o = parsed.optJSONObject(i) ?: return@mapNotNull null
-                            val url = o.optString("url").trim()
-                            if (!publicHttp(url)) return@mapNotNull null
-                            val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { name }
-                            val quality = o.optString("quality").ifBlank {
-                                Regex("(?i)(2160p|1080p|720p|480p|360p|4k|cam)").find(title)?.value?.uppercase() ?: "Quality unknown"
                             }
-                            val headerObject = o.optJSONObject("headers")
-                            val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
-                            NuvioDiscoveredStream(name, title, url, quality, headers)
+                            val parsed = root.optJSONArray("streams") ?: JSONArray()
+                            (0 until parsed.length()).mapNotNull { i ->
+                                val o = parsed.optJSONObject(i) ?: return@mapNotNull null
+                                val url = o.optString("url").trim()
+                                if (!publicHttp(url)) return@mapNotNull null
+                                val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { name }
+                                val quality = o.optString("quality").ifBlank {
+                                    Regex("(?i)(2160p|1080p|720p|480p|360p|4k|cam)").find(title)?.value?.uppercase() ?: "Quality unknown"
+                                }
+                                val headerObject = o.optJSONObject("headers")
+                                val headers = headerObject?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
+                                NuvioDiscoveredStream(name, title, url, quality, headers)
+                            }
+                        } catch (e: Exception) {
+                            continuation.resumeWithException(
+                                IllegalStateException("Provider response/runtime error: ${e.message ?: "invalid response"}", e)
+                            )
+                            main.post { web.stopLoading(); web.removeJavascriptInterface("NexvioBridge"); web.destroy() }
+                            return@done
                         }
                         continuation.resume(streams)
                     }
