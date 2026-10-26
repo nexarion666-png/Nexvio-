@@ -416,7 +416,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
     // Start Nuvio providers immediately, but do not wait for all of them before
     // asking Stremio add-ons. Both sources can publish into the same live list.
     kotlinx.coroutines.coroutineScope {
-        val nuvioJob = kotlinx.coroutines.async {
+        val nuvioJob = async {
             try {
                 NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber) { found ->
                     publish(found.map { stream ->
