@@ -461,38 +461,51 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             if (imdbId != null) {
                 val resourceType = if (item.mediaType == "movie") "movie" else "series"
                 val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
-                for ((addonName, manifestUrl) in addons) {
-                    try {
-                        val manifestUri = java.net.URI(manifestUrl)
-                        val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
-                        val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$path"
-                        val streamUrl = "$base/stream/$resourceType/$streamId.json"
-                        val connection = URL(streamUrl).openConnection() as HttpURLConnection
+                // Query all enabled add-ons concurrently so a slow source cannot
+                // prevent faster sources from publishing results.
+                val addonJobs = addons.map { (addonName, manifestUrl) ->
+                    async(Dispatchers.IO) {
                         try {
-                            connection.connectTimeout = 7000
-                            connection.readTimeout = 9000
-                            connection.instanceFollowRedirects = true
-                            connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
-                            connection.setRequestProperty("Accept", "application/json")
-                            if (connection.responseCode !in 200..299) continue
-                            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                            val streams = json.optJSONArray("streams") ?: continue
-                            val found = (0 until streams.length()).mapNotNull { i ->
-                                val stream = streams.optJSONObject(i) ?: return@mapNotNull null
-                                val url = stream.optString("url").trim()
-                                if (!url.startsWith("https://") && !url.startsWith("http://")) return@mapNotNull null
-                                val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
-                                val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
-                                val headersJson = stream.optJSONObject("headers")
-                                val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
-                                DiscoveredStream(addonName, label, url, quality, headers)
-                            }
-                            publish(found)
-                        } finally { connection.disconnect() }
-                    } catch (_: Exception) {
-                        // A single failed add-on should not block the remaining sources.
+                            val manifestUri = java.net.URI(manifestUrl)
+                            val path = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
+                            val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$path"
+                            val streamUrl = "$base/stream/$resourceType/$streamId.json"
+                            val connection = URL(streamUrl).openConnection() as HttpURLConnection
+                            try {
+                                connection.connectTimeout = 7000
+                                connection.readTimeout = 9000
+                                connection.instanceFollowRedirects = true
+                                connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
+                                connection.setRequestProperty("Accept", "application/json")
+                                val code = connection.responseCode
+                                if (code !in 200..299) {
+                                    android.util.Log.w("NexvioStreams", "$addonName returned HTTP $code")
+                                    return@async
+                                }
+                                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                                val streams = json.optJSONArray("streams") ?: run {
+                                    android.util.Log.w("NexvioStreams", "$addonName response has no streams array")
+                                    return@async
+                                }
+                                val found = (0 until streams.length()).mapNotNull { i ->
+                                    val stream = streams.optJSONObject(i) ?: return@mapNotNull null
+                                    val url = stream.optString("url").trim()
+                                    if (!url.startsWith("https://") && !url.startsWith("http://")) return@mapNotNull null
+                                    val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
+                                    val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
+                                    val headersJson = stream.optJSONObject("headers")
+                                    val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
+                                    DiscoveredStream(addonName, label, url, quality, headers)
+                                }
+                                publish(found)
+                                android.util.Log.i("NexvioStreams", "$addonName returned ${found.size} streams")
+                            } finally { connection.disconnect() }
+                        } catch (e: Exception) {
+                            android.util.Log.w("NexvioStreams", "$addonName failed: ${e.message}")
+                        }
                     }
                 }
+                addonJobs.forEach { job -> try { job.await() } catch (_: Exception) { } }
             }
         }
         nuvioJob.await()
