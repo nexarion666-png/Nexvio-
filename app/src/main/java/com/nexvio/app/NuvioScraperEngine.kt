@@ -49,7 +49,6 @@ internal data class NuvioRequestLog(val method: String, val url: String, val sta
         if (!error.isNullOrBlank()) append(" • ").append(error)
         if (!bodyPreview.isNullOrBlank()) append("\n  repeated-response: ").append(bodyPreview)
         if (!streamShape.isNullOrBlank()) append("\n  stream: ").append(streamShape)
-        if (!bodyPreview.isNullOrBlank()) append("\n  response preview: ").append(bodyPreview)
     }
 }
 
@@ -234,6 +233,7 @@ internal object NuvioScraperEngine {
                             val host = try { URI(url).host ?: "unknown" } catch (_: Exception) { "unknown" }
                             android.util.Log.d("NexvioNuvio", "$name stream keys=$keys host=$host")
                             recordConsole(name, "stream keys=$keys host=$host")
+                            recordRequest(name, NuvioRequestLog("STREAM", host, 200, 0, 0, streamShape = "keys=${keys.joinToString(",")}; host=$host"))
                             val title = o.optString("title").ifBlank { o.optString("name") }.ifBlank { o.optString("label") }.ifBlank { name }
                             val size = o.optString("size")
                             val qualitySource = listOf("quality","resolution","label","name","title","description").map { o.optString(it) }.plus(url).joinToString(" ")
@@ -280,11 +280,7 @@ internal object NuvioScraperEngine {
                 val payload = JSONObject().put("status", 599).put("body", "Request budget exceeded").put("error", "Request budget exceeded").toString()
                 val jsId = JSONObject.quote(id)
                 main.post {
-                    if (runActive.get()) {
-                        web.evaluateJavascript("window.__nexvioFetchDone(" + jsId + "," + JSONObject.quote(payload) + ")") {
-                            if (runActive.get()) onBudgetExceeded(tracker.count, tracker.rejected)
-                        }
-                    }
+                    if (runActive.get()) onBudgetExceeded(tracker.count, tracker.rejected)
                 }
                 return
             }
@@ -349,7 +345,7 @@ internal object NuvioScraperEngine {
                                 val responseBody = bytes.toString(Charsets.UTF_8)
                                 val repeatKey = method + " " + uri.host + uri.rawPath.orEmpty()
                                 val seen = tracker.repeated(method, uri.toString())
-                                if (seen >= 3) bodyPreview = responseBody.take(300)
+                                if (seen == 3) bodyPreview = responseBody.take(300)
                                 responseJson = JSONObject().put("status", status).put("body", responseBody).put("statusText", connection.responseMessage.orEmpty()).put("url", targetUri.toString()).put("redirected", redirects > 0).put("headers", JSONObject().apply { connection.headerFields.forEach { (key, values) -> if (!key.isNullOrBlank() && !values.isNullOrEmpty()) put(key.lowercase(), values.joinToString(", ")) } }).toString()
                             } finally { connection.disconnect() }
                         }
