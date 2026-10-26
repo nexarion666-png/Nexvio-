@@ -3,8 +3,8 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android { namespace = "com.nexvio.app"; compileSdk = 35
     defaultConfig {
         applicationId = "com.nexvio.app"; minSdk = 24; targetSdk = 35
-        versionCode = (System.getenv("NEXVIO_VERSION_CODE") ?: "4").toInt()
-        versionName = System.getenv("NEXVIO_VERSION_NAME") ?: "1.0.3"
+        versionCode = (System.getenv("NEXVIO_VERSION_CODE") ?: "5").toInt()
+        versionName = System.getenv("NEXVIO_VERSION_NAME") ?: "1.0.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
