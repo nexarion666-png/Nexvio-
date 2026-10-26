@@ -442,11 +442,11 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
     kotlinx.coroutines.coroutineScope {
         val nuvioJob = async {
             try {
-                NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber) { found ->
+                NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber, onStreams = { found ->
                     publish(found.map { stream ->
                         DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers)
                     })
-                }
+                })
             } catch (_: Exception) {
                 // Stremio add-ons can still return results if Nuvio providers fail.
             }
