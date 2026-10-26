@@ -32,7 +32,7 @@ internal object NuvioDiagnosticFormat {
         val path = uri.rawPath.orEmpty()
         val safePath = if (path.matches(Regex("(?i).*\\.(m3u8|mpd|mp4|mkv|webm|ts|m4v|mp3|aac)(\\..*)?$")) || path.length > 180) "/[stream-or-long-path]" else path.take(240)
         uri.scheme + "://" + host + port + safePath
-    } catch (_: Exception) { address.substringBefore('?').take(300) }
+    } catch (_: Exception) { if (address.contains("://")) "(unparseable-url)" else address.substringBefore('?').take(120) }
 
     fun timeoutMessage(count: Int, lastUrl: String, pending: Boolean): String =
         String.format(java.util.Locale.ROOT, "Provider timed out (%d requests, last: %s; request pending: %s)", count, lastUrl, pending)
