@@ -181,7 +181,6 @@ internal object NuvioScraperEngine {
                 val tracker = RequestTracker()
                 val runActive = AtomicBoolean(true)
                 val cookieJar = java.util.concurrent.ConcurrentHashMap<String, String>()
-                val cookieJar = java.util.concurrent.ConcurrentHashMap<String, String>()
                 val executor = Executors.newFixedThreadPool(4)
                 lateinit var bridge: Bridge
                 val cleaned = AtomicBoolean(false)
