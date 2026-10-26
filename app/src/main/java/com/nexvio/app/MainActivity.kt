@@ -79,6 +79,7 @@ private val tvChannelSaver = Saver<TvChannel?, Bundle>(
             putString("id", value.id)
             putString("name", value.name)
             putString("streamUrl", value.streamUrl)
+            putString("requestHeaders", org.json.JSONObject(value.requestHeaders).toString())
             putString("logoUrl", value.logoUrl)
             putString("category", value.category)
             putString("tvgId", value.tvgId)
@@ -97,7 +98,11 @@ private val tvChannelSaver = Saver<TvChannel?, Bundle>(
             category = value.getString("category"),
             tvgId = value.getString("tvgId"),
             tvgName = value.getString("tvgName"),
-            isFavorite = value.getBoolean("isFavorite")
+            isFavorite = value.getBoolean("isFavorite"),
+            requestHeaders = runCatching {
+                val headers = org.json.JSONObject(value.getString("requestHeaders").orEmpty())
+                buildMap { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, headers.optString(key)) } }
+            }.getOrDefault(emptyMap())
         ) else null
     } }
 )
@@ -521,7 +526,8 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         var createdPlayer: ExoPlayer? = null
         try {
             val httpFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent("Nexvio/1.0 (Android)")
+                .setUserAgent(channel.requestHeaders["User-Agent"] ?: "Nexvio/1.0 (Android)")
+                .setDefaultRequestProperties(channel.requestHeaders.filterKeys { !it.equals("User-Agent", true) })
                 .setAllowCrossProtocolRedirects(true)
             val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpFactory)
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
