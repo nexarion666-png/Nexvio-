@@ -63,7 +63,7 @@ internal object NuvioScraperEngine {
     }
     private fun safeLogUrl(address: String): String = try {
         val uri = URI(address.trim())
-        "${uri.scheme}://${uri.rawAuthority.orEmpty()}${uri.rawPath.orEmpty().take(240)}"
+        "${uri.scheme}://${uri.host.orEmpty()}${if (uri.port >= 0) ":${uri.port}" else ""}${uri.rawPath.orEmpty().take(240)}"
     } catch (_: Exception) { address.substringBefore('?').take(300) }
     private class RequestTracker {
         @Volatile var count: Int = 0
@@ -238,7 +238,7 @@ internal object NuvioScraperEngine {
                         connection.readTimeout = 15_000
                         connection.instanceFollowRedirects = options.optString("redirect", "follow") != "manual"
                         connection.requestMethod = method
-                        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
+                        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
                         val headers = options.optJSONObject("headers")
                         if (headers != null) {
                             val keys = headers.keys()
@@ -312,7 +312,7 @@ internal object NuvioScraperEngine {
         val c = URL(uri.toASCIIString()).openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 10_000; c.readTimeout = 15_000; c.instanceFollowRedirects = true
-            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
             if (c.responseCode !in 200..299) throw IllegalStateException("HTTP " + c.responseCode)
             if (c.contentLengthLong > limit) throw IllegalStateException("Provider file exceeds size limit")
             c.inputStream.use { input ->
