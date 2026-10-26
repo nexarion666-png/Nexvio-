@@ -99,7 +99,7 @@ internal object NuvioScraperEngine {
             lastUrl = displayUrl
             val key = try { val uri = URI(url); (uri.host ?: "(unknown-host)").lowercase() + (uri.rawPath.orEmpty().ifBlank { "/" }) } catch (_: Exception) { "(invalid-url)" }
             paths[key] = (paths[key] ?: 0) + 1
-            if (count >= 150 || pending >= 6) { budgetExceeded = true; return false }
+            if (count >= 150 || pending >= 6) { budgetExceeded = true; rejected++; return false }
             count++; pending++; return true
         }
         @Synchronized fun finished() { pending = (pending - 1).coerceAtLeast(0) }
