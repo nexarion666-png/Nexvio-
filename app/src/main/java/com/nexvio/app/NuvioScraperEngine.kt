@@ -27,7 +27,16 @@ internal data class NuvioDiscoveredStream(val providerName: String, val title: S
 internal object NuvioDiagnosticFormat {
     fun safeUrl(address: String): String = try {
         val uri = URI(address.trim())
-        "${'
+        val host = uri.host.orEmpty()
+        val port = if (uri.port >= 0) ":" + uri.port else ""
+        uri.scheme + "://" + host + port + uri.rawPath.orEmpty().take(240)
+    } catch (_: Exception) { address.substringBefore('?').take(300) }
+
+    fun timeoutMessage(count: Int, lastUrl: String, pending: Boolean): String =
+        String.format(java.util.Locale.ROOT, "Provider timed out (%d requests, last: %s; request pending: %s)", count, lastUrl, pending)
+}
+
+internal data class NuvioRequestLog(val method: String, val url: String, val status: Int, val elapsedMs: Long, val responseBytes: Int, val error: String? = null) {
     fun format(): String = buildString {
         append(method).append(' ').append(url).append(" → ").append(status)
         append(" • ").append(elapsedMs).append(" ms • ").append(responseBytes).append(" bytes")
