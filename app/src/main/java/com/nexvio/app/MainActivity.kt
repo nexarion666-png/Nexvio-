@@ -141,13 +141,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Sync once on foreground entry, then periodically while the app remains open.
-        // The loop is sequential (never overlaps sync requests) and stops when app leaves foreground.
+        // Sync sequentially while foregrounded. Each delay starts after the previous
+        // sync finishes; failed attempts back off longer to avoid hammering the network.
         foregroundSyncJob?.cancel()
         foregroundSyncJob = lifecycleScope.launch {
             while (true) {
-                syncNexvioAccountAutomatically(applicationContext)
-                delay(5_000L)
+                val succeeded = syncNexvioAccountAutomatically(applicationContext)
+                delay(if (succeeded) 5_000L else 15_000L)
             }
         }
     }
