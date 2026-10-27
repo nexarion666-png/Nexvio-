@@ -20,15 +20,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,7 +40,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -547,11 +553,36 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
     var controlsVisible by rememberSaveable(channel.id) { mutableStateOf(true) }
+    var controlsInteraction by remember(channel.id) { mutableIntStateOf(0) }
+    var screenLocked by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var muted by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var moreMenuExpanded by remember { mutableStateOf(false) }
     var positionMs by remember(channel.id) { mutableLongStateOf(0L) }
     var scrubPositionMs by remember(channel.id) { mutableStateOf<Long?>(null) }
     var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
     var brightnessLevel by rememberSaveable { mutableFloatStateOf(0.6f) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    fun revealControls() { controlsVisible = true; controlsInteraction++ }
+    fun showPlayerMessage(message: String) { android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show() }
+    fun openTrackDialog(trackType: Int, title: String, showDisableOption: Boolean = false) {
+        val active = player ?: run { showPlayerMessage("Player is not ready yet."); return }
+        if (active.currentTracks.groups.none { it.type == trackType }) {
+            showPlayerMessage("This stream does not provide selectable $title.")
+            return
+        }
+        val builder = TrackSelectionDialogBuilder(context, title, active, trackType)
+        if (showDisableOption) builder.setShowDisableOption(true)
+        builder.build().show()
+        revealControls()
+    }
+    fun cyclePlaybackSpeed() {
+        val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+        val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
+        playbackSpeed = next
+        player?.setPlaybackSpeed(next)
+        revealControls()
+    }
 
     val watchHistory = remember { WatchHistoryStore(context) }
     LaunchedEffect(channel.id) { if (channel.id.startsWith("addon-")) watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
@@ -563,8 +594,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars())
-        else controller.show(WindowInsetsCompat.Type.systemBars())
+        // Keep Android's status/navigation bars available as in the reference player;
+        // the video and its controls use the remaining safe content area.
+        controller.show(WindowInsetsCompat.Type.systemBars())
     }
     DisposableEffect(activity) {
         onDispose {
@@ -693,12 +725,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying, channel.id) {
-        if (controlsVisible && isPlaying) {
-            delay(3_000)
+    LaunchedEffect(controlsVisible, channel.id, controlsInteraction, screenLocked, playbackError, moreMenuExpanded) {
+        if (controlsVisible && playbackError == null && !screenLocked && !moreMenuExpanded) {
+            delay(3_500)
             controlsVisible = false
         }
     }
+    LaunchedEffect(player, muted) { player?.volume = if (muted) 0f else 1f }
 
     DisposableEffect(player, lifecycleOwner) {
         val activePlayer = player
@@ -730,16 +763,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Color.Black)) {
-        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Color(0xFF111217)).padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment=Alignment.CenterVertically) {
-            Text("‹", color=Accent, fontSize=28.sp, modifier=Modifier.clickable { onBack() }.padding(end = 12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("NOW PLAYING", color=Muted, fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.4.sp)
-                Text(channel.name, color=Color.White, fontWeight=FontWeight.SemiBold, maxLines=1)
-            }
-            Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "PLAYING", color=Accent, fontSize=10.sp, fontWeight=FontWeight.Bold,
-                modifier=Modifier.background(Color(0x332E9BFF), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 6.dp))
-        }
+    Column(Modifier.fillMaxSize().background(Color.Black), verticalArrangement = Arrangement.Center) {
+        if (!fullscreen) Spacer(Modifier.weight(1f))
         Box((if (fullscreen) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).background(Color.Black), contentAlignment=Alignment.Center) {
             if (player != null) {
                 AndroidView(
@@ -765,13 +790,15 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     modifier = (if (fullscreen) Modifier.fillMaxSize()
                         else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).pointerInput(player) {
                             detectTapGestures(
-                                onTap = { controlsVisible = !controlsVisible },
+                                onTap = { if (!screenLocked) { controlsVisible = !controlsVisible; controlsInteraction++ } },
                                 onDoubleTap = { offset ->
-                                    val active = player
-                                    if (active != null && active.isCurrentMediaItemSeekable) {
-                                        if (offset.x < size.width / 2f) active.seekBack() else active.seekForward()
+                                    if (!screenLocked) {
+                                        val active = player
+                                        if (active != null && active.isCurrentMediaItemSeekable) {
+                                            if (offset.x < size.width / 2f) active.seekBack() else active.seekForward()
+                                        }
+                                        revealControls()
                                     }
-                                    controlsVisible = true
                                 }
                             )
                         }
@@ -791,95 +818,326 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 Spacer(Modifier.height(12.dp))
                 Button(onClick={ playbackError=null; shouldResumePlayback=true; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Accent, contentColor=Ink)) { Text("Retry") }
             }
-            if (controlsVisible) {
+            if (screenLocked) {
+                Box(
+                    Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 18.dp)
+                        .size(46.dp).clip(CircleShape).background(Color(0x99080A0F))
+                        .clickable { screenLocked = false; revealControls() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.LockOpen, contentDescription = "Unlock controls", tint = Color.White, modifier = Modifier.size(24.dp))
+                }
+            } else if (controlsVisible) {
+                Column(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(Color(0xD9000000), Color.Transparent)))
+                        .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 20.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        PlayerIconButton(Icons.Filled.ArrowBack, "Back", {
+                            onBack()
+                        }, size = 26)
+                        Text(
+                            channel.name,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f).padding(start = 4.dp, end = 3.dp)
+                        )
+                        PlayerIconButton(Icons.Filled.Cast, "Cast", {
+                            showPlayerMessage("Casting is not configured in this build.")
+                            revealControls()
+                        }, size = 23)
+                        PlayerIconButton(Icons.Filled.HighQuality, "Video quality", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, size = 25)
+                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true) }, size = 24)
+                        PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
+                            if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
+                            else showPlayerMessage("No playlist is attached to this stream.")
+                            revealControls()
+                        }, size = 23)
+                        Box {
+                            PlayerIconButton(Icons.Filled.MoreVert, "More options", { moreMenuExpanded = true; revealControls() }, size = 25)
+                            DropdownMenu(
+                                expanded = moreMenuExpanded,
+                                onDismissRequest = { moreMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(text = { Text("Video quality") }, onClick = {
+                                    moreMenuExpanded = false
+                                    openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality")
+                                })
+                                DropdownMenuItem(text = { Text("Audio tracks") }, onClick = {
+                                    moreMenuExpanded = false
+                                    openTrackDialog(C.TRACK_TYPE_AUDIO, "Audio tracks")
+                                })
+                                DropdownMenuItem(text = { Text("Subtitles") }, onClick = {
+                                    moreMenuExpanded = false
+                                    openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true)
+                                })
+                                DropdownMenuItem(text = { Text("Cycle playback speed") }, onClick = {
+                                    moreMenuExpanded = false
+                                    cyclePlaybackSpeed()
+                                })
+                                DropdownMenuItem(text = { Text("Brightness down") }, onClick = {
+                                    moreMenuExpanded = false
+                                    brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
+                                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Brightness up") }, onClick = {
+                                    moreMenuExpanded = false
+                                    brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
+                                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Volume down") }, onClick = {
+                                    moreMenuExpanded = false
+                                    val volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (volume - 1).coerceAtLeast(0), 0)
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Volume up") }, onClick = {
+                                    moreMenuExpanded = false
+                                    val volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (volume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Cast") }, onClick = {
+                                    moreMenuExpanded = false
+                                    showPlayerMessage("Casting is not configured in this build.")
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Retry stream") }, onClick = {
+                                    moreMenuExpanded = false
+                                    playbackError = null
+                                    playbackDetails = null
+                                    shouldResumePlayback = true
+                                    retry++
+                                    revealControls()
+                                })
+                            }
+                        }
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 15.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PlayerFloatingIconButton(Icons.Filled.Lock, "Lock screen", {
+                            screenLocked = true
+                            controlsVisible = false
+                        })
+                        PlayerFloatingIconButton(if (muted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, if (muted) "Unmute" else "Mute", {
+                            muted = !muted
+                            revealControls()
+                        })
+                        PlayerFloatingIconButton(Icons.Filled.Headphones, "Audio tracks", {
+                            openTrackDialog(C.TRACK_TYPE_AUDIO, "Audio tracks")
+                        })
+                        PlayerFloatingButton("${playbackSpeed}×", {
+                            cyclePlaybackSpeed()
+                        }, description = "Playback speed", fontSize = 15)
+                        PlayerFloatingIconButton(Icons.Filled.SkipNext, "Next item", {
+                            val active = player
+                            if (active != null && active.hasNextMediaItem()) active.seekToNextMediaItem()
+                            else showPlayerMessage("There is no next item in this stream.")
+                            revealControls()
+                        })
+                    }
+                }
+
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .background(Color(0xD9101117), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9000000))))
+                        .padding(start = 14.dp, end = 14.dp, top = 24.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(channel.name, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                            modifier = Modifier.weight(1f))
-                        Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "NEXVIO",
-                            color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Accent,
-                            fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 8.dp))
-                    }
                     if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
-                        val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
-                        Slider(value = shownPosition.toFloat(),
-                            onValueChange = { scrubPositionMs = it.toLong() },
-                            onValueChangeFinished = {
-                                scrubPositionMs?.let { target ->
-                                    player?.seekTo(target.coerceIn(0L, durationMs))
-                                    positionMs = target
-                                }
-                                scrubPositionMs = null
-                            },
-                            valueRange = 0f..durationMs.toFloat(),
-                            colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
-                            modifier = Modifier.height(28.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatPlayerTime(shownPosition), color = Color.White, fontSize = 10.sp)
-                            Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Muted, fontSize = 10.sp)
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
+                            Text(formatPlayerTime(shownPosition), color = Color.White, fontSize = 12.sp)
+                            Slider(
+                                value = shownPosition.toFloat(),
+                                onValueChange = {
+                                    scrubPositionMs = it.toLong()
+                                    revealControls()
+                                },
+                                onValueChangeFinished = {
+                                    scrubPositionMs?.let { target ->
+                                        val safeTarget = target.coerceIn(0L, durationMs)
+                                        player?.seekTo(safeTarget)
+                                        positionMs = safeTarget
+                                    }
+                                    scrubPositionMs = null
+                                    revealControls()
+                                },
+                                valueRange = 0f..durationMs.toFloat(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color.White,
+                                    inactiveTrackColor = Color(0x77FFFFFF)
+                                ),
+                                modifier = Modifier.weight(1f).height(28.dp)
+                            )
+                            Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Color.White, fontSize = 12.sp)
                         }
                     } else {
-                        Text(if (player?.isCurrentMediaItemLive == true) "● LIVE STREAM  •  SEEKING UNAVAILABLE" else "LIVE STREAM",
-                            color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Muted,
-                            fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (player?.isCurrentMediaItemLive == true) "● LIVE STREAM" else "SEEKING UNAVAILABLE",
+                                color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Color.White.copy(alpha = 0.7f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
                     }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("↶ 10s", color = if (player?.isCurrentMediaItemSeekable == true) Color.White else Muted,
-                            modifier = Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(5.dp))
-                        Text(if (isPlaying) "Ⅱ" else "▶", color = Accent, fontSize = 24.sp,
-                            modifier = Modifier.clickable {
-                                player?.let { active ->
-                                    if (active.isPlaying) active.pause() else { playbackError = null; playbackDetails = null; shouldResumePlayback = true; active.play() }
-                                } ?: run { playbackError = null; shouldResumePlayback = true; retry++ }
-                            }.padding(horizontal = 8.dp, vertical = 2.dp))
-                        Text("10s ↷", color = if (player?.isCurrentMediaItemSeekable == true) Color.White else Muted,
-                            modifier = Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() } }.padding(5.dp))
-                        Text("Speed ${playbackSpeed}×", color = Accent, modifier = Modifier.clickable {
-                            val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-                            val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
-                            playbackSpeed = next
-                            player?.setPlaybackSpeed(next)
-                        }.padding(5.dp))
-                        Text(if (fullscreen) "Exit" else "⛶", color = Color.White,
-                            modifier = Modifier.clickable { fullscreenOverride = !fullscreen }.padding(5.dp))
-                    }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("♫", color = Accent, modifier = Modifier.clickable {
-                            player?.let { active -> TrackSelectionDialogBuilder(context, "Audio tracks", active, C.TRACK_TYPE_AUDIO).build().show() }
-                        }.padding(5.dp))
-                        Text("CC", color = Accent, modifier = Modifier.clickable {
-                            player?.let { active -> TrackSelectionDialogBuilder(context, "Subtitles", active, C.TRACK_TYPE_TEXT).setShowDisableOption(true).build().show() }
-                        }.padding(5.dp))
-                        Text("☼−", color = Accent, modifier = Modifier.clickable {
-                            brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
-                            activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
-                        }.padding(5.dp))
-                        Text("☼+", color = Accent, modifier = Modifier.clickable {
-                            brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
-                            activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
-                        }.padding(5.dp))
-                        Text("🔉", color = Accent, modifier = Modifier.clickable {
-                            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume - 1).coerceAtLeast(0), 0)
-                        }.padding(5.dp))
-                        Text("🔊", color = Accent, modifier = Modifier.clickable {
-                            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
-                        }.padding(5.dp))
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        PlayerIconButton(Icons.Filled.Lock, "Lock controls", {
+                            screenLocked = true
+                            controlsVisible = false
+                        }, size = 22)
+                        PlayerIconButton(Icons.Filled.Replay10, "Rewind 10 seconds", {
+                            player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() }
+                            revealControls()
+                        }, size = 28, enabled = player?.isCurrentMediaItemSeekable == true)
+                        PlayerIconButton(Icons.Filled.SkipPrevious, "Previous item", {
+                            player?.let { active -> if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem() }
+                            revealControls()
+                        }, size = 26, enabled = player?.hasPreviousMediaItem() == true)
+                        Box(
+                            Modifier.size(50.dp).border(1.dp, Color.White.copy(alpha = 0.92f), CircleShape)
+                                .clickable {
+                                    player?.let { active ->
+                                        if (active.isPlaying) active.pause()
+                                        else {
+                                            playbackError = null
+                                            playbackDetails = null
+                                            shouldResumePlayback = true
+                                            active.play()
+                                        }
+                                    } ?: run {
+                                        playbackError = null
+                                        shouldResumePlayback = true
+                                        retry++
+                                    }
+                                    revealControls()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(28.dp))
+                        }
+                        PlayerIconButton(Icons.Filled.SkipNext, "Next item", {
+                            player?.let { active -> if (active.hasNextMediaItem()) active.seekToNextMediaItem() }
+                            revealControls()
+                        }, size = 26, enabled = player?.hasNextMediaItem() == true)
+                        PlayerIconButton(Icons.Filled.Forward10, "Forward 10 seconds", {
+                            player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() }
+                            revealControls()
+                        }, size = 28, enabled = player?.isCurrentMediaItemSeekable == true)
+                        PlayerOverlayButton("Speed", { cyclePlaybackSpeed() }, fontSize = 12)
+                        PlayerIconButton(if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, if (fullscreen) "Exit fullscreen" else "Enter fullscreen", {
+                            fullscreenOverride = !fullscreen
+                            revealControls()
+                        }, size = 25)
                     }
                 }
             }
         }
+        if (!fullscreen) Spacer(Modifier.weight(1f))
+    }
+}
 
+@Composable
+private fun PlayerOverlayButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    fontSize: Int = 22,
+    enabled: Boolean = true
+) {
+    Box(
+        modifier.sizeIn(minWidth = 32.dp, minHeight = 40.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
+            fontSize = fontSize.sp,
+            maxLines = 1,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun PlayerIconButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Int = 24,
+    enabled: Boolean = true
+) {
+    Box(
+        modifier.sizeIn(minWidth = 32.dp, minHeight = 40.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
+            modifier = Modifier.size(size.dp)
+        )
+    }
+}
+
+@Composable
+private fun PlayerFloatingIconButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    size: Int = 23
+) {
+    Box(
+        Modifier.size(46.dp).clip(CircleShape)
+            .background(Color(0x99080A0F))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(imageVector = icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(size.dp))
+    }
+}
+
+@Composable
+private fun PlayerFloatingButton(
+    label: String,
+    onClick: () -> Unit,
+    description: String,
+    fontSize: Int = 22
+) {
+    Box(
+        Modifier.size(46.dp).clip(CircleShape)
+            .background(Color(0x99080A0F))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = Color.White, fontSize = fontSize.sp, maxLines = 1, fontWeight = FontWeight.Medium)
     }
 }
 
