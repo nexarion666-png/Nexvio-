@@ -338,7 +338,7 @@ class MainActivity : ComponentActivity() {
                         "Home" -> HomeScreen(profileId = activeProfileId, onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
                         "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it }, profileId = activeProfileId)
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
-                        "Library" -> OfflineLibraryScreen(onTitleSelected = { selectedTitle = it }, profileId = activeProfileId)
+                        "Library" -> OfflineLibraryScreen(onPlay = { playing = it }, onTitleSelected = { selectedTitle = it }, profileId = activeProfileId)
                         else -> SettingsScreen(onDetail={ item ->
                         if (item == "Switch Profile") {
                             showingProfilePicker = true
