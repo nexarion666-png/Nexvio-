@@ -104,7 +104,7 @@ internal object NexvioCloudSync {
             } else {
                 val localIsUntouchedDefault = local.id == "primary" &&
                     local.name == "Main Profile" && local.avatarId == "fox" &&
-                    local.customAvatarUrl.isBlank() && local.updatedAt <= local.createdAt
+                    local.customAvatarUrl.isBlank() && local.updatedAt - local.createdAt < 1000L
                 if (!localIsUntouchedDefault && local.updatedAt >= cloud.updatedAt) {
                     merged[local.id] = local
                 }
@@ -346,6 +346,7 @@ internal object NexvioCloudSync {
             null -> json.put(key, JSONObject.NULL)
             is String, is Boolean, is Int, is Long, is Float, is Double -> json.put(key, value)
             is Set<*> -> json.put(key, JSONArray(value.map { it.toString() }))
+            is JSONArray, is JSONObject -> json.put(key, value)
             else -> json.put(key, value.toString())
         }
     }
