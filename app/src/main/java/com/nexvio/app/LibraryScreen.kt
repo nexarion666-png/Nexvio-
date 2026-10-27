@@ -1,6 +1,5 @@
 package com.nexvio.app
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,7 +43,6 @@ private val LibraryMuted = Color(0xFF9A9DA6)
 
 @Composable
 internal fun OfflineLibraryScreen(
-    onPlay: (TvChannel) -> Unit,
     onTitleSelected: (TmdbTitle) -> Unit,
     profileId: String = NexvioProfileStore.active(LocalContext.current).id
 ) {
