@@ -171,7 +171,13 @@ private object AddonManifestClient {
 }
 
 private class AddonStore(context: Context) {
-    private val prefs = context.getSharedPreferences("nexvio_addons", Context.MODE_PRIVATE)
+    private val profile = NexvioProfileStore.active(context)
+    // Profiles sharing primary add-ons read/write the legacy shared configuration. Separate profiles
+    // get an independent store; switching this preference never deletes either configuration.
+    private val prefs = context.getSharedPreferences(
+        if (profile.isPrimary || profile.usePrimaryAddons) "nexvio_addons"
+        else "nexvio_addons_profile_${profile.id}", Context.MODE_PRIVATE
+    )
     fun load(): List<NexvioAddon> = try {
         val array = JSONArray(prefs.getString("installed", "[]") ?: "[]")
         buildList {
