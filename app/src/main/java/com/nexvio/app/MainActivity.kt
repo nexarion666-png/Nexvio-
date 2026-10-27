@@ -127,6 +127,19 @@ class MainActivity : ComponentActivity() {
     var selectedTitle by remember { mutableStateOf<TmdbTitle?>(null) }
     var streamSearch by remember { mutableStateOf<Triple<TmdbTitle, Int, Int>?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
+
+    // Handle Back in screen order so it returns to the previous screen instead of closing the app.
+    BackHandler(enabled = playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
+        when {
+            playing != null -> playing = null
+            streamSearch != null -> streamSearch = null
+            selectedTitle != null -> selectedTitle = null
+            detail == "Add-ons" || detail == "Plugin repositories" -> detail = "Content providers"
+            detail != null -> detail = null
+            current != "Home" -> current = "Home"
+        }
+    }
+
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
             if (playing != null) {
@@ -177,7 +190,7 @@ class MainActivity : ComponentActivity() {
                         Column(
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(32.dp))
                                 .background(if (selected) Ink else Color.Transparent)
-                                .clickable { detail = null; selectedTitle = null; current = item }
+                                .clickable { streamSearch = null; detail = null; selectedTitle = null; current = item }
                                 .padding(vertical = 9.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(4.dp)
