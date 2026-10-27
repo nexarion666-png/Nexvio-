@@ -188,7 +188,7 @@ class MainActivity : ComponentActivity() {
                             onBack = { detail = null }
                         )
                     } else if (detail == "Playback") {
-                        PlaybackSettingsScreen(onBack = { detail = null })
+                        PlaybackSettingsScreenV2(onBack = { detail = null })
                     } else if (detail == "Integrations") {
                         IntegrationsSettingsScreen(onBack = { detail = null })
                     } else if (detail == "Notifications") {
