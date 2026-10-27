@@ -771,7 +771,6 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 if (!playbackDetails.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text("Technical details: ${playbackDetails}", color=Muted, fontSize=11.sp)
-                    TextButton(onClick = { val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager; clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio playback error", playbackDetails ?: playbackError.orEmpty())) }) { Text("Copy") }
                     TextButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio playback error", playbackDetails.orEmpty()))
