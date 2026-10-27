@@ -261,9 +261,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Brand() { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(12.dp)), contentAlignment=Alignment.Center) { Text("N", color=Ink, fontSize=25.sp, fontWeight=FontWeight.Black) }; Spacer(Modifier.width(10.dp)); Column { Text("NEXVIO", fontWeight=FontWeight.Black, letterSpacing=2.sp, fontSize=19.sp); Text("Movies • Series • Live TV", color=Muted, fontSize=11.sp) } } }
-@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
+@Composable private fun HomeScreen(profileId: String, onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
-    val historyStore = remember(context) { WatchHistoryStore(context) }
+    val historyStore = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
@@ -548,7 +548,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(totalSeconds / 60, seconds)
 }
 
-@Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
+@Composable private fun PlayerScreen(channel: TvChannel, profileId: String, onBack:()->Unit) {
     val context = LocalContext.current
     val playerPrefs = remember(context) { settingsPrefs(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -563,7 +563,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
     var playbackDetails by remember(channel.id) { mutableStateOf<String?>(null) }
     var retry by remember(channel.id) { mutableIntStateOf(0) }
-    var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(WatchHistoryStore(context).get(channel.id)?.positionMs ?: 0L) }
+    var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(WatchHistoryStore(context, profileId).get(channel.id)?.positionMs ?: 0L) }
     var shouldResumePlayback by rememberSaveable(channel.id) { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
@@ -599,7 +599,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
         revealControls()
     }
 
-    val watchHistory = remember { WatchHistoryStore(context) }
+    val watchHistory = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     LaunchedEffect(channel.id) { if (channel.id.startsWith("addon-")) watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
 
     // Landscape is fullscreen by default. Back exits fullscreen first; rotating again
