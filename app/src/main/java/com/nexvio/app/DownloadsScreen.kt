@@ -144,7 +144,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
  @Composable
 fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     val context = LocalContext.current
-    val watchlist = remember(context) { WatchlistStore(context) }
+    val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var saved by remember { mutableStateOf(watchlist.all()) }
     var showDownloads by remember { mutableStateOf(false) }
     var cloudSelected by remember { mutableStateOf(false) }
