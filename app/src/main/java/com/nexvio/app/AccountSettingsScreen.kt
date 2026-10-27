@@ -416,7 +416,7 @@ internal fun NexvioWelcomeScreen(
                 } else perform({
                     if (createAccount) NexvioSupabaseAuth.signUp(context, email.trim(), password)
                     else NexvioSupabaseAuth.signIn(context, email.trim(), password)
-                }, finishOnAuth = !createAccount)
+                }, finishOnAuth = true)
             },
             enabled = !busy && email.contains("@") && password.isNotEmpty(),
             modifier = Modifier.fillMaxWidth().height(58.dp),
