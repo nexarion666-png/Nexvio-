@@ -135,44 +135,10 @@ internal object NexvioCloudSync {
         var syncedSettings = 0
         merged.values.forEach { profile ->
             val prefsName = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
-            val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-            val remoteState = JSONArray(request(
-                "rest/v1/nexvio_profile_state?select=state_data&account_id=eq.$accountId&profile_id=eq.${profile.id}&state_key=eq.settings"
-            ))
-            val settings = JSONObject()
-            if (remoteState.length() > 0) {
-                val remoteSettings = remoteState.optJSONObject(0)?.optJSONObject("state_data")
-                if (remoteSettings != null) {
-                    val keys = remoteSettings.keys()
-                    while (keys.hasNext()) {
-                        val key = keys.next()
-                        if (firstSyncForAccount || !prefs.contains(key)) putPreference(settings, key, remoteSettings.opt(key))
-                    }
-                    // On a new device, existing SharedPreferences values are often only defaults.
-                    // Restore cloud values over those defaults. On an already initialized device,
-                    // retain local values so a deliberate local edit can be uploaded.
-                    val restored = settingsToMap(remoteSettings)
-                    val editor = prefs.edit()
-                    restored.forEach { (key, value) ->
-                        if (firstSyncForAccount || !prefs.contains(key)) applyValue(editor, key, value)
-                    }
-                    editor.apply()
-                }
-            }
-            val all = prefs.all
-            all.forEach { (key, value) ->
-                // During first-device restore, preserve remote values already placed in this
-                // payload instead of immediately replacing them with this device's defaults.
-                if (!firstSyncForAccount || !settings.has(key)) putPreference(settings, key, value)
-            }
-            val row = JSONArray().put(JSONObject()
-                .put("account_id", accountId)
-                .put("profile_id", profile.id)
-                .put("state_key", "settings")
-                .put("state_data", settings)
-                .put("updated_at", java.time.Instant.now().toString()))
-            request("rest/v1/nexvio_profile_state?on_conflict=account_id,profile_id,state_key", "POST", row.toString(),
-                "resolution=merge-duplicates,return=minimal")
+            syncPreferenceBucket(
+                context, accountId, profile.id, "settings", prefsName, ::request,
+                preferRemoteOnFirstSync = firstSyncForAccount
+            )
             syncedSettings++
         }
         // Sync profile-owned viewing data, including watchlists and playback history.
@@ -204,9 +170,13 @@ internal object NexvioCloudSync {
     }
 
     /**
-     * Sync a named SharedPreferences store through the existing account/profile RLS table.
-     * List-valued JSON strings are merged by stable item identity so one device does not
-     * erase entries added on another device. Authentication/session preferences are never passed here.
+     * Synchronize a complete state snapshot with a per-device baseline.
+     *
+     * The old implementation union-merged arrays. That makes deletions impossible: a movie
+     * removed on one device is reintroduced from the other device's stale list. A baseline lets
+     * us detect which side changed since its last successful sync. If only local changed, upload
+     * local; if only cloud changed, restore cloud. If both changed between syncs, the device
+     * explicitly syncing now wins (last successful sync wins the conflict).
      */
     private fun syncPreferenceBucket(
         context: Context,
@@ -219,67 +189,70 @@ internal object NexvioCloudSync {
         preferRemoteOnFirstSync: Boolean = false
     ) {
         val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+        val baselinePrefs = context.getSharedPreferences("nexvio_sync_baselines", Context.MODE_PRIVATE)
+        val baselineKey = "${accountId}_${profileId}_${stateKey}"
         val remoteRows = JSONArray(request(
-            "rest/v1/nexvio_profile_state?select=state_data&account_id=eq.$accountId&profile_id=eq.$profileId&state_key=eq.$stateKey",
+            "rest/v1/nexvio_profile_state?select=state_data,updated_at&account_id=eq.$accountId&profile_id=eq.$profileId&state_key=eq.$stateKey",
             "GET", null, null
         ))
         val remote = remoteRows.optJSONObject(0)?.optJSONObject("state_data") ?: JSONObject()
-        val localIsDocumentPlaylist = skipDeviceLocalIptv && prefs.getBoolean("local", false)
-        val merged = JSONObject()
-        val remoteKeys = remote.keys()
-        while (remoteKeys.hasNext()) {
-            val key = remoteKeys.next()
-            if (skipDeviceLocalIptv && key in setOf("source", "label", "local") &&
-                (localIsDocumentPlaylist || remote.optBoolean("local", false))) continue
-            val remoteValue = remote.opt(key)
-            val localValue = prefs.all[key]
-            if (localValue == null) {
-                putPreference(merged, key, remoteValue)
-            } else {
-                putPreference(merged, key, if (preferRemoteOnFirstSync && !isEmptyBucketValue(remoteValue)) {
-                    // Cloud is the source of truth for a newly linked device's scalar settings.
-                    // Arrays are still merged to avoid dropping local list entries unexpectedly.
-                    if (isJsonArrayString(localValue) && (remoteValue is JSONArray || (remoteValue is String && isJsonArrayString(remoteValue))))
-                        mergeBucketValue(key, localValue, remoteValue)
-                    else remoteValue
-                } else mergeBucketValue(key, localValue, remoteValue))
+        val baselineText = baselinePrefs.getString(baselineKey, null)
+        val baseline = baselineText?.let { runCatching { JSONObject(it) }.getOrNull() }
+
+        fun localSnapshot(): JSONObject {
+            val out = JSONObject()
+            prefs.all.toSortedMap().forEach { (key, value) ->
+                if (skipDeviceLocalIptv && key in setOf("source", "label", "local") &&
+                    (prefs.getBoolean("local", false) || remote.optBoolean("local", false))) return@forEach
+                putPreference(out, key, value)
             }
-        }
-        prefs.all.forEach { (key, value) ->
-            if (skipDeviceLocalIptv && localIsDocumentPlaylist && key in setOf("source", "label", "local")) return@forEach
-            if (!merged.has(key)) putPreference(merged, key, value)
+            return out
         }
 
-        // Restore remote values that were absent locally; merge JSON arrays with local data.
-        val editor = prefs.edit()
-        val restoreKeys = merged.keys()
-        while (restoreKeys.hasNext()) {
-            val key = restoreKeys.next()
-            if (skipDeviceLocalIptv && key in setOf("source", "label", "local") &&
-                (localIsDocumentPlaylist || remote.optBoolean("local", false))) continue
-            val value = merged.opt(key)
-            if (value == JSONObject.NULL) continue
-            val localValue = prefs.all[key]
-            if (preferRemoteOnFirstSync || localValue == null ||
-                isEmptyBucketValue(localValue) ||
-                isJsonArrayString(localValue) ||
-                (localValue is Set<*> && value is Set<*>)) {
-                applyBucketValue(editor, key, value)
+        val local = localSnapshot()
+        val localChanged = baseline != null && canonicalJson(local) != canonicalJson(baseline)
+        val remoteChanged = baseline != null && canonicalJson(remote) != canonicalJson(baseline)
+        val remoteHasData = remote.length() > 0
+        val localHasData = local.length() > 0
+
+        val useRemote = when {
+            baseline == null -> preferRemoteOnFirstSync && remoteHasData
+            remoteChanged && !localChanged -> true
+            localChanged && !remoteChanged -> false
+            remoteChanged && localChanged -> false // explicit sync on this device wins a conflict
+            else -> !localHasData && remoteHasData
+        }
+        val chosen = if (useRemote) remote else local
+        val keepLocalIptvFields = skipDeviceLocalIptv && prefs.getBoolean("local", false)
+        val localIptvSource = prefs.all["source"]
+        val localIptvLabel = prefs.all["label"]
+        val localIptvFlag = prefs.all["local"]
+
+        // Replace the synchronized snapshot rather than merging arrays, so removals propagate.
+        // Preserve device-specific IPTV document URI fields; they cannot be restored on another phone.
+        val editor = prefs.edit().clear()
+        if (keepLocalIptvFields) {
+            when (localIptvSource) {
+                is String -> editor.putString("source", localIptvSource)
+            }
+            when (localIptvLabel) {
+                is String -> editor.putString("label", localIptvLabel)
+            }
+            when (localIptvFlag) {
+                is Boolean -> editor.putBoolean("local", localIptvFlag)
             }
         }
-        editor.apply()
-
-        // Upload the merged snapshot itself. SharedPreferences.Editor.apply() is async;
-        // serializing prefs.all immediately after apply() could upload stale local values
-        // and erase the cloud entries that were just merged.
-        val upload = JSONObject()
-        val uploadKeys = merged.keys()
-        while (uploadKeys.hasNext()) {
-            val key = uploadKeys.next()
-            if (skipDeviceLocalIptv && prefs.getBoolean("local", false) &&
-                key in setOf("source", "label", "local")) continue
-            upload.put(key, merged.opt(key))
+        val keys = chosen.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (skipDeviceLocalIptv && key in setOf("source", "label", "local") &&
+                (prefs.getBoolean("local", false) || remote.optBoolean("local", false))) continue
+            val value = chosen.opt(key)
+            if (value != JSONObject.NULL) applyBucketValue(editor, key, value)
         }
+        editor.commit()
+
+        val upload = JSONObject(chosen.toString())
         val row = JSONArray().put(JSONObject()
             .put("account_id", accountId)
             .put("profile_id", profileId)
@@ -290,6 +263,35 @@ internal object NexvioCloudSync {
             "rest/v1/nexvio_profile_state?on_conflict=account_id,profile_id,state_key",
             "POST", row.toString(), "resolution=merge-duplicates,return=minimal"
         )
+        baselinePrefs.edit().putString(baselineKey, canonicalJson(chosen)).commit()
+    }
+
+    /** Stable key ordering prevents JSON object order from looking like a data change. */
+    private fun canonicalJson(value: JSONObject): String {
+        val keys = value.keys().asSequence().toList().sorted()
+        val out = JSONObject()
+        keys.forEach { key ->
+            val item = value.opt(key)
+            out.put(key, when (item) {
+                is JSONObject -> JSONObject(canonicalJson(item))
+                is JSONArray -> canonicalArray(item)
+                else -> item
+            })
+        }
+        return out.toString()
+    }
+
+    private fun canonicalArray(value: JSONArray): JSONArray {
+        val out = JSONArray()
+        for (i in 0 until value.length()) {
+            val item = value.opt(i)
+            out.put(when (item) {
+                is JSONObject -> JSONObject(canonicalJson(item))
+                is JSONArray -> canonicalArray(item)
+                else -> item
+            })
+        }
+        return out
     }
 
     private fun isEmptyBucketValue(value: Any): Boolean = when (value) {
@@ -374,7 +376,7 @@ internal object NexvioCloudSync {
         when (value) {
             null -> json.put(key, JSONObject.NULL)
             is String, is Boolean, is Int, is Long, is Float, is Double -> json.put(key, value)
-            is Set<*> -> json.put(key, JSONArray(value.map { it.toString() }))
+            is Set<*> -> json.put(key, JSONArray(value.map { it.toString() }.sorted()))
             is JSONArray, is JSONObject -> json.put(key, value)
             else -> json.put(key, value.toString())
         }
