@@ -74,7 +74,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
-private val Ink = Color(0xFF101114)
+private val Ink: Color get() = AppAppearanceState.background
 private val Panel = Color(0xFF1B1D22)
 private val Accent = Color(0xFF8B7CFF)
 private val Muted = Color(0xFF9A9DA6)
