@@ -135,9 +135,20 @@ internal object NexvioProfileStore {
     @Synchronized fun delete(context: Context, id: String) {
         val profiles = all(context)
         require(profiles.size > 1) { "Keep at least one profile." }
-        require(profiles.firstOrNull { it.id == id }?.isPrimary != true) { "The primary profile cannot be deleted." }
-        save(context, profiles.filterNot { it.id == id })
-        if (activeId(context) == id) setActive(context, profiles.first { it.id != id }.id)
+        require(profiles.any { it.id == id }) { "Profile not found." }
+
+        val remaining = profiles.filterNot { it.id == id }
+        // If the primary profile is deleted, promote the oldest remaining profile
+        // so the account always has exactly one primary profile.
+        val deletedPrimary = profiles.first { it.id == id }.isPrimary
+        val normalized = if (deletedPrimary) {
+            val nextPrimary = remaining.first()
+            remaining.map { profile -> profile.copy(isPrimary = profile.id == nextPrimary.id) }
+        } else {
+            remaining
+        }
+        save(context, normalized)
+        if (activeId(context) == id) setActive(context, normalized.first().id)
     }
 }
 
@@ -218,7 +229,7 @@ internal fun ProfileSystemScreen(
                                     Box(Modifier.align(Alignment.BottomEnd).size(30.dp).clip(CircleShape).background(ProfileGreen), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Edit, contentDescription = "Edit ${profile.name}", tint = ProfileBg, modifier = Modifier.size(17.dp))
                                     }
-                                    if (!profile.isPrimary) {
+                                    if (profiles.size > 1) {
                                         Box(Modifier.align(Alignment.TopEnd).size(28.dp).clip(CircleShape).background(Color(0xFF542B32))
                                             .clickable { deleteTarget = profile }, contentAlignment = Alignment.Center) {
                                             Icon(Icons.Default.Delete, contentDescription = "Delete ${profile.name}", tint = Color.White, modifier = Modifier.size(15.dp))
@@ -263,9 +274,13 @@ internal fun ProfileSystemScreen(
     }
     if (deleteTarget != null) AlertDialog(
         onDismissRequest = { deleteTarget = null },
-        title = { Text("Delete profile?") },
-        text = { Text("This profile will be removed from this device. The primary profile is protected.") },
-        confirmButton = { TextButton(onClick = { runCatching { NexvioProfileStore.delete(context, deleteTarget!!.id) }; deleteTarget = null; refresh() }) { Text("Delete", color = Color(0xFFFF7777)) } },
+        title = { Text("Delete ${deleteTarget!!.name}?") },
+        text = { Text(if (deleteTarget!!.isPrimary) "This will delete the primary profile. Another profile will automatically become the primary profile. This action cannot be undone." else "This profile will be removed from this device. This action cannot be undone.") },
+        confirmButton = { TextButton(onClick = {
+            runCatching { NexvioProfileStore.delete(context, deleteTarget!!.id) }
+            deleteTarget = null
+            refresh()
+        }) { Text("Delete", color = Color(0xFFFF7777)) } },
         dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
     )
 }
