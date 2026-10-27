@@ -142,7 +142,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit) {
 }
 
  @Composable
-fun OfflineLibraryScreen() {
+fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit) {
     val context = LocalContext.current
     val watchlist = remember(context) { WatchlistStore(context) }
     var saved by remember { mutableStateOf(watchlist.all()) }
@@ -157,7 +157,7 @@ fun OfflineLibraryScreen() {
                 Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { showDownloads = false }.padding(end = 14.dp))
                 Text("Downloads", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
-            DownloadsScreen()
+            DownloadsScreen(onPlay = onPlay)
         }
         return
     }
