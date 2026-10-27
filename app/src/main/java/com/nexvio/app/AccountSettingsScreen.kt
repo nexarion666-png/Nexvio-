@@ -99,9 +99,9 @@ private object NexvioSupabaseAuth {
      * Reuse a valid access token. Refresh only near expiry and serialize refresh-token
      * rotation so concurrent foreground/manual syncs cannot reuse the same refresh token.
      */
-    suspend fun refreshSession(context: Context): Session? = refreshMutex.withLock {
+    suspend fun refreshSession(context: Context, forceRefresh: Boolean = false): Session? = refreshMutex.withLock {
         val current = session(context) ?: return@withLock null
-        if (current.expiresAtMillis > System.currentTimeMillis() + REFRESH_SKEW_MILLIS) {
+        if (!forceRefresh && current.expiresAtMillis > System.currentTimeMillis() + REFRESH_SKEW_MILLIS) {
             return@withLock current
         }
         if (current.refreshToken.isBlank()) {
@@ -118,13 +118,9 @@ private object NexvioSupabaseAuth {
             session(context) ?: throw IllegalStateException("Sign in again to sync your account.")
         } catch (e: Exception) {
             val reason = e.message.orEmpty()
-            if (reason.contains("refresh token", ignoreCase = true) &&
-                (reason.contains("invalid", ignoreCase = true) ||
-                 reason.contains("not found", ignoreCase = true) ||
-                 reason.contains("already used", ignoreCase = true) ||
-                 reason.contains("expired", ignoreCase = true))) {
+            if (isInvalidSupabaseSessionError(reason)) {
                 clearSession(context)
-                throw IllegalStateException("Your session expired. Sign in again to sync your account.")
+                throw IllegalStateException("Your cloud session is no longer valid. Sign in again to resume sync.")
             }
             throw e
         }
@@ -140,6 +136,10 @@ private object NexvioSupabaseAuth {
 
     fun sendSignInLink(email: String) {
         request("auth/v1/otp", "POST", JSONObject().put("email", email).put("create_user", false))
+    }
+
+    fun clearSessionForReauthentication(context: Context) {
+        clearSession(context)
     }
 
     fun signOut(context: Context) {
@@ -181,15 +181,63 @@ private object NexvioSupabaseAuth {
 
 
 /** Serialize manual and automatic syncs, refresh the session, and persist the result. */
+private fun isMissingSupabaseSessionError(message: String?): Boolean {
+    val text = message.orEmpty().lowercase()
+    return "session from session_id claim" in text ||
+        "session_not_found" in text ||
+        "session does not exist" in text
+}
+
+private fun isInvalidSupabaseSessionError(message: String?): Boolean {
+    val text = message.orEmpty().lowercase()
+    return isMissingSupabaseSessionError(text) ||
+        "invalid refresh token" in text ||
+        "refresh token not found" in text ||
+        "refresh token has expired" in text ||
+        "refresh token expired" in text ||
+        "refresh token already used" in text ||
+        "refresh token has already been used" in text
+}
+
 internal suspend fun syncNexvioAccount(context: Context): String = nexvioAccountSyncMutex.withLock {
     val appContext = context.applicationContext
     val status = appContext.getSharedPreferences("nexvio_cloud_sync_status", Context.MODE_PRIVATE)
     if (NexvioSupabaseAuth.session(appContext) == null) {
         throw IllegalStateException("Sign in to sync your Nexvio account.")
     }
-    val refreshed = NexvioSupabaseAuth.refreshSession(appContext)
+    val session = NexvioSupabaseAuth.refreshSession(appContext)
         ?: throw IllegalStateException("Sign in to sync your Nexvio account.")
-    val result = NexvioCloudSync.sync(appContext, refreshed.accessToken)
+
+    // A session can be deleted server-side while its locally stored JWT is still within
+    // its expiry window. In that case, force one refresh and retry only this known error.
+    val result = try {
+        NexvioCloudSync.sync(appContext, session.accessToken)
+    } catch (firstError: Exception) {
+        if (!isMissingSupabaseSessionError(firstError.message)) throw firstError
+
+        val recovered = try {
+            NexvioSupabaseAuth.refreshSession(appContext, forceRefresh = true)
+        } catch (refreshError: Exception) {
+            if (isInvalidSupabaseSessionError(refreshError.message)) {
+                NexvioSupabaseAuth.clearSessionForReauthentication(appContext)
+                throw IllegalStateException("Your cloud session has expired. Sign in again to resume sync.")
+            }
+            throw refreshError
+        } ?: run {
+            NexvioSupabaseAuth.clearSessionForReauthentication(appContext)
+            throw IllegalStateException("Your cloud session has expired. Sign in again to resume sync.")
+        }
+
+        try {
+            NexvioCloudSync.sync(appContext, recovered.accessToken)
+        } catch (retryError: Exception) {
+            if (isMissingSupabaseSessionError(retryError.message)) {
+                NexvioSupabaseAuth.clearSessionForReauthentication(appContext)
+                throw IllegalStateException("Your cloud session has expired. Sign in again to resume sync.")
+            }
+            throw retryError
+        }
+    }
     status.edit().putString("message", result.message).putBoolean("error", false).apply()
     result.message
 }
