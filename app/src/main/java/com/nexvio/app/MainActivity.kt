@@ -547,6 +547,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
     var positionMs by remember(channel.id) { mutableLongStateOf(0L) }
+    var scrubPositionMs by remember(channel.id) { mutableStateOf<Long?>(null) }
     var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
     var brightnessLevel by rememberSaveable { mutableFloatStateOf(0.6f) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -805,14 +806,18 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
         if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=14.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
-                Slider(value = positionMs.coerceIn(0L, durationMs).toFloat(),
-                    onValueChange = { positionMs = it.toLong() },
-                    onValueChangeFinished = { player?.seekTo(positionMs.coerceIn(0L, durationMs)) },
+                val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
+                Slider(value = shownPosition.toFloat(),
+                    onValueChange = { scrubPositionMs = it.toLong() },
+                    onValueChangeFinished = {
+                        scrubPositionMs?.let { target -> player?.seekTo(target.coerceIn(0L, durationMs)); positionMs = target }
+                        scrubPositionMs = null
+                    },
                     valueRange = 0f..durationMs.toFloat(),
                     colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatPlayerTime(positionMs), color = Muted, fontSize = 11.sp)
-                    Text("-${formatPlayerTime((durationMs - positionMs).coerceAtLeast(0L))}", color = Muted, fontSize = 11.sp)
+                    Text(formatPlayerTime(shownPosition), color = Muted, fontSize = 11.sp)
+                    Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Muted, fontSize = 11.sp)
                 }
             } else {
                 Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "Live stream • timeline unavailable for this source",
