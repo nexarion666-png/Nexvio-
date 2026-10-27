@@ -548,11 +548,6 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     var qualityMenu by remember { mutableStateOf(false) }
     var downloadTarget by remember { mutableStateOf<DiscoveredStream?>(null) }
     var downloadMessage by remember { mutableStateOf<String?>(null) }
-    val providerStatuses = remember(item.id, item.mediaType, seasonNumber, episodeNumber) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
-    var selectedDiagnosticProvider by remember { mutableStateOf<String?>(null) }
-    var testPreset by remember { mutableStateOf("Selected title") }
-    var providerTestMessage by remember { mutableStateOf<String?>(null) }
-    val disabledProviders = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
     var loadingMessage by remember { mutableStateOf("Checking providers") }
     val loaderTransition = rememberInfiniteTransition(label = "stream-search-loader")
     val loaderRotation by loaderTransition.animateFloat(
@@ -578,13 +573,11 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     fun startSearch() {
         if (loading) return
         scope.launch {
-            loading = true; searched = true; error = null; streams = emptyList(); providerStatuses.clear()
+            loading = true; searched = true; error = null; streams = emptyList()
             try {
                 streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber, onStreams = { found ->
                     withContext(Dispatchers.Main) { streams = found; error = null }
-                }, onProviderStatus = { provider, status ->
-                    withContext(Dispatchers.Main) { providerStatuses[provider] = status }
-                })
+                }, onProviderStatus = { _, _ -> })
                 if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
             } catch (e: Exception) { error = e.message ?: "Stream discovery failed." }
             finally { loading = false }
@@ -643,49 +636,6 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     Text("${streams.size} stream(s) found so far", color = CatalogueMuted, fontSize = 12.sp)
                 }
                 Text("LIVE", color = CatalogueAccent, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-            }
-        }
-        if (providerStatuses.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            val completedCount = providerStatuses.values.count { it.startsWith("Completed", ignoreCase = true) }
-            val failedCount = providerStatuses.values.count { it.startsWith("Failed", ignoreCase = true) || it.contains("error", ignoreCase = true) || it.contains("timed out", ignoreCase = true) }
-            Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(12.dp)).padding(12.dp)) {
-                Text("Provider diagnostics · ${NuvioScraperEngine.ENGINE_VERSION}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("${providerStatuses.size} provider(s) reported • $completedCount completed • $failedCount failed", color = CatalogueMuted, fontSize = 11.sp)
-                TextButton(onClick = {
-                    scope.launch {
-                        loading = true
-                        NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber,
-                            onStreams = { found ->
-                                streams = (streams + found.map { DiscoveredStream(it.providerName, it.title, it.url, it.quality, it.headers) }).distinctBy(::streamDedupeKey)
-                            },
-                            onStatus = { message ->
-                                val split = message.indexOf(":")
-                                if (split > 0) providerStatuses[message.substring(0, split).trim()] = message.substring(split + 1).trim()
-                            },
-                            disabledProviders = disabledProviders.filterValues { it }.keys
-                        )
-                        loading = false
-                    }
-                }) { Text("Run all enabled providers", color = CatalogueAccent) }
-                Spacer(Modifier.height(6.dp))
-                providerStatuses.toSortedMap().forEach { (provider, status) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedDiagnosticProvider = provider }, verticalAlignment = Alignment.Top) {
-                        val indicator = when {
-                            status.startsWith("Completed", ignoreCase = true) -> "✓"
-                            status.startsWith("Failed", ignoreCase = true) || status.contains("error", ignoreCase = true) -> "!"
-                            status.contains("waiting", ignoreCase = true) || status.contains("requesting", ignoreCase = true) || status.contains("searching", ignoreCase = true) || status.contains("downloading", ignoreCase = true) -> "…"
-                            else -> "•"
-                        }
-                        Text(indicator, color = if (indicator == "!") Color(0xFFFF9A80) else CatalogueAccent, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(provider, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text(status, color = CatalogueMuted, fontSize = 11.sp, lineHeight = 15.sp)
-                        }
-                        Checkbox(checked = disabledProviders[provider] != true, onCheckedChange = { enabled -> disabledProviders[provider] = !enabled }, modifier = Modifier.size(32.dp))
-                    }
-                }
             }
         }
         if (error != null) {
@@ -758,70 +708,6 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             Text("No playable sources found.", color = CatalogueMuted, fontSize = 12.sp)
         }
         Spacer(Modifier.height(8.dp))
-        Text("Tap a provider diagnostic row to inspect or copy its last 30 sanitized requests.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
-        Text("Results combine Stremio add-ons with a restricted Nuvio JavaScript adapter. Some scrapers may require unsupported modules or host APIs.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
-    selectedDiagnosticProvider?.let { provider ->
-        val logs = NuvioScraperEngine.requestLogs(provider)
-        val modules = NuvioScraperEngine.unsupportedModules(provider)
-        val console = NuvioScraperEngine.consoleLogs(provider)
-        AlertDialog(
-            onDismissRequest = { selectedDiagnosticProvider = null },
-            title = { Text("$provider request log") },
-            text = {
-                Column(Modifier.fillMaxWidth()) {
-                    if (modules.isNotEmpty()) Text("Unsupported modules: ${modules.sorted().joinToString()}", color = Color(0xFFFF9A80), fontSize = 12.sp)
-                    Text("Test title: $testPreset", color = Color.White, fontSize = 12.sp)
-                    Row {
-                        TextButton(onClick = { testPreset = "Selected title" }) { Text("Current") }
-                        TextButton(onClick = { testPreset = "Game of Thrones S1E1" }) { Text("GoT S1E1") }
-                        TextButton(onClick = { testPreset = "Inception" }) { Text("Inception") }
-                    }
-                    providerTestMessage?.let { Text(it, color = CatalogueMuted, fontSize = 11.sp) }
-                    if (console.isNotEmpty()) { Text("Provider console", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp); console.forEach { Text(it, color = CatalogueMuted, fontSize = 10.sp, lineHeight = 13.sp) } }
-                    if (logs.isEmpty()) Text("No bridge requests recorded for this provider yet.", color = CatalogueMuted, fontSize = 12.sp)
-                    else androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                        items(logs.reversed()) { entry ->
-                            Text(entry.format(), color = CatalogueMuted, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(vertical = 4.dp))
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val text = buildString {
-                        appendLine("Nexvio ${NuvioScraperEngine.ENGINE_VERSION} — $provider")
-                        if (modules.isNotEmpty()) appendLine("Unsupported modules: ${modules.sorted().joinToString()}")
-                        if (console.isNotEmpty()) { appendLine("Provider console:"); console.forEach { appendLine(it) } }
-                        logs.forEach { appendLine(it.format()) }
-                    }
-                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio provider request log", text))
-                }) { Text("Copy log") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        scope.launch {
-                            val target = when (testPreset) {
-                                "Game of Thrones S1E1" -> TmdbTitle(1399, "Game of Thrones", "", null, "2011", 9.2, "tv")
-                                "Inception" -> TmdbTitle(27205, "Inception", "", null, "2010", 8.4, "movie")
-                                else -> item
-                            }
-                            val s = if (testPreset == "Game of Thrones S1E1") 1 else seasonNumber
-                            val ep = if (testPreset == "Game of Thrones S1E1") 1 else episodeNumber
-                            providerTestMessage = "Testing $provider…"
-                            NuvioScraperEngine.discover(context, target, s, ep, providerFilter = provider, onStatus = { message ->
-                                val split = message.indexOf(":")
-                                if (split > 0) providerStatuses[message.substring(0, split).trim()] = message.substring(split + 1).trim()
-                            })
-                            providerTestMessage = "Test finished for $provider"
-                        }
-                    }) { Text("Test this provider") }
-                    TextButton(onClick = { selectedDiagnosticProvider = null }) { Text("Close") }
-                }
-            }
-        )
-    }
-
+        Text("Results from enabled add-ons and compatible providers appear here.", color = CatalogueMuted, fontSize = 10.sp, lineHeight = 15.sp)
     }
 }
