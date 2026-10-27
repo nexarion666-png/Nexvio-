@@ -20,6 +20,9 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import android.util.Base64
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -39,6 +42,8 @@ private object NexvioSupabaseAuth {
     private const val EMAIL = "email"
     private const val BASE_URL = BuildConfig.SUPABASE_URL
     private const val API_KEY = BuildConfig.SUPABASE_PUBLISHABLE_KEY
+    private val refreshMutex = Mutex()
+    private const val REFRESH_EARLY_MS = 5 * 60 * 1000L
 
     data class Session(val accessToken: String, val refreshToken: String, val email: String)
 
@@ -76,21 +81,49 @@ private object NexvioSupabaseAuth {
     }
 
     /**
-     * Refresh the short-lived access token before cloud operations. Supabase rotates
-     * refresh tokens, so persist both tokens from every successful refresh response.
+     * Return a valid session for sync. Refresh only when the JWT expires soon, and
+     * serialize refresh attempts because Supabase rotates refresh tokens.
      */
-    fun refreshSession(context: Context): Session? {
-        val current = session(context) ?: return null
-        if (current.refreshToken.isBlank()) {
-            throw IllegalStateException("This session has no refresh token. Sign out and sign in again.")
+    suspend fun sessionForSync(context: Context): Session? = withContext(Dispatchers.IO) {
+        refreshMutex.withLock {
+            val current = session(context) ?: return@withLock null
+            val expiresAt = tokenExpiryMillis(current.accessToken)
+            if (expiresAt != null && expiresAt - System.currentTimeMillis() > REFRESH_EARLY_MS) {
+                return@withLock current
+            }
+            if (current.refreshToken.isBlank()) {
+                clearSession(context)
+                throw IllegalStateException("Sign in again to sync your account.")
+            }
+            try {
+                val result = request(
+                    "auth/v1/token?grant_type=refresh_token",
+                    "POST",
+                    JSONObject().put("refresh_token", current.refreshToken)
+                )
+                save(context, result, current.email)
+                session(context)
+            } catch (e: Exception) {
+                val detail = e.message.orEmpty().lowercase()
+                if ("refresh token" in detail || "refresh_token" in detail ||
+                    "invalid token" in detail || "token_not_found" in detail) {
+                    clearSession(context)
+                    throw IllegalStateException("Your session expired. Sign in again.")
+                }
+                throw e
+            }
         }
-        val result = request(
-            "auth/v1/token?grant_type=refresh_token",
-            "POST",
-            JSONObject().put("refresh_token", current.refreshToken)
-        )
-        save(context, result, current.email)
-        return session(context)
+    }
+
+    private fun tokenExpiryMillis(token: String): Long? = runCatching {
+        val payload = token.split(".").getOrNull(1) ?: return null
+        val decoded = Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        JSONObject(String(decoded, Charsets.UTF_8)).optLong("exp", 0L)
+            .takeIf { it > 0L }?.times(1000L)
+    }.getOrNull()
+
+    private fun clearSession(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     fun sendPasswordReset(email: String) {
@@ -139,9 +172,9 @@ private object NexvioSupabaseAuth {
 internal suspend fun syncNexvioAccountAutomatically(context: Context) {
     val appContext = context.applicationContext
     val status = appContext.getSharedPreferences("nexvio_cloud_sync_status", Context.MODE_PRIVATE)
-    val activeSession = NexvioSupabaseAuth.session(appContext) ?: return
+    if (NexvioSupabaseAuth.session(appContext) == null) return
     try {
-        val refreshed = NexvioSupabaseAuth.refreshSession(appContext) ?: return
+        val refreshed = NexvioSupabaseAuth.sessionForSync(appContext) ?: return
         val result = NexvioCloudSync.sync(appContext, refreshed.accessToken)
         status.edit().putString("message", result.message).putBoolean("error", false).apply()
     } catch (e: Exception) {
@@ -204,7 +237,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                             isError = true
                         } else {
                             perform {
-                                val refreshed = NexvioSupabaseAuth.refreshSession(context)
+                                val refreshed = NexvioSupabaseAuth.sessionForSync(context)
                                     ?: throw IllegalStateException("Sign in again to sync your account.")
                                 val result = NexvioCloudSync.sync(context, refreshed.accessToken)
                                 syncStatus.edit().putString("message", result.message).putBoolean("error", false).apply()
@@ -244,8 +277,8 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                             // Sync immediately after login so the user does not need to open Settings again.
                             val activeSession = NexvioSupabaseAuth.session(context)
                             if (activeSession != null) {
-                                val refreshed = NexvioSupabaseAuth.refreshSession(context)
-                                if (refreshed != null) NexvioCloudSync.sync(context, refreshed.accessToken)
+                                val validSession = NexvioSupabaseAuth.sessionForSync(context)
+                                if (validSession != null) NexvioCloudSync.sync(context, validSession.accessToken)
                             }
                             signedInMessage
                         }
