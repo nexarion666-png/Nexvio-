@@ -165,7 +165,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().background(AccountPanel, RoundedCornerShape(16.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("You're signed in", color = AccountAccent, fontWeight = FontWeight.Bold)
                 Text(session?.email.orEmpty(), color = Color.White)
-                Text("Sync your viewing profiles and profile-specific app settings to your Nexvio account. Downloads stay on this device, and add-ons remain shared.", color = AccountMuted, fontSize = 12.sp)
+                Text("Sync your profiles, settings, add-ons, plugin repositories, IPTV URL and channel favorites, watchlists, and watch history across devices. Downloaded media and device-only file imports stay local.", color = AccountMuted, fontSize = 12.sp)
                 Button(
                     onClick = {
                         val activeSession = session
@@ -182,7 +182,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                     enabled = !busy,
                     colors = ButtonDefaults.buttonColors(containerColor = AccountAccent, contentColor = Color(0xFF101510)),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(if (busy) "Syncing…" else "Sync profiles and settings") }
+                ) { Text(if (busy) "Syncing…" else "Sync all Nexvio data") }
                 Button(
                     onClick = { perform { NexvioSupabaseAuth.signOut(context); "Signed out of Nexvio." } },
                     enabled = !busy,
