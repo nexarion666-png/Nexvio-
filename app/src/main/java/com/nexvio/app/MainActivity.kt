@@ -724,8 +724,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
-    LaunchedEffect(controlsVisible, channel.id, controlsInteraction, screenLocked, playbackError) {
-        if (controlsVisible && playbackError == null && !screenLocked) {
+    LaunchedEffect(controlsVisible, channel.id, controlsInteraction, screenLocked, playbackError, moreMenuExpanded) {
+        if (controlsVisible && playbackError == null && !screenLocked && !moreMenuExpanded) {
             delay(3_500)
             controlsVisible = false
         }
@@ -956,14 +956,14 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         .padding(start = 14.dp, end = 14.dp, top = 24.dp, bottom = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp)
-                    ) {
-                        Text(formatPlayerTime(positionMs), color = Color.White, fontSize = 12.sp)
-                        if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
+                    if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
                             val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
+                            Text(formatPlayerTime(shownPosition), color = Color.White, fontSize = 12.sp)
                             Slider(
                                 value = shownPosition.toFloat(),
                                 onValueChange = {
@@ -988,9 +988,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 modifier = Modifier.weight(1f).height(28.dp)
                             )
                             Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Color.White, fontSize = 12.sp)
-                        } else {
-                            Spacer(Modifier.weight(1f))
-                            Text("LIVE", color = Color(0xFFFF7777), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (player?.isCurrentMediaItemLive == true) "● LIVE STREAM" else "SEEKING UNAVAILABLE",
+                                color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Color.White.copy(alpha = 0.7f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
                         }
                     }
 
