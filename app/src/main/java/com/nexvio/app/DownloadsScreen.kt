@@ -2,9 +2,7 @@ package com.nexvio.app
 
 import android.app.DownloadManager
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
-import androidx.core.content.FileProvider
 import android.os.Environment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,7 +86,7 @@ internal fun enqueueDiscoveredStream(context: Context, title: String, url: Strin
     OfflineDownloads(context.applicationContext).enqueue(url, title)
 
 @Composable
-fun DownloadsScreen() {
+fun DownloadsScreen(onPlay: (TvChannel) -> Unit) {
     val context = LocalContext.current
     val store = remember { OfflineDownloads(context.applicationContext) }
     var rows by remember { mutableStateOf(store.rows()) }
@@ -119,8 +117,20 @@ fun DownloadsScreen() {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (row.third == DownloadManager.STATUS_SUCCESSFUL) Text("Open", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
-                        store.open(row.first)?.let { uri -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, context.contentResolver.getType(uri) ?: "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { error = "No compatible media player is installed." } }
+                    if (row.third == DownloadManager.STATUS_SUCCESSFUL) Text("Play", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
+                        val uri = store.open(row.first)
+                        if (uri == null) {
+                            error = "The downloaded file could not be opened. It may have been removed."
+                        } else {
+                            // Play local content in the same Media3 player used by streams and live TV.
+                            onPlay(TvChannel(
+                                id = "offline-download-${row.first}",
+                                name = row.second,
+                                streamUrl = uri.toString(),
+                                category = "offline",
+                                tvgName = row.second
+                            ))
+                        }
                     })
                     if (row.third == DownloadManager.STATUS_PENDING || row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED) Text("Cancel", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { store.cancel(row.first); rows = store.rows() })
                     else Text("Remove from list", color = Color(0xFF9A9DA6), modifier = Modifier.clickable { store.removeRecord(row.first); rows = store.rows() })
@@ -132,7 +142,7 @@ fun DownloadsScreen() {
 }
 
  @Composable
-fun OfflineLibraryScreen() {
+fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit) {
     val context = LocalContext.current
     val watchlist = remember(context) { WatchlistStore(context) }
     var saved by remember { mutableStateOf(watchlist.all()) }
@@ -147,7 +157,7 @@ fun OfflineLibraryScreen() {
                 Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { showDownloads = false }.padding(end = 14.dp))
                 Text("Downloads", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
-            DownloadsScreen()
+            DownloadsScreen(onPlay = onPlay)
         }
         return
     }
