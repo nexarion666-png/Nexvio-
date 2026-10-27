@@ -799,5 +799,38 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 }
 
 @Composable private fun LibraryScreen() { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) { item { Text("Your Library", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("A home for your saved and watched titles", color=Muted) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV. Movie and series favorites require catalogue support.") }; item { EmptySection("Watch history", "Viewing history is not recorded in this phase.") }; item { EmptySection("Continue watching", "Playback progress is not persisted in Phase 2.") } } }
-@Composable private fun SettingsScreen(onDetail:(String)->Unit) { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) { item { Text("Settings", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("Make Nexvio yours", color=Muted); Spacer(Modifier.height(10.dp)) }; listOf("Appearance" to "Theme and visual preferences", "Playback preferences" to "Playback controls and defaults", "Watch history" to "Recently watched movies and series progress", "Content providers" to "Catalogue sources and addons", "IPTV playlists" to "Manage playlist sources", "Downloads" to "Offline media settings", "About Nexvio" to "Version and project information").forEach { (title,desc) -> item { Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail(title) }.padding(16.dp), verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight=FontWeight.SemiBold); Spacer(Modifier.height(4.dp)); Text(desc, color=Muted, fontSize=12.sp) }; Text("›", color=Accent, fontSize=24.sp) } } } } }
+@Composable private fun SettingsScreen(onDetail:(String)->Unit) {
+    val sections = listOf(
+        "PROFILE" to listOf("Switch Profile" to "Change to a different profile", "Account" to "Account and sync status", "Watch party" to "Watch together with a party code", "Tracking" to "Connect tracking providers and choose Library tracking"),
+        "GENERAL" to listOf("Layout" to "Home, streams, collections, and detail pages", "Content & Discovery" to "Manage add-ons and discovery sources", "Playback" to "Player behavior and playback preferences", "Integrations" to "Connect supported services", "Notifications" to "Episode release alerts and test notifications"),
+        "ABOUT" to listOf("Supporters & Contributors" to "Project credits and acknowledgements", "Privacy Policy" to "Learn how Nexvio handles your data", "Licenses & Attribution" to "Data sources and open-source licenses", "Update channel" to "Choose stable or beta updates", "Check for updates" to "Check for the latest Nexvio release"),
+        "ADVANCED" to listOf("Advanced" to "Startup and profile behavior")
+    )
+    LazyColumn(contentPadding=PaddingValues(start=20.dp,end=20.dp,top=20.dp,bottom=28.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        item {
+            Text("Settings", fontSize=30.sp, fontWeight=FontWeight.ExtraBold)
+            Text("Make Nexvio yours", color=Muted)
+            Spacer(Modifier.height(8.dp))
+        }
+        sections.forEach { (section, options) ->
+            item {
+                Text(section, color=Muted, fontSize=12.sp, fontWeight=FontWeight.Bold, letterSpacing=1.1.sp, modifier=Modifier.padding(top=8.dp,bottom=2.dp))
+                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp))) {
+                    options.forEachIndexed { index, option ->
+                        val (title, desc) = option
+                        Row(Modifier.fillMaxWidth().clickable { onDetail(title) }.padding(horizontal=16.dp, vertical=15.dp), verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(title, fontWeight=FontWeight.SemiBold, color=Color.White)
+                                Spacer(Modifier.height(4.dp))
+                                Text(desc, color=Muted, fontSize=12.sp, lineHeight=17.sp)
+                            }
+                            Text("›", color=Accent, fontSize=25.sp)
+                        }
+                        if (index < options.lastIndex) Divider(color=Color.White.copy(alpha=0.06f))
+                    }
+                }
+            }
+        }
+    }
+}
 @Composable private fun InfoPage(title:String) { Column(Modifier.fillMaxWidth().padding(20.dp).background(Panel, RoundedCornerShape(18.dp)).padding(18.dp)) { Text(title, fontSize=23.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text(when(title) { "About Nexvio" -> "Nexvio 1.0.0 • Phase 2\nMovies • Series • Live TV\nAn original Android application."; "Search" -> "Search will become available when a real movie or series catalogue provider is connected."; "Appearance" -> "Nexvio currently uses its premium dark appearance."; "Playback preferences" -> "Live TV uses AndroidX Media3. Supported formats depend on stream and device compatibility."; "Content providers" -> "Movie and series provider integration is planned for a later phase."; "IPTV playlists" -> "Import an M3U/M3U8 file from Live TV or provide an HTTP/HTTPS playlist URL."; "Downloads" -> "Download supported direct media URLs and manage your offline files."; else -> "This feature is planned for a later Nexvio phase." }, color=Muted, lineHeight=23.sp); Spacer(Modifier.height(14.dp)); Text("NEXVIO", color=Accent, fontSize=10.sp, letterSpacing=1.5.sp) } }
