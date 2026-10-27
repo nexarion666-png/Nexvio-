@@ -152,20 +152,18 @@ internal object NexvioCloudSync {
             val suffix = if (profile.id == "primary") "" else "_${profile.id}"
             syncPreferenceBucket(
                 context, accountId, profile.id, "watchlist", "nexvio_watchlist${suffix}", ::request,
-                preferRemoteOnFirstSync = firstSyncForAccount
             )
             syncPreferenceBucket(
                 context, accountId, profile.id, "watch_history", "nexvio_watch_history${suffix}", ::request,
-                preferRemoteOnFirstSync = firstSyncForAccount
             )
         }
 
         // Installed add-ons, plugin repositories, and IPTV URL/favorites are shared app-wide.
         // A local SAF document URI is device-specific, so never upload or restore it.
         syncPreferenceBucket(context, accountId, "primary", "shared_addons", "nexvio_addons", ::request,
-            preferRemoteOnFirstSync = firstSyncForAccount)
+)
         syncPreferenceBucket(context, accountId, "primary", "shared_plugin_repositories", "nexvio_plugin_repositories", ::request,
-            preferRemoteOnFirstSync = firstSyncForAccount)
+)
         syncPreferenceBucket(context, accountId, "primary", "shared_iptv", "nexvio_iptv", ::request,
             skipDeviceLocalIptv = true)
 
