@@ -40,8 +40,11 @@ internal data class WatchEntry(
     )
 }
 
-internal class WatchHistoryStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("nexvio_watch_history", Context.MODE_PRIVATE)
+internal class WatchHistoryStore(context: Context, profileId: String = "primary") {
+    // Keep the original preference file for the primary profile so existing history is preserved.
+    private val prefs = context.applicationContext.getSharedPreferences(
+        if (profileId == "primary") "nexvio_watch_history" else "nexvio_watch_history_$profileId", Context.MODE_PRIVATE
+    )
     private val key = "entries"
     @Synchronized fun all(): List<WatchEntry> {
         val raw = prefs.getString(key, "[]") ?: "[]"
@@ -152,9 +155,9 @@ internal fun WatchHistorySection(
 }
 
 @Composable
-internal fun WatchHistoryScreen(onPlay: (TvChannel) -> Unit) {
+internal fun WatchHistoryScreen(profileId: String, onPlay: (TvChannel) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val store = remember { WatchHistoryStore(context) }
+    val store = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     var entries by remember { mutableStateOf(store.all()) }
     var showClearDialog by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
