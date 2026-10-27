@@ -344,7 +344,8 @@ internal fun hasNexvioAccountSession(context: Context): Boolean =
 @Composable
 internal fun NexvioWelcomeScreen(
     onContinueWithoutAccount: () -> Unit,
-    onAuthenticated: () -> Unit
+    onAuthenticated: () -> Unit,
+    externalMessage: String? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -451,6 +452,9 @@ internal fun NexvioWelcomeScreen(
             shape = RoundedCornerShape(18.dp)
         ) { Text("Continue Without Account", color = Color.White, fontSize = 16.sp) }
         Text("Your data will only be stored locally when you continue without an account.", color = AccountMuted, fontSize = 12.sp)
+        externalMessage?.let {
+            Text(it, color = Color(0xFFFF8B8B), fontSize = 13.sp)
+        }
         message?.let { Text(it, color = if (error) Color(0xFFFF8B8B) else AccountAccent, fontSize = 13.sp) }
         Spacer(Modifier.height(12.dp))
     }
