@@ -151,9 +151,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
             .padding(horizontal = 22.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("‹  Back", color = AccountAccent, modifier = Modifier.padding(bottom = 4.dp).then(Modifier))
-        // The back action is a separate accessible control.
-        TextButton(onClick = onBack, contentPadding = PaddingValues(0.dp)) { Text("Return to Settings", color = AccountAccent) }
+        TextButton(onClick = onBack, contentPadding = PaddingValues(0.dp)) { Text("‹  Back to Settings", color = AccountAccent) }
         Text("Nexvio Account", fontSize = 29.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
         Text("Sign in with a global account to use the same identity across your devices.", color = AccountMuted, fontSize = 13.sp)
         if (session != null) {
