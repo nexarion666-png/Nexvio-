@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -29,6 +30,7 @@ import java.net.URL
 private val AccountAccent = Color(0xFFB7F36B)
 private val AccountPanel = Color(0xFF171D23)
 private val AccountMuted = Color(0xFF9AA4AE)
+private val nexvioAccountSyncMutex = Mutex()
 
 /**
  * Supabase Auth uses only the project URL and publishable client key in the Android app.
@@ -174,20 +176,36 @@ private object NexvioSupabaseAuth {
 }
 
 
-/** Refresh the session, sync, and retain a visible status for the Account screen. */
-internal suspend fun syncNexvioAccountAutomatically(context: Context) {
+/** Serialize manual and automatic syncs, refresh the session, and persist the result. */
+internal suspend fun syncNexvioAccount(context: Context): String = nexvioAccountSyncMutex.withLock {
     val appContext = context.applicationContext
     val status = appContext.getSharedPreferences("nexvio_cloud_sync_status", Context.MODE_PRIVATE)
-    if (NexvioSupabaseAuth.session(appContext) == null) return
-    try {
-        val refreshed = NexvioSupabaseAuth.refreshSession(appContext) ?: return
-        val result = NexvioCloudSync.sync(appContext, refreshed.accessToken)
-        status.edit().putString("message", result.message).putBoolean("error", false).apply()
+    if (NexvioSupabaseAuth.session(appContext) == null) {
+        throw IllegalStateException("Sign in to sync your Nexvio account.")
+    }
+    val refreshed = NexvioSupabaseAuth.refreshSession(appContext)
+        ?: throw IllegalStateException("Sign in to sync your Nexvio account.")
+    val result = NexvioCloudSync.sync(appContext, refreshed.accessToken)
+    status.edit().putString("message", result.message).putBoolean("error", false).apply()
+    result.message
+}
+
+/** Cancellation is lifecycle control, not a cloud-sync failure. */
+internal suspend fun syncNexvioAccountAutomatically(context: Context): Boolean {
+    val appContext = context.applicationContext
+    val status = appContext.getSharedPreferences("nexvio_cloud_sync_status", Context.MODE_PRIVATE)
+    if (NexvioSupabaseAuth.session(appContext) == null) return true
+    return try {
+        syncNexvioAccount(appContext)
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (e: Exception) {
         status.edit()
             .putString("message", "Cloud sync failed: ${e.message ?: "Unknown error"}")
             .putBoolean("error", true)
             .apply()
+        false
     }
 }
 
@@ -213,6 +231,8 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                 session = NexvioSupabaseAuth.session(context)
                 if (session != null) email = session?.email.orEmpty()
                 isError = false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 message = e.message ?: "The request could not be completed. Try again."
                 isError = true
@@ -243,11 +263,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                             isError = true
                         } else {
                             perform {
-                                val refreshed = NexvioSupabaseAuth.refreshSession(context)
-                                    ?: throw IllegalStateException("Sign in again to sync your account.")
-                                val result = NexvioCloudSync.sync(context, refreshed.accessToken)
-                                syncStatus.edit().putString("message", result.message).putBoolean("error", false).apply()
-                                result.message
+                                syncNexvioAccount(context)
                             }
                         }
                     },
@@ -283,8 +299,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                             // Sync immediately after login so the user does not need to open Settings again.
                             val activeSession = NexvioSupabaseAuth.session(context)
                             if (activeSession != null) {
-                                val refreshed = NexvioSupabaseAuth.refreshSession(context)
-                                if (refreshed != null) NexvioCloudSync.sync(context, refreshed.accessToken)
+                                syncNexvioAccount(context)
                             }
                             signedInMessage
                         }
