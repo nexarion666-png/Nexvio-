@@ -167,8 +167,20 @@ class MainActivity : ComponentActivity() {
         AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
         AppAppearanceState.initialized = true
     }
+    val onboardingPrefs = remember(appearanceContext) {
+        appearanceContext.getSharedPreferences("nexvio_onboarding", Context.MODE_PRIVATE)
+    }
+    var onboardingComplete by remember {
+        mutableStateOf(
+            onboardingPrefs.getBoolean(
+                "complete",
+                NexvioProfileStore.hasSavedProfiles(appearanceContext) || hasNexvioAccountSession(appearanceContext)
+            )
+        )
+    }
+    var showingWelcome by remember { mutableStateOf(!onboardingComplete) }
     var current by remember { mutableStateOf("Home") }
-    var profileGate by remember { mutableStateOf(true) }
+    var profileGate by remember { mutableStateOf(!NexvioProfileStore.hasSavedProfiles(appearanceContext)) }
     var showingProfilePicker by remember { mutableStateOf(false) }
     var activeProfileId by remember { mutableStateOf(NexvioProfileStore.activeId(appearanceContext)) }
     var searchKind by remember { mutableStateOf("movie") }
@@ -178,9 +190,10 @@ class MainActivity : ComponentActivity() {
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
 
     // Handle Back in screen order so it returns to the previous screen instead of closing the app.
-    BackHandler(enabled = profileGate || showingProfilePicker || playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
+    BackHandler(enabled = showingWelcome || profileGate || showingProfilePicker || playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
         when {
-            profileGate -> { /* Keep profile selection visible until a profile is chosen. */ }
+            showingWelcome -> { /* The welcome screen is the required first-launch destination. */ }
+            profileGate -> { /* First profile creation is required until complete. */ }
             showingProfilePicker -> showingProfilePicker = false
             playing != null -> playing = null
             streamSearch != null -> streamSearch = null
@@ -193,7 +206,22 @@ class MainActivity : ComponentActivity() {
 
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
-            if (profileGate || showingProfilePicker) {
+            if (showingWelcome) {
+                NexvioWelcomeScreen(
+                    onContinueWithoutAccount = {
+                        onboardingPrefs.edit().putBoolean("complete", true).apply()
+                        onboardingComplete = true
+                        showingWelcome = false
+                        profileGate = !NexvioProfileStore.hasSavedProfiles(appearanceContext)
+                    },
+                    onAuthenticated = {
+                        onboardingPrefs.edit().putBoolean("complete", true).apply()
+                        onboardingComplete = true
+                        showingWelcome = false
+                        profileGate = !NexvioProfileStore.hasSavedProfiles(appearanceContext)
+                    }
+                )
+            } else if (profileGate || showingProfilePicker) {
                 ProfileSystemScreen(
                     onProfileSelected = { profile ->
                         activeProfileId = profile.id
