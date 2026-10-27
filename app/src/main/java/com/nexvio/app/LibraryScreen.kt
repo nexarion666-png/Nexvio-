@@ -2,138 +2,175 @@ package com.nexvio.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import coil.compose.AsyncImage
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
-
-private val LibraryBackground = Color(0xFF101114)
-private val LibraryPanel = Color(0xFF1B1D22)
-private val LibraryAccent = Color(0xFF8B7CFF)
-private val LibraryMuted = Color(0xFF9A9DA6)
 
 @Composable
 internal fun OfflineLibraryScreen(
+    onPlay: (TvChannel) -> Unit,
     onTitleSelected: (TmdbTitle) -> Unit,
     profileId: String = NexvioProfileStore.active(LocalContext.current).id
 ) {
     val context = LocalContext.current
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
-    var titles by remember(context, profileId) { mutableStateOf(watchlist.all()) }
+    var saved by remember(context, profileId) { mutableStateOf(watchlist.all()) }
+    var showDownloads by remember { mutableStateOf(false) }
+    var cloudSelected by remember { mutableStateOf(false) }
+    var gridMode by remember { mutableStateOf(true) }
+    var sortMenu by remember { mutableStateOf(false) }
+    var sortByRecent by remember { mutableStateOf(true) }
 
-    // Refresh while the Library is visible so changes made on a title details page
-    // or restored by account sync are reflected without restarting the app.
     LaunchedEffect(watchlist, profileId) {
         while (true) {
-            titles = watchlist.all()
+            saved = watchlist.all()
             delay(1500L)
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().background(LibraryBackground),
-        contentPadding = PaddingValues(start = 18.dp, top = 22.dp, end = 18.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("Your Library", color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.ExtraBold)
-                Text("Your watchlist and saved titles", color = LibraryMuted, fontSize = 14.sp)
-            }
-        }
-        item {
+    if (showDownloads) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Watchlist", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(8.dp))
-                Text("${titles.size}", color = LibraryAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "‹", color = Color.White, fontSize = 32.sp,
+                    modifier = Modifier.clickable { showDownloads = false }.padding(end = 14.dp)
+                )
+                Text("Downloads", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
+            DownloadsScreen(onPlay = onPlay, profileId = profileId)
         }
-        if (titles.isEmpty()) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                        .background(LibraryPanel).padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("＋", color = LibraryAccent, fontSize = 32.sp)
-                        Text("Your watchlist is empty", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Open a movie or series and tap “Add to watchlist” to save it here.",
-                            color = LibraryMuted,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
+        return
+    }
+
+    val titles = if (sortByRecent) saved.reversed() else saved.sortedBy { it.title.lowercase() }
+    Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
+        // Keep the original Library header and its grid/list and Downloads controls.
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Library", modifier = Modifier.weight(1f), color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                if (gridMode) "▦" else "☰", color = Color(0xFF9A9DA6), fontSize = 28.sp,
+                modifier = Modifier.clickable { gridMode = !gridMode }.padding(horizontal = 12.dp)
+            )
+            Text(
+                "⇩", color = Color(0xFF9A9DA6), fontSize = 30.sp,
+                modifier = Modifier.clickable { showDownloads = true }.padding(start = 12.dp, end = 4.dp)
+            )
+        }
+        Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(
+                Modifier.background(if (!cloudSelected) Color(0xFF303034) else Color(0xFF19191D), RoundedCornerShape(28.dp))
+                    .clickable { cloudSelected = false }.padding(horizontal = 22.dp, vertical = 10.dp)
+            ) { Text("Saved", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+            Box(
+                Modifier.background(if (cloudSelected) Color(0xFF303034) else Color(0xFF19191D), RoundedCornerShape(28.dp))
+                    .clickable { cloudSelected = true }.padding(horizontal = 22.dp, vertical = 10.dp)
+            ) { Text("Cloud", color = Color(0xFF9A9DA6), fontSize = 14.sp) }
+        }
+        if (cloudSelected) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Cloud sync isn't connected yet.", color = Color(0xFF9A9DA6))
             }
         } else {
-            items(titles, key = { "${it.mediaType}-${it.id}" }) { title ->
+            Box(Modifier.padding(start = 20.dp, top = 22.dp, bottom = 20.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(LibraryPanel)
-                        .clickable { onTitleSelected(title) }
-                        .padding(12.dp),
+                    Modifier.background(Color(0xFF19191D), RoundedCornerShape(14.dp))
+                        .clickable { sortMenu = true }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AsyncImage(
-                        model = title.posterPath?.let { "https://image.tmdb.org/t/p/w185$it" },
-                        contentDescription = title.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(width = 82.dp, height = 116.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF292B32))
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(7.dp)
-                    ) {
-                        Text(title.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            listOf(
-                                if (title.mediaType == "movie") "Movie" else "Series",
-                                title.year.takeIf { it.isNotBlank() }
-                            ).filterNotNull().joinToString(" • "),
-                            color = LibraryMuted,
-                            fontSize = 12.sp
-                        )
-                        if (title.rating > 0.0) {
-                            Text("★ ${String.format("%.1f", title.rating)} / 10", color = LibraryAccent, fontSize = 12.sp)
+                    Text(if (sortByRecent) "Recently added" else "Name", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(" ⌄", color = Color(0xFF9A9DA6), fontSize = 18.sp)
+                }
+                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    DropdownMenuItem(text = { Text("Recently added") }, onClick = { sortByRecent = true; sortMenu = false })
+                    DropdownMenuItem(text = { Text("Name") }, onClick = { sortByRecent = false; sortMenu = false })
+                }
+            }
+            if (titles.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Your watchlist is empty", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Add movies and series from their detail pages.", color = Color(0xFF9A9DA6))
+                    }
+                }
+            } else if (gridMode) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    items(titles, key = { it.mediaType + "-" + it.id }) { item ->
+                        Column(Modifier.fillMaxWidth().clickable { onTitleSelected(item) }) {
+                            AsyncImage(
+                                model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it },
+                                contentDescription = item.title,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxWidth().height(248.dp)
+                                    .background(Color(0xFF19191D), RoundedCornerShape(12.dp))
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2)
+                            Text(
+                                (if (item.mediaType == "movie") "Movie" else "Series") + if (item.year.isNotBlank()) " • " + item.year else "",
+                                color = Color(0xFF9A9DA6), fontSize = 12.sp
+                            )
+                            Text(
+                                "▣", color = Color(0xFFCF9DA4), fontSize = 20.sp,
+                                modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() }.padding(top = 5.dp)
+                            )
                         }
-                        Text("Tap to view details  ›", color = LibraryAccent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(titles, key = { it.mediaType + "-" + it.id }) { item ->
+                        Row(
+                            Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp))
+                                .clickable { onTitleSelected(item) }.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it },
+                                contentDescription = item.title,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(width = 68.dp, height = 96.dp)
+                                    .background(Color(0xFF26262A), RoundedCornerShape(8.dp))
+                            )
+                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Text(if (item.mediaType == "movie") "Movie" else "Series", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                            }
+                            Text(
+                                "▣", color = Color(0xFFCF9DA4),
+                                modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() }
+                            )
+                        }
                     }
                 }
             }
