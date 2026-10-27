@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
                     } else if (detail == "Layout") {
-                        LayoutSettingsScreen()
+                        LayoutSettingsScreen(onBack = { detail = null })
                     } else if (detail == "Content & Discovery") {
                         ContentProvidersScreen(
                             onOpenAddons = { detail = "Add-ons" },
@@ -179,11 +179,11 @@ class MainActivity : ComponentActivity() {
                             onBack = { detail = null }
                         )
                     } else if (detail == "Playback") {
-                        PlaybackSettingsScreen()
+                        PlaybackSettingsScreen(onBack = { detail = null })
                     } else if (detail == "Integrations") {
-                        IntegrationsSettingsScreen()
+                        IntegrationsSettingsScreen(onBack = { detail = null })
                     } else if (detail == "Notifications") {
-                        NotificationsSettingsScreen()
+                        NotificationsSettingsScreen(onBack = { detail = null })
                     } else if (detail != null) {
                         Column {
                             Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment=Alignment.CenterVertically) {
@@ -823,13 +823,13 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 
 private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
 
-@Composable private fun LayoutSettingsScreen() {
+@Composable private fun LayoutSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { settingsPrefs(context) }
     var homeStyle by remember { mutableStateOf(prefs.getString("home_style", "Featured") ?: "Featured") }
     var posterSize by remember { mutableStateOf(prefs.getString("poster_size", "Comfortable") ?: "Comfortable") }
     var showDescriptions by remember { mutableStateOf(prefs.getBoolean("show_descriptions", true)) }
-    SettingsPage("Layout", "Personalize how content is presented.", onBack = { /* handled by system back */ }) {
+    SettingsPage("Layout", "Personalize how content is presented.", onBack = onBack) {
         SettingsChoice("Home screen style", "Choose the default Home presentation.", listOf("Featured", "Grid", "Compact"), homeStyle) {
             homeStyle = it; prefs.edit().putString("home_style", it).apply()
         }
@@ -843,7 +843,7 @@ private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexv
     }
 }
 
-@Composable private fun PlaybackSettingsScreen() {
+@Composable private fun PlaybackSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { settingsPrefs(context) }
     var autoplay by remember { mutableStateOf(prefs.getBoolean("playback_autoplay", true)) }
@@ -863,7 +863,7 @@ private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexv
     }
 }
 
-@Composable private fun IntegrationsSettingsScreen() {
+@Composable private fun IntegrationsSettingsScreen(onBack: () -> Unit) {
     SettingsPage("Integrations", "Connect external services when supported by Nexvio.", onBack = { /* handled by system back */ }) {
         SettingsInfoCard("TMDB catalogue", "Used for movie and series metadata. API connection is managed by the catalogue feature.")
         SettingsInfoCard("IPTV playlists", "Import an M3U/M3U8 playlist from the Live TV section.")
@@ -872,7 +872,7 @@ private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexv
     }
 }
 
-@Composable private fun NotificationsSettingsScreen() {
+@Composable private fun NotificationsSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val activity = context.findActivity()
     var message by remember { mutableStateOf<String?>(null) }
