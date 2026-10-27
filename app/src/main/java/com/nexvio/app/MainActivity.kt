@@ -146,6 +146,7 @@ class MainActivity : ComponentActivity() {
     }
     var current by remember { mutableStateOf("Home") }
     var profileGate by remember { mutableStateOf(true) }
+    var showingProfilePicker by remember { mutableStateOf(false) }
     var activeProfileId by remember { mutableStateOf(NexvioProfileStore.activeId(appearanceContext)) }
     var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
@@ -154,10 +155,10 @@ class MainActivity : ComponentActivity() {
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
 
     // Handle Back in screen order so it returns to the previous screen instead of closing the app.
-    BackHandler(enabled = profileGate || current == "Profile" || playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
+    BackHandler(enabled = profileGate || showingProfilePicker || playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
         when {
             profileGate -> { /* Keep profile selection visible until a profile is chosen. */ }
-            current == "Profile" -> current = "Home"
+            showingProfilePicker -> showingProfilePicker = false
             playing != null -> playing = null
             streamSearch != null -> streamSearch = null
             selectedTitle != null -> selectedTitle = null
@@ -169,15 +170,16 @@ class MainActivity : ComponentActivity() {
 
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
-            if (profileGate || current == "Profile") {
+            if (profileGate || showingProfilePicker) {
                 ProfileSystemScreen(
                     onProfileSelected = { profile ->
                         activeProfileId = profile.id
                         profileGate = false
-                        current = "Home"
+                        showingProfilePicker = false
+                        current = if (current == "Profile") "Profile" else "Home"
                         detail = null; selectedTitle = null; streamSearch = null
                     },
-                    onExit = { profileGate = false; current = "Home" },
+                    onExit = { profileGate = false; showingProfilePicker = false; current = "Profile" },
                     requireSelection = profileGate
                 )
             } else if (playing != null) {
@@ -228,7 +230,13 @@ class MainActivity : ComponentActivity() {
                         "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
                         "Library" -> OfflineLibraryScreen(onPlay = { playing = it })
-                        else -> SettingsScreen(onDetail={detail=it})
+                        else -> SettingsScreen(onDetail={ item ->
+                        if (item == "Switch Profile") {
+                            showingProfilePicker = true
+                        } else {
+                            detail = item
+                        }
+                    })
                     }
                 }
                 Row(
