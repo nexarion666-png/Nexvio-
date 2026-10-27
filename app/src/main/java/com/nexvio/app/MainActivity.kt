@@ -720,8 +720,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying, channel.id, controlsInteraction, screenLocked, playbackError) {
-        if (controlsVisible && isPlaying && playbackError == null && !screenLocked) {
+    LaunchedEffect(controlsVisible, channel.id, controlsInteraction, screenLocked, playbackError) {
+        if (controlsVisible && playbackError == null && !screenLocked) {
             delay(3_500)
             controlsVisible = false
         }
@@ -887,6 +887,35 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 DropdownMenuItem(text = { Text("Cycle playback speed") }, onClick = {
                                     moreMenuExpanded = false
                                     cyclePlaybackSpeed()
+                                })
+                                DropdownMenuItem(text = { Text("Brightness down") }, onClick = {
+                                    moreMenuExpanded = false
+                                    brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
+                                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Brightness up") }, onClick = {
+                                    moreMenuExpanded = false
+                                    brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
+                                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Volume down") }, onClick = {
+                                    moreMenuExpanded = false
+                                    val volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (volume - 1).coerceAtLeast(0), 0)
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Volume up") }, onClick = {
+                                    moreMenuExpanded = false
+                                    val volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (volume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+                                    revealControls()
+                                })
+                                DropdownMenuItem(text = { Text("Cast") }, onClick = {
+                                    moreMenuExpanded = false
+                                    showPlayerMessage("Casting is not configured in this build.")
+                                    revealControls()
                                 })
                                 DropdownMenuItem(text = { Text("Retry stream") }, onClick = {
                                     moreMenuExpanded = false
