@@ -138,15 +138,15 @@ class MainActivity : ComponentActivity() {
 
 @Composable fun NexvioApp() {
     val appearanceContext = LocalContext.current
-    val appearancePrefs = remember(appearanceContext) { settingsPrefs(appearanceContext) }
+    val appearancePrefs = remember(appearanceContext, activeProfileIdForSettings(appearanceContext)) { settingsPrefs(appearanceContext) }
     LaunchedEffect(appearancePrefs) {
-        if (!AppAppearanceState.initialized) {
-            AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
-            AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
-            AppAppearanceState.initialized = true
-        }
+        AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
+        AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
+        AppAppearanceState.initialized = true
     }
     var current by remember { mutableStateOf("Home") }
+    var profileGate by remember { mutableStateOf(true) }
+    var activeProfileId by remember { mutableStateOf(NexvioProfileStore.activeId(appearanceContext)) }
     var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
     var selectedTitle by remember { mutableStateOf<TmdbTitle?>(null) }
@@ -154,8 +154,10 @@ class MainActivity : ComponentActivity() {
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
 
     // Handle Back in screen order so it returns to the previous screen instead of closing the app.
-    BackHandler(enabled = playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
+    BackHandler(enabled = profileGate || current == "Profile" || playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
         when {
+            profileGate -> { /* Keep profile selection visible until a profile is chosen. */ }
+            current == "Profile" -> current = "Home"
             playing != null -> playing = null
             streamSearch != null -> streamSearch = null
             selectedTitle != null -> selectedTitle = null
@@ -167,8 +169,19 @@ class MainActivity : ComponentActivity() {
 
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
-            if (playing != null) {
-                PlayerScreen(channel = playing!!, onBack = { playing = null })
+            if (profileGate || current == "Profile") {
+                ProfileSystemScreen(
+                    onProfileSelected = { profile ->
+                        activeProfileId = profile.id
+                        profileGate = false
+                        current = "Home"
+                        detail = null; selectedTitle = null; streamSearch = null
+                    },
+                    onExit = { profileGate = false; current = "Home" },
+                    requireSelection = profileGate
+                )
+            } else if (playing != null) {
+                PlayerScreen(channel = playing!!, profileId = activeProfileId, onBack = { playing = null })
             } else Column {
                 Box(Modifier.weight(1f)) {
                     if (streamSearch != null) {
@@ -187,7 +200,7 @@ class MainActivity : ComponentActivity() {
                     } else if (detail == "Plugin repositories") {
                         PluginRepositoryScreen(onBack = { detail = "Content providers" })
                     } else if (detail == "Watch history") {
-                        WatchHistoryScreen(onPlay = { playing = it })
+                        WatchHistoryScreen(profileId = activeProfileId, onPlay = { playing = it })
                     } else if (detail == "Layout") {
                         LayoutSettingsScreenV2(onBack = { detail = null })
                     } else if (detail == "Content & Discovery") {
@@ -211,7 +224,7 @@ class MainActivity : ComponentActivity() {
                             if (detail == "Downloads") DownloadsScreen(onPlay = { playing = it }) else InfoPage(detail!!)
                         }
                     } else when(current) {
-                        "Home" -> HomeScreen(onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
+                        "Home" -> HomeScreen(profileId = activeProfileId, onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
                         "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
                         "Library" -> OfflineLibraryScreen(onPlay = { playing = it })
@@ -246,9 +259,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Brand() { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(12.dp)), contentAlignment=Alignment.Center) { Text("N", color=Ink, fontSize=25.sp, fontWeight=FontWeight.Black) }; Spacer(Modifier.width(10.dp)); Column { Text("NEXVIO", fontWeight=FontWeight.Black, letterSpacing=2.sp, fontSize=19.sp); Text("Movies • Series • Live TV", color=Muted, fontSize=11.sp) } } }
-@Composable private fun HomeScreen(onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
+@Composable private fun HomeScreen(profileId: String, onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
-    val historyStore = remember(context) { WatchHistoryStore(context) }
+    val historyStore = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
@@ -533,7 +546,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(totalSeconds / 60, seconds)
 }
 
-@Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
+@Composable private fun PlayerScreen(channel: TvChannel, profileId: String, onBack:()->Unit) {
     val context = LocalContext.current
     val playerPrefs = remember(context) { settingsPrefs(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -548,7 +561,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var playbackError by remember(channel.id) { mutableStateOf<String?>(null) }
     var playbackDetails by remember(channel.id) { mutableStateOf<String?>(null) }
     var retry by remember(channel.id) { mutableIntStateOf(0) }
-    var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(WatchHistoryStore(context).get(channel.id)?.positionMs ?: 0L) }
+    var savedPositionMs by rememberSaveable(channel.id) { mutableLongStateOf(WatchHistoryStore(context, profileId).get(channel.id)?.positionMs ?: 0L) }
     var shouldResumePlayback by rememberSaveable(channel.id) { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
@@ -584,7 +597,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
         revealControls()
     }
 
-    val watchHistory = remember { WatchHistoryStore(context) }
+    val watchHistory = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     LaunchedEffect(channel.id) { if (channel.id.startsWith("addon-")) watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
 
     // Landscape is fullscreen by default. Back exits fullscreen first; rotating again
@@ -1183,7 +1196,13 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 
 @Composable private fun LibraryScreen() { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) { item { Text("Your Library", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("A home for your saved and watched titles", color=Muted) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV. Movie and series favorites require catalogue support.") }; item { EmptySection("Watch history", "Viewing history is not recorded in this phase.") }; item { EmptySection("Continue watching", "Playback progress is not persisted in Phase 2.") } } }
 
-private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+private fun activeProfileIdForSettings(context: Context): String = NexvioProfileStore.active(context).id
+
+private fun settingsPrefs(context: Context): android.content.SharedPreferences {
+    val profile = NexvioProfileStore.active(context)
+    val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
+    return context.getSharedPreferences(name, Context.MODE_PRIVATE)
+}
 
 @Composable private fun LayoutSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
