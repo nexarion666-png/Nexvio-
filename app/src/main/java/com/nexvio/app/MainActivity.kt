@@ -147,7 +147,7 @@ class MainActivity : ComponentActivity() {
         foregroundSyncJob = lifecycleScope.launch {
             while (true) {
                 syncNexvioAccountAutomatically(applicationContext)
-                delay(30_000L)
+                delay(5_000L)
             }
         }
     }
