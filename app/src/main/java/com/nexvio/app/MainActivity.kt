@@ -76,7 +76,7 @@ import java.net.URL
 
 private val Ink: Color get() = AppAppearanceState.background
 private val Panel = Color(0xFF1B1D22)
-private val Accent = Color(0xFF8B7CFF)
+private val Accent: Color get() = AppAppearanceState.accent
 private val Muted = Color(0xFF9A9DA6)
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
 private const val PLAYBACK_TAG = "NexvioPlayback"
