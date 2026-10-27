@@ -190,7 +190,7 @@ class MainActivity : ComponentActivity() {
                         val request = streamSearch!!
                         StreamSearchPage(item = request.first, seasonNumber = request.second, episodeNumber = request.third, onBack = { streamSearch = null }, onPlay = { playing = it })
                     } else if (selectedTitle != null) {
-                        TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it }, onFindStreams = { item, season, episode -> streamSearch = Triple(item, season, episode) })
+                        TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it }, onFindStreams = { item, season, episode -> streamSearch = Triple(item, season, episode) }, profileId = activeProfileId)
                     } else if (detail == "Content providers") {
                         ContentProvidersScreen(
                             onOpenAddons = { detail = "Add-ons" },
@@ -227,7 +227,7 @@ class MainActivity : ComponentActivity() {
                         }
                     } else when(current) {
                         "Home" -> HomeScreen(profileId = activeProfileId, onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
-                        "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it })
+                        "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it }, profileId = activeProfileId)
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
                         "Library" -> OfflineLibraryScreen(onPlay = { playing = it }, profileId = activeProfileId)
                         else -> SettingsScreen(onDetail={ item ->
