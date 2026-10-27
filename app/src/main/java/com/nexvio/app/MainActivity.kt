@@ -138,13 +138,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable fun NexvioApp() {
     val appearanceContext = LocalContext.current
-    val appearancePrefs = remember(appearanceContext) { settingsPrefs(appearanceContext) }
+    val appearancePrefs = remember(appearanceContext, activeProfileIdForSettings(appearanceContext)) { settingsPrefs(appearanceContext) }
     LaunchedEffect(appearancePrefs) {
-        if (!AppAppearanceState.initialized) {
-            AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
-            AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
-            AppAppearanceState.initialized = true
-        }
+        AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
+        AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
+        AppAppearanceState.initialized = true
     }
     var current by remember { mutableStateOf("Home") }
     var profileGate by remember { mutableStateOf(true) }
@@ -1198,7 +1196,13 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 
 @Composable private fun LibraryScreen() { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) { item { Text("Your Library", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("A home for your saved and watched titles", color=Muted) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV. Movie and series favorites require catalogue support.") }; item { EmptySection("Watch history", "Viewing history is not recorded in this phase.") }; item { EmptySection("Continue watching", "Playback progress is not persisted in Phase 2.") } } }
 
-private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+private fun activeProfileIdForSettings(context: Context): String = NexvioProfileStore.active(context).id
+
+private fun settingsPrefs(context: Context): android.content.SharedPreferences {
+    val profile = NexvioProfileStore.active(context)
+    val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
+    return context.getSharedPreferences(name, Context.MODE_PRIVATE)
+}
 
 @Composable private fun LayoutSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
