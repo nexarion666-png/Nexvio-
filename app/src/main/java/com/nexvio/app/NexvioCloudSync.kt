@@ -286,7 +286,7 @@ internal object NexvioCloudSync {
             is Int -> editor.putInt(key, value)
             is Long -> editor.putLong(key, value)
             is Double -> editor.putFloat(key, value.toFloat())
-            is JSONArray -> editor.putString(key, value.toString())
+            is JSONArray -> if (key == "favorites") editor.putStringSet(key, (0 until value.length()).map { value.optString(it) }.toSet()) else editor.putString(key, value.toString())
             is JSONObject -> editor.putString(key, value.toString())
             is Set<*> -> editor.putStringSet(key, value.map { it.toString() }.toSet())
             else -> editor.putString(key, value.toString())
