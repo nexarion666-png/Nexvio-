@@ -1,6 +1,7 @@
 package com.nexvio.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -47,13 +48,8 @@ internal fun AccountSettingsScreen(
             .padding(horizontal = 22.dp)
     ) {
         Spacer(Modifier.height(10.dp))
-        Text("‹  Back", color = AccountGreen, fontSize = 16.sp, modifier = Modifier.padding(vertical = 10.dp))
-            .let { }
-        // Keep back navigation an explicit touch target without introducing a toolbar card.
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("‹  Back", color = AccountGreen, fontSize = 16.sp,
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)).padding(vertical = 4.dp))
-        }
+        Text("‹  Back", color = AccountGreen, fontSize = 16.sp,
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onBack() }.padding(vertical = 8.dp, horizontal = 4.dp))
         Spacer(Modifier.height(12.dp))
         Text("Account", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(5.dp))
