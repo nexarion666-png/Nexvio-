@@ -78,6 +78,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URI
@@ -131,6 +132,8 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 class MainActivity : ComponentActivity() {
+    private var foregroundSyncJob: Job? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { NexvioApp(); NexvioUpdateChecker() }
@@ -138,8 +141,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Refresh cloud profiles/settings whenever Nexvio is opened or returns to the foreground.
-        lifecycleScope.launch { syncNexvioAccountAutomatically(applicationContext) }
+        // Sync once on foreground entry, then periodically while the app remains open.
+        // The loop is sequential (never overlaps sync requests) and stops when app leaves foreground.
+        foregroundSyncJob?.cancel()
+        foregroundSyncJob = lifecycleScope.launch {
+            while (true) {
+                syncNexvioAccountAutomatically(applicationContext)
+                delay(30_000L)
+            }
+        }
+    }
+
+    override fun onStop() {
+        foregroundSyncJob?.cancel()
+        foregroundSyncJob = null
+        super.onStop()
     }
 }
 

@@ -5,9 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -107,38 +104,42 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
         item {
             LayoutSectionTitle("THEME")
             Column(Modifier.fillMaxWidth().background(layoutPanel, RoundedCornerShape(20.dp)).padding(14.dp)) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.fillMaxWidth().height(284.dp),
-                    userScrollEnabled = false,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(themeColors) { theme ->
-                        val selected = AppAppearanceState.selectedTheme == theme.name
-                        Column(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                .clickable {
-                                    if (theme.name == "Custom") customDialog = true
-                                    else {
-                                        AppAppearanceState.selectedTheme = theme.name
-                                        prefs.edit().putString("theme_name", theme.name).apply()
-                                    }
-                                }.padding(vertical = 6.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                // Use ordinary rows here rather than nesting a lazy grid inside the page's
+                // LazyColumn. This keeps the layout screen measurement-safe on different devices.
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    themeColors.chunked(3).forEach { rowThemes ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Box(
-                                modifier = Modifier.size(52.dp)
-                                    .then(if (selected) Modifier.background(theme.color.copy(alpha = .22f), CircleShape) else Modifier)
-                                    .padding(if (selected) 4.dp else 0.dp)
-                                    .background(theme.color, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (selected) Text("✓", color = if (theme.name == "White" || theme.name == "Amber") Color.Black else Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                                if (theme.name == "Custom" && !selected) Text("✎", color = Color.White, fontSize = 19.sp)
+                            rowThemes.forEach { theme ->
+                                val selected = AppAppearanceState.selectedTheme == theme.name
+                                Column(
+                                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            if (theme.name == "Custom") customDialog = true
+                                            else {
+                                                AppAppearanceState.selectedTheme = theme.name
+                                                prefs.edit().putString("theme_name", theme.name).apply()
+                                            }
+                                        }.padding(vertical = 6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(52.dp)
+                                            .then(if (selected) Modifier.background(theme.color.copy(alpha = .22f), CircleShape) else Modifier)
+                                            .padding(if (selected) 4.dp else 0.dp)
+                                            .background(theme.color, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (selected) Text("✓", color = if (theme.name == "White" || theme.name == "Amber") Color.Black else Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                        if (theme.name == "Custom" && !selected) Text("✎", color = Color.White, fontSize = 19.sp)
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(theme.name, color = if (selected) theme.color else Color.White.copy(alpha = .78f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, fontSize = 12.sp)
+                                }
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Text(theme.name, color = if (selected) theme.color else Color.White.copy(alpha = .78f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, fontSize = 12.sp)
+                            repeat(3 - rowThemes.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
