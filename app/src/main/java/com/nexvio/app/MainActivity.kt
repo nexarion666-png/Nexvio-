@@ -176,7 +176,7 @@ class MainActivity : ComponentActivity() {
                         ContentProvidersScreen(
                             onOpenAddons = { detail = "Add-ons" },
                             onOpenRepositories = { detail = "Plugin repositories" },
-                            onBack = { detail = "Content & Discovery" }
+                            onBack = { detail = null }
                         )
                     } else if (detail == "Playback") {
                         PlaybackSettingsScreen()
@@ -829,7 +829,7 @@ private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexv
     var homeStyle by remember { mutableStateOf(prefs.getString("home_style", "Featured") ?: "Featured") }
     var posterSize by remember { mutableStateOf(prefs.getString("poster_size", "Comfortable") ?: "Comfortable") }
     var showDescriptions by remember { mutableStateOf(prefs.getBoolean("show_descriptions", true)) }
-    SettingsPage("Layout", "Personalize how content is presented.") {
+    SettingsPage("Layout", "Personalize how content is presented.", onBack = { /* handled by system back */ }) {
         SettingsChoice("Home screen style", "Choose the default Home presentation.", listOf("Featured", "Grid", "Compact"), homeStyle) {
             homeStyle = it; prefs.edit().putString("home_style", it).apply()
         }
@@ -849,7 +849,7 @@ private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexv
     var autoplay by remember { mutableStateOf(prefs.getBoolean("playback_autoplay", true)) }
     var resume by remember { mutableStateOf(prefs.getBoolean("playback_resume", true)) }
     var fit by remember { mutableStateOf(prefs.getString("playback_resize", "Fit") ?: "Fit") }
-    SettingsPage("Playback", "Choose your preferred playback behavior.") {
+    SettingsPage("Playback", "Choose your preferred playback behavior.", onBack = { /* handled by system back */ }) {
         SettingsToggle("Autoplay streams", "Allow playback to start automatically when a stream is selected.", autoplay) {
             autoplay = it; prefs.edit().putBoolean("playback_autoplay", it).apply()
         }
@@ -864,7 +864,7 @@ private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexv
 }
 
 @Composable private fun IntegrationsSettingsScreen() {
-    SettingsPage("Integrations", "Connect external services when supported by Nexvio.") {
+    SettingsPage("Integrations", "Connect external services when supported by Nexvio.", onBack = { /* handled by system back */ }) {
         SettingsInfoCard("TMDB catalogue", "Used for movie and series metadata. API connection is managed by the catalogue feature.")
         SettingsInfoCard("IPTV playlists", "Import an M3U/M3U8 playlist from the Live TV section.")
         SettingsInfoCard("Provider add-ons", "Manage installed add-ons and plugin repositories under Content & Discovery.")
@@ -879,7 +879,7 @@ private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexv
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) postNexvioTestNotification(context) else message = "Notification permission was not granted. You can enable it in Android app settings."
     }
-    SettingsPage("Notifications", "Manage episode alerts and verify that notifications can appear on this device.") {
+    SettingsPage("Notifications", "Manage episode alerts and verify that notifications can appear on this device.", onBack = { /* handled by system back */ }) {
         SettingsInfoCard("Episode release alerts", "Release alerts need a connected tracking provider and schedule service before real episode alerts can be sent.")
         Button(onClick = {
             if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -911,9 +911,9 @@ private fun postNexvioTestNotification(context: Context) {
     manager.notify(4107, notification)
 }
 
-@Composable private fun SettingsPage(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
+@Composable private fun SettingsPage(title: String, subtitle: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Text("‹  Back", color=Accent, modifier=Modifier.clickable { /* system back handler returns to Profile settings */ })
+        Text("‹  Back", color=Accent, modifier=Modifier.clickable { onBack() })
         Spacer(Modifier.height(10.dp))
         Text(title, fontSize=28.sp, fontWeight=FontWeight.ExtraBold)
         Text(subtitle, color=Muted, fontSize=13.sp)
