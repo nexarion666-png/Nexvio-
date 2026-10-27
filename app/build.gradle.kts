@@ -3,6 +3,9 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android { namespace = "com.nexvio.app"; compileSdk = 35
     defaultConfig {
         applicationId = "com.nexvio.app"; minSdk = 24; targetSdk = 35
+        // Supabase URL and publishable key are client-safe configuration, not server secrets.
+        buildConfigField("String", "SUPABASE_URL", "\"https://lbgssprmmqikzmyifphi.supabase.co\"")
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_KOjZfEB_Xx7l5lmHHJlIYg_K1SrDBn-\"")
         versionCode = (System.getenv("NEXVIO_VERSION_CODE") ?: "7").toInt()
         versionName = System.getenv("NEXVIO_VERSION_NAME") ?: "1.0.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

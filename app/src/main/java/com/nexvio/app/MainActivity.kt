@@ -213,6 +213,8 @@ class MainActivity : ComponentActivity() {
                         )
                     } else if (detail == "Playback") {
                         PlaybackSettingsScreenV2(onBack = { detail = null })
+                    } else if (detail == "Account") {
+                        AccountSettingsScreen(onBack = { detail = null })
                     } else if (detail == "Integrations") {
                         IntegrationsSettingsScreen(onBack = { detail = null })
                     } else if (detail == "Notifications") {
