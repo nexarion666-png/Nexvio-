@@ -92,10 +92,9 @@ internal object NexvioProfileStore {
                     o.optLong("createdAt", System.currentTimeMillis()), o.optLong("updatedAt", System.currentTimeMillis()))
             }
         }.getOrDefault(emptyList())
-        if (parsed.isNotEmpty()) return parsed
-        val primary = NexvioProfile("primary", "Main Profile", "fox", isPrimary = true)
-        save(context, listOf(primary))
-        return listOf(primary)
+        // Do not silently create a profile. First-time users must create their own.
+        // Existing saved profiles are preserved exactly as they were.
+        return parsed
     }
 
     @Synchronized fun save(context: Context, profiles: List<NexvioProfile>) {
@@ -109,15 +108,21 @@ internal object NexvioProfileStore {
 
     fun activeId(context: Context): String = prefs(context).getString(ACTIVE, "primary") ?: "primary"
     fun setActive(context: Context, id: String) { prefs(context).edit().putString(ACTIVE, id).apply() }
-    fun active(context: Context): NexvioProfile = all(context).firstOrNull { it.id == activeId(context) } ?: all(context).first()
+    fun active(context: Context): NexvioProfile = all(context).firstOrNull { it.id == activeId(context) }
+        ?: all(context).firstOrNull()
+        ?: NexvioProfile("unsaved", "", "fox", isPrimary = false)
+
+    fun hasSavedProfiles(context: Context): Boolean = all(context).isNotEmpty()
     fun find(context: Context, id: String): NexvioProfile? = all(context).firstOrNull { it.id == id }
 
     @Synchronized fun create(context: Context, name: String, avatarId: String, customUrl: String, usePrimaryAddons: Boolean): NexvioProfile {
         val profiles = all(context)
         require(name.isNotBlank()) { "Enter a profile name." }
         require(profiles.none { it.name.equals(name.trim(), true) }) { "A profile with that name already exists." }
-        val profile = NexvioProfile(UUID.randomUUID().toString(), name.trim(), avatarId, customUrl.trim(), false, usePrimaryAddons)
+        val profile = NexvioProfile(UUID.randomUUID().toString(), name.trim(), avatarId, customUrl.trim(),
+            isPrimary = profiles.isEmpty(), usePrimaryAddons = usePrimaryAddons)
         save(context, profiles + profile)
+        if (profiles.isEmpty()) setActive(context, profile.id)
         return profile
     }
 
@@ -147,21 +152,29 @@ internal fun ProfileSystemScreen(
     var activeId by remember { mutableStateOf(NexvioProfileStore.activeId(context)) }
     var managing by remember { mutableStateOf(false) }
     var editor by remember { mutableStateOf<NexvioProfile?>(null) }
-    var creating by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(profiles.isEmpty() && requireSelection) }
     var deleteTarget by remember { mutableStateOf<NexvioProfile?>(null) }
 
     fun refresh() { profiles = NexvioProfileStore.all(context); activeId = NexvioProfileStore.activeId(context) }
 
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF101923), ProfileBg, Color.Black)))) {
-        if (creating || editor != null) {
+        if (creating || editor != null || profiles.isEmpty()) {
             ProfileEditorScreen(
                 existing = editor,
                 profiles = profiles,
-                onBack = { creating = false; editor = null },
+                onBack = {
+                    if (profiles.isEmpty() && requireSelection) {
+                        // First profile is required; don't let a new user skip setup.
+                    } else { creating = false; editor = null }
+                },
                 onSave = { name, avatar, url, addons ->
                     if (editor == null) NexvioProfileStore.create(context, name, avatar, url, addons)
                     else NexvioProfileStore.update(context, editor!!.copy(name = name, avatarId = avatar, customAvatarUrl = url, usePrimaryAddons = addons))
                     refresh(); creating = false; editor = null
+                    if (requireSelection && profiles.isEmpty()) {
+                        val created = NexvioProfileStore.active(context)
+                        onProfileSelected(created)
+                    }
                 }
             )
         } else {
@@ -177,8 +190,8 @@ internal fun ProfileSystemScreen(
                             Text("NEXVIO", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
                         }
                         Spacer(Modifier.height(30.dp))
-                        Text(if (managing) "Manage Profiles" else "Who's watching?", color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.ExtraBold)
-                        Text(if (managing) "Edit your profiles" else "Choose a profile to continue", color = ProfileMuted, fontSize = 14.sp)
+                        Text(if (managing) "Manage Profiles" else if (profiles.isEmpty()) "Create your profile" else "Who's watching?", color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(if (managing) "Edit your profiles" else if (profiles.isEmpty()) "Choose a name and avatar to get started" else "Choose a profile to continue", color = ProfileMuted, fontSize = 14.sp)
                     }
                 }
                 Spacer(Modifier.height(28.dp))
