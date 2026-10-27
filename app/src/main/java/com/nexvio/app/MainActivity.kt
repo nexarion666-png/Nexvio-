@@ -723,15 +723,20 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
-            Text("‹  Back", color=Accent, modifier=Modifier.clickable { onBack() })
-            Spacer(Modifier.width(18.dp)); Text(channel.name, fontWeight=FontWeight.Bold, maxLines=1)
+        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Color(0xFF111217)).padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment=Alignment.CenterVertically) {
+            Text("‹", color=Accent, fontSize=28.sp, modifier=Modifier.clickable { onBack() }.padding(end = 12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("NOW PLAYING", color=Muted, fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.4.sp)
+                Text(channel.name, color=Color.White, fontWeight=FontWeight.SemiBold, maxLines=1)
+            }
+            Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "PLAYING", color=Accent, fontSize=10.sp, fontWeight=FontWeight.Bold,
+                modifier=Modifier.background(Color(0x332E9BFF), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 6.dp))
         }
-        Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black), contentAlignment=Alignment.Center) {
+        Box((if (fullscreen) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).background(Color.Black), contentAlignment=Alignment.Center) {
             if (player != null) {
                 AndroidView(
                     factory = { ctx -> PlayerView(ctx).apply {
-                        useController = true
+                        useController = false
                         resizeMode = when (playerPrefs.getString("playback_resize", "Fit")) {
                             "Fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                             "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -766,7 +771,6 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 if (!playbackDetails.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text("Technical details: ${playbackDetails}", color=Muted, fontSize=11.sp)
-                    TextButton(onClick = { val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager; clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio playback error", playbackDetails ?: playbackError.orEmpty())) }) { Text("Copy") }
                     TextButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Nexvio playback error", playbackDetails.orEmpty()))
@@ -804,7 +808,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         .clickable { fullscreenOverride = false }.padding(10.dp))
             }
         }
-        if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=14.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        if (!fullscreen) Column(Modifier.fillMaxWidth().background(Color(0xFF17181E), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).padding(horizontal=18.dp, vertical=12.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
                 val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
                 Slider(value = shownPosition.toFloat(),
@@ -820,10 +824,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Muted, fontSize = 11.sp)
                 }
             } else {
-                Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "Live stream • timeline unavailable for this source",
-                    color = if (player?.isCurrentMediaItemLive == true) Accent else Muted, fontSize = 11.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(7.dp).background(if (player?.isCurrentMediaItemLive == true) Color(0xFFFF5252) else Muted, RoundedCornerShape(50)))
+                    Text(if (player?.isCurrentMediaItemLive == true) "LIVE STREAM" else "LIVE STREAM  •  SEEKING UNAVAILABLE",
+                        color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
                 Text("↶", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
                     modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(8.dp))
                 Text("Speed ${playbackSpeed}×", color=Accent,
@@ -861,8 +868,11 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 }.padding(8.dp))
             }
         }
-        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) { Text(channel.name, fontWeight=FontWeight.Bold); Text("Live stream • availability depends on the provider", color=Muted, fontSize=12.sp) }
+        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Color(0xFF111217)).padding(horizontal=20.dp, vertical=14.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
+            Column(Modifier.weight(1f)) {
+                Text(channel.name, color=Color.White, fontWeight=FontWeight.Bold, maxLines=1)
+                Text("Live TV  •  Provider stream", color=Muted, fontSize=12.sp)
+            }
             Text(if (isPlaying) "Ⅱ" else "▶", color=Accent, modifier=Modifier.clickable {
                 val activePlayer = player
                 if (activePlayer != null) {
