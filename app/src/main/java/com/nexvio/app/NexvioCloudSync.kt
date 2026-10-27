@@ -73,6 +73,12 @@ internal object NexvioCloudSync {
         val accountId = user.optString("id").takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Your account session is no longer valid. Sign in again.")
 
+        // A device must restore cloud values on its first successful sync for this account.
+        // SharedPreferences contains app defaults on a fresh install, so checking only
+        // prefs.contains(key) incorrectly treated defaults as user choices and blocked restore.
+        val syncMeta = context.getSharedPreferences("nexvio_cloud_sync_meta", Context.MODE_PRIVATE)
+        val firstSyncForAccount = !syncMeta.getBoolean("initialized_$accountId", false)
+
         fun profileJson(p: NexvioProfile) = JSONObject()
             .put("id", p.id).put("name", p.name).put("avatar", p.avatarId)
             .put("customAvatar", p.customAvatarUrl).put("primary", p.isPrimary)
@@ -140,17 +146,25 @@ internal object NexvioCloudSync {
                     val keys = remoteSettings.keys()
                     while (keys.hasNext()) {
                         val key = keys.next()
-                        if (!prefs.contains(key)) putPreference(settings, key, remoteSettings.opt(key))
+                        if (firstSyncForAccount || !prefs.contains(key)) putPreference(settings, key, remoteSettings.opt(key))
                     }
-                    // Keep locally set values when present; fill missing settings from cloud.
+                    // On a new device, existing SharedPreferences values are often only defaults.
+                    // Restore cloud values over those defaults. On an already initialized device,
+                    // retain local values so a deliberate local edit can be uploaded.
                     val restored = settingsToMap(remoteSettings)
                     val editor = prefs.edit()
-                    restored.forEach { (key, value) -> if (!prefs.contains(key)) applyValue(editor, key, value) }
+                    restored.forEach { (key, value) ->
+                        if (firstSyncForAccount || !prefs.contains(key)) applyValue(editor, key, value)
+                    }
                     editor.apply()
                 }
             }
             val all = prefs.all
-            all.forEach { (key, value) -> putPreference(settings, key, value) }
+            all.forEach { (key, value) ->
+                // During first-device restore, preserve remote values already placed in this
+                // payload instead of immediately replacing them with this device's defaults.
+                if (!firstSyncForAccount || !settings.has(key)) putPreference(settings, key, value)
+            }
             val row = JSONArray().put(JSONObject()
                 .put("account_id", accountId)
                 .put("profile_id", profile.id)
@@ -165,19 +179,27 @@ internal object NexvioCloudSync {
         merged.values.forEach { profile ->
             val suffix = if (profile.id == "primary") "" else "_${profile.id}"
             syncPreferenceBucket(
-                context, accountId, profile.id, "watchlist", "nexvio_watchlist${suffix}", ::request
+                context, accountId, profile.id, "watchlist", "nexvio_watchlist${suffix}", ::request,
+                preferRemoteOnFirstSync = firstSyncForAccount
             )
             syncPreferenceBucket(
-                context, accountId, profile.id, "watch_history", "nexvio_watch_history${suffix}", ::request
+                context, accountId, profile.id, "watch_history", "nexvio_watch_history${suffix}", ::request,
+                preferRemoteOnFirstSync = firstSyncForAccount
             )
         }
 
         // Installed add-ons, plugin repositories, and IPTV URL/favorites are shared app-wide.
         // A local SAF document URI is device-specific, so never upload or restore it.
-        syncPreferenceBucket(context, accountId, "primary", "shared_addons", "nexvio_addons", ::request)
-        syncPreferenceBucket(context, accountId, "primary", "shared_plugin_repositories", "nexvio_plugin_repositories", ::request)
-        syncPreferenceBucket(context, accountId, "primary", "shared_iptv", "nexvio_iptv", ::request, skipDeviceLocalIptv = true)
+        syncPreferenceBucket(context, accountId, "primary", "shared_addons", "nexvio_addons", ::request,
+            preferRemoteOnFirstSync = firstSyncForAccount)
+        syncPreferenceBucket(context, accountId, "primary", "shared_plugin_repositories", "nexvio_plugin_repositories", ::request,
+            preferRemoteOnFirstSync = firstSyncForAccount)
+        syncPreferenceBucket(context, accountId, "primary", "shared_iptv", "nexvio_iptv", ::request,
+            skipDeviceLocalIptv = true, preferRemoteOnFirstSync = firstSyncForAccount)
 
+        // Set the marker only after every read/write above succeeds. If sync fails midway,
+        // the next attempt will still perform a cloud-first restore.
+        syncMeta.edit().putBoolean("initialized_$accountId", true).apply()
         Result(merged.size, syncedSettings, "Cloud sync complete: profiles, settings, add-ons, plugins, IPTV URL/favorites, watchlists, and watch history synced.")
     }
 
@@ -193,7 +215,8 @@ internal object NexvioCloudSync {
         stateKey: String,
         prefsName: String,
         request: (String, String, String?, String?) -> String,
-        skipDeviceLocalIptv: Boolean = false
+        skipDeviceLocalIptv: Boolean = false,
+        preferRemoteOnFirstSync: Boolean = false
     ) {
         val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
         val remoteRows = JSONArray(request(
@@ -213,7 +236,13 @@ internal object NexvioCloudSync {
             if (localValue == null) {
                 putPreference(merged, key, remoteValue)
             } else {
-                putPreference(merged, key, mergeBucketValue(key, localValue, remoteValue))
+                putPreference(merged, key, if (preferRemoteOnFirstSync && !isEmptyBucketValue(remoteValue)) {
+                    // Cloud is the source of truth for a newly linked device's scalar settings.
+                    // Arrays are still merged to avoid dropping local list entries unexpectedly.
+                    if (isJsonArrayString(localValue) && (remoteValue is JSONArray || (remoteValue is String && isJsonArrayString(remoteValue))))
+                        mergeBucketValue(key, localValue, remoteValue)
+                    else remoteValue
+                } else mergeBucketValue(key, localValue, remoteValue))
             }
         }
         prefs.all.forEach { (key, value) ->
@@ -231,7 +260,7 @@ internal object NexvioCloudSync {
             val value = merged.opt(key)
             if (value == JSONObject.NULL) continue
             val localValue = prefs.all[key]
-            if (localValue == null ||
+            if (preferRemoteOnFirstSync || localValue == null ||
                 isEmptyBucketValue(localValue) ||
                 isJsonArrayString(localValue) ||
                 (localValue is Set<*> && value is Set<*>)) {
