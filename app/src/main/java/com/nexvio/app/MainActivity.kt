@@ -56,6 +56,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -73,9 +74,9 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
-private val Ink = Color(0xFF101114)
+private val Ink: Color get() = AppAppearanceState.background
 private val Panel = Color(0xFF1B1D22)
-private val Accent = Color(0xFF8B7CFF)
+private val Accent: Color get() = AppAppearanceState.accent
 private val Muted = Color(0xFF9A9DA6)
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
 private const val PLAYBACK_TAG = "NexvioPlayback"
@@ -128,6 +129,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable fun NexvioApp() {
+    val appearanceContext = LocalContext.current
+    val appearancePrefs = remember(appearanceContext) { settingsPrefs(appearanceContext) }
+    LaunchedEffect(appearancePrefs) {
+        if (!AppAppearanceState.initialized) {
+            AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
+            AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
+            AppAppearanceState.initialized = true
+        }
+    }
     var current by remember { mutableStateOf("Home") }
     var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
@@ -171,7 +181,7 @@ class MainActivity : ComponentActivity() {
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
                     } else if (detail == "Layout") {
-                        LayoutSettingsScreen(onBack = { detail = null })
+                        LayoutSettingsScreenV2(onBack = { detail = null })
                     } else if (detail == "Content & Discovery") {
                         ContentProvidersScreen(
                             onOpenAddons = { detail = "Add-ons" },
@@ -179,7 +189,7 @@ class MainActivity : ComponentActivity() {
                             onBack = { detail = null }
                         )
                     } else if (detail == "Playback") {
-                        PlaybackSettingsScreen(onBack = { detail = null })
+                        PlaybackSettingsScreenV2(onBack = { detail = null })
                     } else if (detail == "Integrations") {
                         IntegrationsSettingsScreen(onBack = { detail = null })
                     } else if (detail == "Notifications") {
@@ -509,6 +519,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
 
 @Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
     val context = LocalContext.current
+    val playerPrefs = remember(context) { settingsPrefs(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val configuration = LocalConfiguration.current
     val activity = remember(context) { context.findActivity() }
@@ -569,7 +580,16 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 .setAllowCrossProtocolRedirects(true)
             val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpFactory)
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            val minBufferMs = (playerPrefs.getInt("playback_min_buffer", 15).coerceIn(5, 60) * 1_000)
+            val maxBufferMs = maxOf(minBufferMs, playerPrefs.getInt("playback_max_buffer", 45).coerceIn(15, 120) * 1_000)
+            val startBufferMs = playerPrefs.getInt("playback_start_buffer", 5).coerceIn(1, 30) * 1_000
+            val backBufferMs = playerPrefs.getInt("playback_back_buffer", 10).coerceIn(0, 60) * 1_000
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(minBufferMs, maxBufferMs, startBufferMs.coerceAtMost(minBufferMs), 3_000)
+                .setBackBuffer(backBufferMs, true)
+                .build()
             val instance = ExoPlayer.Builder(context.applicationContext)
+                .setLoadControl(loadControl)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .setSeekBackIncrementMs(10_000L)
                 .setSeekForwardIncrementMs(10_000L)
@@ -584,7 +604,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                         playbackDetails = null
                         // For seekable/VOD sources, restore a saved position once. Do not
                         // seek live IPTV streams away from their default live position.
-                        if (savedPositionMs > 0L && !instance.isCurrentMediaItemLive) {
+                        if (playerPrefs.getBoolean("playback_resume", true) && savedPositionMs > 0L && !instance.isCurrentMediaItemLive) {
                             instance.seekTo(savedPositionMs)
                             savedPositionMs = 0L
                         }
@@ -619,7 +639,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 }
             }.build()
             instance.setMediaItem(mediaItem)
-            instance.playWhenReady = shouldResumePlayback
+            instance.playWhenReady = shouldResumePlayback && playerPrefs.getBoolean("playback_autoplay", true)
             instance.prepare()
         } catch (e: Exception) {
             Log.e(PLAYBACK_TAG, "Player initialization failed for channel=${channel.name} host=${Uri.parse(channel.streamUrl).host ?: "unknown"}", e)
@@ -697,12 +717,20 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                 AndroidView(
                     factory = { ctx -> PlayerView(ctx).apply {
                         useController = true
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        resizeMode = when (playerPrefs.getString("playback_resize", "Fit")) {
+                            "Fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
                         setKeepContentOnPlayerReset(true)
                         this.player = player
                     } },
                     update = { view ->
-                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        view.resizeMode = when (playerPrefs.getString("playback_resize", "Fit")) {
+                            "Fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
                         if (view.player !== player) view.player = player
                     },
                     onRelease = { view -> view.player = null },
@@ -710,7 +738,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
                         else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                 )
             }
-            if (isBuffering && playbackError == null) CircularProgressIndicator(color = Accent)
+            if (isBuffering && playbackError == null && playerPrefs.getBoolean("playback_loading_overlay", true)) CircularProgressIndicator(color = Accent)
             if (playbackError != null) Column(Modifier.padding(24.dp), horizontalAlignment=Alignment.CenterHorizontally) {
                 Text(playbackError!!, color=Color.White)
                 if (!playbackDetails.isNullOrBlank()) {
