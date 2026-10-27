@@ -225,7 +225,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit =
     var message by remember { mutableStateOf(syncStatus.getString("message", null)) }
     var isError by remember { mutableStateOf(syncStatus.getBoolean("error", false)) }
 
-    fun perform(action: suspend () -> String, onSuccess: (() -> Unit)? = null) {
+    fun perform(onSuccess: (() -> Unit)? = null, action: suspend () -> String) {
         if (busy) return
         busy = true
         message = null
@@ -277,7 +277,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit =
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(if (busy) "Syncing…" else "Sync all Nexvio data") }
                 Button(
-                    onClick = { perform({ NexvioSupabaseAuth.signOut(context); "Signed out of Nexvio." }, onSuccess = onSignedOut) },
+                    onClick = { perform(onSuccess = onSignedOut) { NexvioSupabaseAuth.signOut(context); "Signed out of Nexvio." } },
                     enabled = !busy,
                     colors = ButtonDefaults.buttonColors(containerColor = AccountAccent, contentColor = Color(0xFF101510)),
                     modifier = Modifier.fillMaxWidth()
