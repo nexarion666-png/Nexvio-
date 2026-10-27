@@ -128,6 +128,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable fun NexvioApp() {
+    val appearanceContext = LocalContext.current
+    val appearancePrefs = remember(appearanceContext) { settingsPrefs(appearanceContext) }
+    LaunchedEffect(appearancePrefs) {
+        if (!AppAppearanceState.initialized) {
+            AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
+            AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
+            AppAppearanceState.initialized = true
+        }
+    }
     var current by remember { mutableStateOf("Home") }
     var searchKind by remember { mutableStateOf("movie") }
     var detail by remember { mutableStateOf<String?>(null) }
@@ -171,7 +180,7 @@ class MainActivity : ComponentActivity() {
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
                     } else if (detail == "Layout") {
-                        LayoutSettingsScreen(onBack = { detail = null })
+                        LayoutSettingsScreenV2(onBack = { detail = null })
                     } else if (detail == "Content & Discovery") {
                         ContentProvidersScreen(
                             onOpenAddons = { detail = "Add-ons" },
