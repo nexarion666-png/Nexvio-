@@ -214,7 +214,7 @@ internal suspend fun syncNexvioAccountAutomatically(context: Context): Boolean {
 }
 
 @Composable
-internal fun AccountSettingsScreen(onBack: () -> Unit) {
+internal fun AccountSettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf(NexvioSupabaseAuth.session(context)) }
@@ -225,7 +225,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
     var message by remember { mutableStateOf(syncStatus.getString("message", null)) }
     var isError by remember { mutableStateOf(syncStatus.getBoolean("error", false)) }
 
-    fun perform(action: suspend () -> String) {
+    fun perform(action: suspend () -> String, onSuccess: (() -> Unit)? = null) {
         if (busy) return
         busy = true
         message = null
@@ -235,6 +235,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                 session = NexvioSupabaseAuth.session(context)
                 if (session != null) email = session?.email.orEmpty()
                 isError = false
+                onSuccess?.invoke()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
@@ -276,7 +277,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(if (busy) "Syncing…" else "Sync all Nexvio data") }
                 Button(
-                    onClick = { perform { NexvioSupabaseAuth.signOut(context); "Signed out of Nexvio." } },
+                    onClick = { perform({ NexvioSupabaseAuth.signOut(context); "Signed out of Nexvio." }, onSuccess = onSignedOut) },
                     enabled = !busy,
                     colors = ButtonDefaults.buttonColors(containerColor = AccountAccent, contentColor = Color(0xFF101510)),
                     modifier = Modifier.fillMaxWidth()
