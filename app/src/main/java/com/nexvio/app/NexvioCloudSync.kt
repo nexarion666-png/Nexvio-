@@ -120,14 +120,23 @@ internal object NexvioCloudSync {
         NexvioProfileStore.save(context, merged.values.toList())
 
         val profilePayload = JSONArray()
+        var profilesChanged = false
         merged.values.forEach { p ->
+            val profileData = profileJson(p)
+            val remoteData = (0 until remoteRows.length()).asSequence()
+                .mapNotNull { remoteRows.optJSONObject(it) }
+                .firstOrNull { it.optString("profile_id") == p.id }
+                ?.optJSONObject("profile_data")
+            if (remoteData == null || canonicalJson(profileData) != canonicalJson(remoteData)) {
+                profilesChanged = true
+            }
             profilePayload.put(JSONObject()
                 .put("account_id", accountId)
                 .put("profile_id", p.id)
-                .put("profile_data", profileJson(p))
+                .put("profile_data", profileData)
                 .put("updated_at", java.time.Instant.now().toString()))
         }
-        if (profilePayload.length() > 0) {
+        if (profilePayload.length() > 0 && profilesChanged) {
             request("rest/v1/nexvio_profiles?on_conflict=account_id,profile_id", "POST", profilePayload.toString(),
                 "resolution=merge-duplicates,return=minimal")
         }
@@ -228,41 +237,47 @@ internal object NexvioCloudSync {
         val localIptvLabel = prefs.all["label"]
         val localIptvFlag = prefs.all["local"]
 
-        // Replace the synchronized snapshot rather than merging arrays, so removals propagate.
+        // Only touch local preferences when the selected snapshot actually differs.
         // Preserve device-specific IPTV document URI fields; they cannot be restored on another phone.
-        val editor = prefs.edit().clear()
-        if (keepLocalIptvFields) {
-            when (localIptvSource) {
-                is String -> editor.putString("source", localIptvSource)
+        if (canonicalJson(chosen) != canonicalJson(local)) {
+            val editor = prefs.edit().clear()
+            if (keepLocalIptvFields) {
+                when (localIptvSource) {
+                    is String -> editor.putString("source", localIptvSource)
+                }
+                when (localIptvLabel) {
+                    is String -> editor.putString("label", localIptvLabel)
+                }
+                when (localIptvFlag) {
+                    is Boolean -> editor.putBoolean("local", localIptvFlag)
+                }
             }
-            when (localIptvLabel) {
-                is String -> editor.putString("label", localIptvLabel)
+            val keys = chosen.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                if (skipDeviceLocalIptv && key in setOf("source", "label", "local") &&
+                    (prefs.getBoolean("local", false) || remote.optBoolean("local", false))) continue
+                val value = chosen.opt(key)
+                if (value != JSONObject.NULL) applyBucketValue(editor, key, value)
             }
-            when (localIptvFlag) {
-                is Boolean -> editor.putBoolean("local", localIptvFlag)
-            }
+            editor.commit()
         }
-        val keys = chosen.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            if (skipDeviceLocalIptv && key in setOf("source", "label", "local") &&
-                (prefs.getBoolean("local", false) || remote.optBoolean("local", false))) continue
-            val value = chosen.opt(key)
-            if (value != JSONObject.NULL) applyBucketValue(editor, key, value)
-        }
-        editor.commit()
 
-        val upload = JSONObject(chosen.toString())
-        val row = JSONArray().put(JSONObject()
-            .put("account_id", accountId)
-            .put("profile_id", profileId)
-            .put("state_key", stateKey)
-            .put("state_data", upload)
-            .put("updated_at", java.time.Instant.now().toString()))
-        request(
-            "rest/v1/nexvio_profile_state?on_conflict=account_id,profile_id,state_key",
-            "POST", row.toString(), "resolution=merge-duplicates,return=minimal"
-        )
+        // Avoid repeated cloud writes for unchanged snapshots. Reads still detect changes made
+        // on another device, while this POST is only needed when the chosen state differs.
+        if (canonicalJson(chosen) != canonicalJson(remote)) {
+            val upload = JSONObject(chosen.toString())
+            val row = JSONArray().put(JSONObject()
+                .put("account_id", accountId)
+                .put("profile_id", profileId)
+                .put("state_key", stateKey)
+                .put("state_data", upload)
+                .put("updated_at", java.time.Instant.now().toString()))
+            request(
+                "rest/v1/nexvio_profile_state?on_conflict=account_id,profile_id,state_key",
+                "POST", row.toString(), "resolution=merge-duplicates,return=minimal"
+            )
+        }
         baselinePrefs.edit().putString(baselineKey, canonicalJson(chosen)).commit()
     }
 
