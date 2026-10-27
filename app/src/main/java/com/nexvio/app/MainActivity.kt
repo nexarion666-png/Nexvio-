@@ -585,7 +585,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             val startBufferMs = playerPrefs.getInt("playback_start_buffer", 5).coerceIn(1, 30) * 1_000
             val backBufferMs = playerPrefs.getInt("playback_back_buffer", 10).coerceIn(0, 60) * 1_000
             val loadControl = DefaultLoadControl.Builder()
-                .setBufferDurationsMs(minBufferMs, maxBufferMs, startBufferMs.coerceAtMost(maxBufferMs), 3_000)
+                .setBufferDurationsMs(minBufferMs, maxBufferMs, startBufferMs.coerceAtMost(minBufferMs), 3_000)
                 .setBackBuffer(backBufferMs, true)
                 .build()
             val instance = ExoPlayer.Builder(context.applicationContext)
