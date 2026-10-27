@@ -200,7 +200,10 @@ internal object NexvioCloudSync {
             val value = merged.opt(key)
             if (value == JSONObject.NULL) continue
             val localValue = prefs.all[key]
-            if (localValue == null || isEmptyBucketValue(localValue) || isJsonArrayString(localValue)) {
+            if (localValue == null ||
+                isEmptyBucketValue(localValue) ||
+                isJsonArrayString(localValue) ||
+                (localValue is Set<*> && value is Set<*>)) {
                 applyBucketValue(editor, key, value)
             }
         }
@@ -240,9 +243,18 @@ internal object NexvioCloudSync {
 
     private fun mergeBucketValue(key: String, local: Any, remote: Any?): Any {
         if (remote == null || remote == JSONObject.NULL) return local
-        if (local is String && remote is String && isJsonArrayString(local) && isJsonArrayString(remote)) {
-            val localArray = JSONArray(local)
-            val remoteArray = JSONArray(remote)
+
+        // Supabase returns JSON arrays as JSONArray objects, while Android stores
+        // these app-owned lists as JSON strings. Normalize both representations.
+        val localArray = (local as? String)
+            ?.takeIf { isJsonArrayString(it) }
+            ?.let { runCatching { JSONArray(it) }.getOrNull() }
+        val remoteArray = when (remote) {
+            is JSONArray -> remote
+            is String -> if (isJsonArrayString(remote)) runCatching { JSONArray(remote) }.getOrNull() else null
+            else -> null
+        }
+        if (localArray != null && remoteArray != null) {
             val byId = linkedMapOf<String, Any?>()
             fun identity(item: Any?, index: Int): String {
                 if (item is JSONObject) {
@@ -253,6 +265,8 @@ internal object NexvioCloudSync {
                     }
                     val url = item.optString("manifestUrl")
                     if (url.isNotBlank() && url != "null") return url
+                    val urlValue = item.optString("url")
+                    if (urlValue.isNotBlank() && urlValue != "null") return urlValue
                 }
                 return item?.toString() ?: "null:$index"
             }
@@ -268,10 +282,13 @@ internal object NexvioCloudSync {
                     val localUpdated = item.optLong("updated", item.optLong("lastCheckedAt", 0L))
                     val remoteUpdated = existing.optLong("updated", existing.optLong("lastCheckedAt", 0L))
                     if (localUpdated >= remoteUpdated) byId[id] = item
-                } else byId[id] = item
+                } else {
+                    byId[id] = item
+                }
             }
             return JSONArray(byId.values).toString()
         }
+
         if (local is Set<*> && remote is JSONArray) {
             return (local.map { it.toString() } + (0 until remote.length()).map { remote.optString(it) }).toSet()
         }
