@@ -73,12 +73,6 @@ internal object NexvioCloudSync {
         val accountId = user.optString("id").takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Your account session is no longer valid. Sign in again.")
 
-        // A device must restore cloud values on its first successful sync for this account.
-        // SharedPreferences contains app defaults on a fresh install, so checking only
-        // prefs.contains(key) incorrectly treated defaults as user choices and blocked restore.
-        val syncMeta = context.getSharedPreferences("nexvio_cloud_sync_meta", Context.MODE_PRIVATE)
-        val firstSyncForAccount = !syncMeta.getBoolean("initialized_$accountId", false)
-
         fun profileJson(p: NexvioProfile) = JSONObject()
             .put("id", p.id).put("name", p.name).put("avatar", p.avatarId)
             .put("customAvatar", p.customAvatarUrl).put("primary", p.isPrimary)
@@ -150,7 +144,6 @@ internal object NexvioCloudSync {
             val prefsName = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
             syncPreferenceBucket(
                 context, accountId, profile.id, "settings", prefsName, ::request,
-                preferRemoteOnFirstSync = firstSyncForAccount
             )
             syncedSettings++
         }
@@ -159,26 +152,21 @@ internal object NexvioCloudSync {
             val suffix = if (profile.id == "primary") "" else "_${profile.id}"
             syncPreferenceBucket(
                 context, accountId, profile.id, "watchlist", "nexvio_watchlist${suffix}", ::request,
-                preferRemoteOnFirstSync = firstSyncForAccount
             )
             syncPreferenceBucket(
                 context, accountId, profile.id, "watch_history", "nexvio_watch_history${suffix}", ::request,
-                preferRemoteOnFirstSync = firstSyncForAccount
             )
         }
 
         // Installed add-ons, plugin repositories, and IPTV URL/favorites are shared app-wide.
         // A local SAF document URI is device-specific, so never upload or restore it.
         syncPreferenceBucket(context, accountId, "primary", "shared_addons", "nexvio_addons", ::request,
-            preferRemoteOnFirstSync = firstSyncForAccount)
+)
         syncPreferenceBucket(context, accountId, "primary", "shared_plugin_repositories", "nexvio_plugin_repositories", ::request,
-            preferRemoteOnFirstSync = firstSyncForAccount)
+)
         syncPreferenceBucket(context, accountId, "primary", "shared_iptv", "nexvio_iptv", ::request,
-            skipDeviceLocalIptv = true, preferRemoteOnFirstSync = firstSyncForAccount)
+            skipDeviceLocalIptv = true)
 
-        // Set the marker only after every read/write above succeeds. If sync fails midway,
-        // the next attempt will still perform a cloud-first restore.
-        syncMeta.edit().putBoolean("initialized_$accountId", true).apply()
         Result(merged.size, syncedSettings, "Cloud sync complete: profiles, settings, add-ons, plugins, IPTV URL/favorites, watchlists, and watch history synced.")
     }
 
@@ -199,7 +187,6 @@ internal object NexvioCloudSync {
         prefsName: String,
         request: (String, String, String?, String?) -> String,
         skipDeviceLocalIptv: Boolean = false,
-        preferRemoteOnFirstSync: Boolean = false
     ) {
         val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
         val baselinePrefs = context.getSharedPreferences("nexvio_sync_baselines", Context.MODE_PRIVATE)
@@ -229,7 +216,10 @@ internal object NexvioCloudSync {
         val localHasData = local.length() > 0
 
         val useRemote = when {
-            baseline == null -> preferRemoteOnFirstSync && remoteHasData
+            // Without a baseline this device cannot distinguish app defaults from user edits.
+            // Prefer existing cloud state to prevent a fresh/stale local snapshot overwriting it.
+            // If cloud has no data, the local snapshot is uploaded below.
+            baseline == null -> remoteHasData
             remoteChanged && !localChanged -> true
             localChanged && !remoteChanged -> false
             remoteChanged && localChanged -> false // explicit sync on this device wins a conflict
