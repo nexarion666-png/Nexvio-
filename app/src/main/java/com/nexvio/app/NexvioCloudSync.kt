@@ -42,8 +42,26 @@ internal object NexvioCloudSync {
                 val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 if (code !in 200..299) {
                     val error = runCatching { JSONObject(response) }.getOrNull()
-                    val message = error?.optString("message").orEmpty().ifBlank { error?.optString("hint").orEmpty() }
-                    throw IllegalStateException(message.ifBlank { "Cloud sync failed (HTTP $code). Sign in again if your session expired." })
+                    val message = error?.optString("message").orEmpty()
+                        .ifBlank { error?.optString("msg").orEmpty() }
+                        .ifBlank { error?.optString("hint").orEmpty() }
+                    val errorCode = error?.optString("code").orEmpty()
+                    val details = error?.optString("details").orEmpty()
+                    val diagnostic = buildString {
+                        append("Cloud sync request failed: ")
+                        append(method)
+                        append(" ")
+                        append(path.substringBefore("?"))
+                        append(" returned HTTP ")
+                        append(code)
+                        if (errorCode.isNotBlank()) append(" [").append(errorCode).append("]")
+                        if (message.isNotBlank()) append(": ").append(message)
+                        if (details.isNotBlank() && details != "null") append(" (").append(details).append(")")
+                    }
+                    throw IllegalStateException(
+                        if (code == 401) "$diagnostic. Sign in again to refresh your session."
+                        else diagnostic
+                    )
                 }
                 return response
             } finally {
