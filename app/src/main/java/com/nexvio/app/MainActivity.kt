@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +42,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -1074,6 +1077,46 @@ private fun PlayerOverlayButton(
             maxLines = 1,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+@Composable
+private fun PlayerIconButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Int = 24,
+    enabled: Boolean = true
+) {
+    Box(
+        modifier.sizeIn(minWidth = 32.dp, minHeight = 40.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
+            modifier = Modifier.size(size.dp)
+        )
+    }
+}
+
+@Composable
+private fun PlayerFloatingIconButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    size: Int = 23
+) {
+    Box(
+        Modifier.size(46.dp).clip(CircleShape)
+            .background(Color(0x99080A0F))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(imageVector = icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(size.dp))
     }
 }
 
