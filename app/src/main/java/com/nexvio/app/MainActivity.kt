@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -36,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -547,11 +549,36 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
     var controlsVisible by rememberSaveable(channel.id) { mutableStateOf(true) }
+    var controlsInteraction by remember(channel.id) { mutableIntStateOf(0) }
+    var screenLocked by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var muted by rememberSaveable(channel.id) { mutableStateOf(false) }
+    var moreMenuExpanded by remember { mutableStateOf(false) }
     var positionMs by remember(channel.id) { mutableLongStateOf(0L) }
     var scrubPositionMs by remember(channel.id) { mutableStateOf<Long?>(null) }
     var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
     var brightnessLevel by rememberSaveable { mutableFloatStateOf(0.6f) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    fun revealControls() { controlsVisible = true; controlsInteraction++ }
+    fun showPlayerMessage(message: String) { android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show() }
+    fun openTrackDialog(trackType: Int, title: String, showDisableOption: Boolean = false) {
+        val active = player ?: run { showPlayerMessage("Player is not ready yet."); return }
+        if (active.currentTracks.groups.none { it.type == trackType }) {
+            showPlayerMessage("This stream does not provide selectable $title.")
+            return
+        }
+        val builder = TrackSelectionDialogBuilder(context, title, active, trackType)
+        if (showDisableOption) builder.setShowDisableOption(true)
+        builder.build().show()
+        revealControls()
+    }
+    fun cyclePlaybackSpeed() {
+        val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+        val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
+        playbackSpeed = next
+        player?.setPlaybackSpeed(next)
+        revealControls()
+    }
 
     val watchHistory = remember { WatchHistoryStore(context) }
     LaunchedEffect(channel.id) { if (channel.id.startsWith("addon-")) watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
@@ -693,12 +720,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying, channel.id) {
-        if (controlsVisible && isPlaying) {
-            delay(3_000)
+    LaunchedEffect(controlsVisible, isPlaying, channel.id, controlsInteraction, screenLocked, playbackError) {
+        if (controlsVisible && isPlaying && playbackError == null && !screenLocked) {
+            delay(3_500)
             controlsVisible = false
         }
     }
+    LaunchedEffect(player, muted) { player?.volume = if (muted) 0f else 1f }
 
     DisposableEffect(player, lifecycleOwner) {
         val activePlayer = player
@@ -765,13 +793,15 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     modifier = (if (fullscreen) Modifier.fillMaxSize()
                         else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).pointerInput(player) {
                             detectTapGestures(
-                                onTap = { controlsVisible = !controlsVisible },
+                                onTap = { if (!screenLocked) { controlsVisible = !controlsVisible; controlsInteraction++ } },
                                 onDoubleTap = { offset ->
-                                    val active = player
-                                    if (active != null && active.isCurrentMediaItemSeekable) {
-                                        if (offset.x < size.width / 2f) active.seekBack() else active.seekForward()
+                                    if (!screenLocked) {
+                                        val active = player
+                                        if (active != null && active.isCurrentMediaItemSeekable) {
+                                            if (offset.x < size.width / 2f) active.seekBack() else active.seekForward()
+                                        }
+                                        revealControls()
                                     }
-                                    controlsVisible = true
                                 }
                             )
                         }
