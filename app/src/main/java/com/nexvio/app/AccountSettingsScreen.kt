@@ -75,6 +75,24 @@ private object NexvioSupabaseAuth {
         return "You're signed in. Your Nexvio account is available on this device."
     }
 
+    /**
+     * Refresh the short-lived access token before cloud operations. Supabase rotates
+     * refresh tokens, so persist both tokens from every successful refresh response.
+     */
+    fun refreshSession(context: Context): Session? {
+        val current = session(context) ?: return null
+        if (current.refreshToken.isBlank()) {
+            throw IllegalStateException("This session has no refresh token. Sign out and sign in again.")
+        }
+        val result = request(
+            "auth/v1/token?grant_type=refresh_token",
+            "POST",
+            JSONObject().put("refresh_token", current.refreshToken)
+        )
+        save(context, result, current.email)
+        return session(context)
+    }
+
     fun sendPasswordReset(email: String) {
         request("auth/v1/recover", "POST", JSONObject().put("email", email))
     }
@@ -117,10 +135,21 @@ private object NexvioSupabaseAuth {
 }
 
 
-/** Best-effort background sync for an existing signed-in session. */
+/** Refresh the session, sync, and retain a visible status for the Account screen. */
 internal suspend fun syncNexvioAccountAutomatically(context: Context) {
-    val activeSession = NexvioSupabaseAuth.session(context) ?: return
-    runCatching { NexvioCloudSync.sync(context.applicationContext, activeSession.accessToken) }
+    val appContext = context.applicationContext
+    val status = appContext.getSharedPreferences("nexvio_cloud_sync_status", Context.MODE_PRIVATE)
+    val activeSession = NexvioSupabaseAuth.session(appContext) ?: return
+    try {
+        val refreshed = NexvioSupabaseAuth.refreshSession(appContext) ?: return
+        val result = NexvioCloudSync.sync(appContext, refreshed.accessToken)
+        status.edit().putString("message", result.message).putBoolean("error", false).apply()
+    } catch (e: Exception) {
+        status.edit()
+            .putString("message", "Cloud sync failed: ${e.message ?: "Unknown error"}")
+            .putBoolean("error", true)
+            .apply()
+    }
 }
 
 @Composable
