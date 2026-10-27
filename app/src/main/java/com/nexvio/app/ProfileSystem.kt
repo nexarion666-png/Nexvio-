@@ -268,7 +268,7 @@ private fun ProfileEditorScreen(
     var name by remember(existing?.id) { mutableStateOf(existing?.name ?: "New profile") }
     var avatarId by remember(existing?.id) { mutableStateOf(existing?.avatarId ?: "fox") }
     var customUrl by remember(existing?.id) { mutableStateOf(existing?.customAvatarUrl ?: "") }
-    var usePrimaryAddons by remember(existing?.id) { mutableStateOf(existing?.usePrimaryAddons ?: true) }
+    val usePrimaryAddons = true
     var error by remember { mutableStateOf<String?>(null) }
     var imageError by remember { mutableStateOf(false) }
     val trimmedName = name.trim()
@@ -293,7 +293,7 @@ private fun ProfileEditorScreen(
                     Text(if (existing?.isPrimary == true) "Primary profile" else "Standard profile", color = ProfileMuted, fontSize = 12.sp)
                     Spacer(Modifier.height(5.dp))
                     Text(if (customUrl.isNotBlank() && urlValid) "Custom avatar" else NexvioAvatars.firstOrNull { it.id == avatarId }?.name ?: "Avatar", color = ProfileGreen, fontSize = 12.sp)
-                    Text(if (usePrimaryAddons) "Primary add-ons shared" else "Separate add-ons", color = ProfileMuted, fontSize = 11.sp)
+                    Text("Add-ons and plugins shared across profiles", color = ProfileMuted, fontSize = 11.sp)
                 }
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ProfileCard).padding(16.dp)) {
@@ -308,14 +308,7 @@ private fun ProfileEditorScreen(
                 if (trimmedName.isBlank()) Text("Enter a profile name.", color = Color(0xFFFF8585), fontSize = 12.sp)
                 else if (trimmedName.length > 32) Text("Use 32 characters or fewer.", color = Color(0xFFFF8585), fontSize = 12.sp)
                 else if (duplicate) Text("That profile name is already in use.", color = Color(0xFFFF8585), fontSize = 12.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Use Primary Addons", color = Color.White, fontWeight = FontWeight.SemiBold)
-                        Text("Share the main profile's addon setup instead of managing a separate list.", color = ProfileMuted, fontSize = 12.sp)
-                    }
-                    Switch(checked = usePrimaryAddons, onCheckedChange = { usePrimaryAddons = it },
-                        colors = SwitchDefaults.colors(checkedThumbColor = ProfileBg, checkedTrackColor = ProfileGreen))
-                }
+                Text("Add-ons and plugins are shared by every profile. Your library, downloads, watch history, and viewing progress remain separate.", color = ProfileMuted, fontSize = 13.sp)
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ProfileCard).padding(16.dp)) {
                 Text("Custom avatar URL", color = Color.White, fontWeight = FontWeight.SemiBold)
