@@ -172,9 +172,9 @@ private object NexvioSupabaseAuth {
 internal suspend fun syncNexvioAccountAutomatically(context: Context) {
     val appContext = context.applicationContext
     val status = appContext.getSharedPreferences("nexvio_cloud_sync_status", Context.MODE_PRIVATE)
-    val activeSession = NexvioSupabaseAuth.session(appContext) ?: return
+    if (NexvioSupabaseAuth.session(appContext) == null) return
     try {
-        val refreshed = NexvioSupabaseAuth.refreshSession(appContext) ?: return
+        val refreshed = NexvioSupabaseAuth.sessionForSync(appContext) ?: return
         val result = NexvioCloudSync.sync(appContext, refreshed.accessToken)
         status.edit().putString("message", result.message).putBoolean("error", false).apply()
     } catch (e: Exception) {
