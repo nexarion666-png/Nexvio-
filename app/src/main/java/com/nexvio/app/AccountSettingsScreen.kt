@@ -158,7 +158,24 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().background(AccountPanel, RoundedCornerShape(16.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("You're signed in", color = AccountAccent, fontWeight = FontWeight.Bold)
                 Text(session?.email.orEmpty(), color = Color.White)
-                Text("Account authentication is connected. Cloud profile and viewing-data sync require the database migration and sync layer to be enabled separately.", color = AccountMuted, fontSize = 12.sp)
+                Text("Sync your viewing profiles and profile-specific app settings to your Nexvio account. Downloads stay on this device, and add-ons remain shared.", color = AccountMuted, fontSize = 12.sp)
+                Button(
+                    onClick = {
+                        val activeSession = session
+                        if (activeSession == null) {
+                            message = "Sign in again to sync your account."
+                            isError = true
+                        } else {
+                            perform {
+                                val result = NexvioCloudSync.sync(context, activeSession.accessToken)
+                                result.message
+                            }
+                        }
+                    },
+                    enabled = !busy,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccountAccent, contentColor = Color(0xFF101510)),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (busy) "Syncing…" else "Sync profiles and settings") }
                 Button(
                     onClick = { perform { NexvioSupabaseAuth.signOut(context); "Signed out of Nexvio." } },
                     enabled = !busy,
