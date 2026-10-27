@@ -546,6 +546,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var shouldResumePlayback by rememberSaveable(channel.id) { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
+    var controlsVisible by rememberSaveable(channel.id) { mutableStateOf(true) }
     var positionMs by remember(channel.id) { mutableLongStateOf(0L) }
     var scrubPositionMs by remember(channel.id) { mutableStateOf<Long?>(null) }
     var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
@@ -692,6 +693,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
+    LaunchedEffect(controlsVisible, isPlaying, channel.id) {
+        if (controlsVisible && isPlaying) {
+            delay(3_000)
+            controlsVisible = false
+        }
+    }
+
     DisposableEffect(player, lifecycleOwner) {
         val activePlayer = player
         if (activePlayer == null) {
@@ -756,12 +764,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     onRelease = { view -> view.player = null },
                     modifier = (if (fullscreen) Modifier.fillMaxSize()
                         else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).pointerInput(player) {
-                            detectTapGestures(onDoubleTap = { offset ->
-                                val active = player
-                                if (active != null && active.isCurrentMediaItemSeekable) {
-                                    if (offset.x < size.width / 2f) active.seekBack() else active.seekForward()
+                            detectTapGestures(
+                                onTap = { controlsVisible = !controlsVisible },
+                                onDoubleTap = { offset ->
+                                    val active = player
+                                    if (active != null && active.isCurrentMediaItemSeekable) {
+                                        if (offset.x < size.width / 2f) active.seekBack() else active.seekForward()
+                                    }
+                                    controlsVisible = true
                                 }
-                            })
+                            )
                         }
                 )
             }
@@ -779,108 +791,95 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 Spacer(Modifier.height(12.dp))
                 Button(onClick={ playbackError=null; shouldResumePlayback=true; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Accent, contentColor=Ink)) { Text("Retry") }
             }
-            if (fullscreen) {
-                Row(
+            if (controlsVisible) {
+                Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .background(Color(0xB8000000)).padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .background(Color(0xD9101117), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("‹", color = Color.White, fontSize = 24.sp,
-                        modifier = Modifier.clickable { fullscreenOverride = false }.padding(6.dp))
-                    Text("↶ 10s", color = Color.White, modifier = Modifier.clickable {
-                        player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() }
-                    }.padding(6.dp))
-                    Text(if (isPlaying) "Ⅱ" else "▶", color = Accent, fontSize = 26.sp,
-                        modifier = Modifier.clickable { player?.let { if (it.isPlaying) it.pause() else it.play() } }.padding(6.dp))
-                    Text("10s ↷", color = Color.White, modifier = Modifier.clickable {
-                        player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() }
-                    }.padding(6.dp))
-                    Text("⛶", color = Color.White, fontSize = 22.sp,
-                        modifier = Modifier.clickable { fullscreenOverride = false }.padding(6.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(channel.name, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                            modifier = Modifier.weight(1f))
+                        Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "NEXVIO",
+                            color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Accent,
+                            fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 8.dp))
+                    }
+                    if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
+                        val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
+                        Slider(value = shownPosition.toFloat(),
+                            onValueChange = { scrubPositionMs = it.toLong() },
+                            onValueChangeFinished = {
+                                scrubPositionMs?.let { target ->
+                                    player?.seekTo(target.coerceIn(0L, durationMs))
+                                    positionMs = target
+                                }
+                                scrubPositionMs = null
+                            },
+                            valueRange = 0f..durationMs.toFloat(),
+                            colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
+                            modifier = Modifier.height(28.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(formatPlayerTime(shownPosition), color = Color.White, fontSize = 10.sp)
+                            Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Muted, fontSize = 10.sp)
+                        }
+                    } else {
+                        Text(if (player?.isCurrentMediaItemLive == true) "● LIVE STREAM  •  SEEKING UNAVAILABLE" else "LIVE STREAM",
+                            color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Muted,
+                            fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("↶ 10s", color = if (player?.isCurrentMediaItemSeekable == true) Color.White else Muted,
+                            modifier = Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(5.dp))
+                        Text(if (isPlaying) "Ⅱ" else "▶", color = Accent, fontSize = 24.sp,
+                            modifier = Modifier.clickable {
+                                player?.let { active ->
+                                    if (active.isPlaying) active.pause() else { playbackError = null; playbackDetails = null; shouldResumePlayback = true; active.play() }
+                                } ?: run { playbackError = null; shouldResumePlayback = true; retry++ }
+                            }.padding(horizontal = 8.dp, vertical = 2.dp))
+                        Text("10s ↷", color = if (player?.isCurrentMediaItemSeekable == true) Color.White else Muted,
+                            modifier = Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() } }.padding(5.dp))
+                        Text("Speed ${playbackSpeed}×", color = Accent, modifier = Modifier.clickable {
+                            val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+                            val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
+                            playbackSpeed = next
+                            player?.setPlaybackSpeed(next)
+                        }.padding(5.dp))
+                        Text(if (fullscreen) "Exit" else "⛶", color = Color.White,
+                            modifier = Modifier.clickable { fullscreenOverride = !fullscreen }.padding(5.dp))
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("♫", color = Accent, modifier = Modifier.clickable {
+                            player?.let { active -> TrackSelectionDialogBuilder(context, "Audio tracks", active, C.TRACK_TYPE_AUDIO).build().show() }
+                        }.padding(5.dp))
+                        Text("CC", color = Accent, modifier = Modifier.clickable {
+                            player?.let { active -> TrackSelectionDialogBuilder(context, "Subtitles", active, C.TRACK_TYPE_TEXT).setShowDisableOption(true).build().show() }
+                        }.padding(5.dp))
+                        Text("☼−", color = Accent, modifier = Modifier.clickable {
+                            brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
+                            activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                        }.padding(5.dp))
+                        Text("☼+", color = Accent, modifier = Modifier.clickable {
+                            brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
+                            activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
+                        }.padding(5.dp))
+                        Text("🔉", color = Accent, modifier = Modifier.clickable {
+                            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume - 1).coerceAtLeast(0), 0)
+                        }.padding(5.dp))
+                        Text("🔊", color = Accent, modifier = Modifier.clickable {
+                            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+                        }.padding(5.dp))
+                    }
                 }
-                Text(channel.name, color = Color.White, maxLines = 1,
-                    modifier = Modifier.align(Alignment.TopStart).padding(14.dp)
-                        .background(Color(0xB8000000), RoundedCornerShape(8.dp)).padding(10.dp))
-                Text("Exit ✕", color = Color.White,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(14.dp)
-                        .background(Color(0xB8000000), RoundedCornerShape(8.dp))
-                        .clickable { fullscreenOverride = false }.padding(10.dp))
             }
         }
-        if (!fullscreen) Column(Modifier.fillMaxWidth().background(Color(0xFF17181E), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).padding(horizontal=18.dp, vertical=12.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
-                val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
-                Slider(value = shownPosition.toFloat(),
-                    onValueChange = { scrubPositionMs = it.toLong() },
-                    onValueChangeFinished = {
-                        scrubPositionMs?.let { target -> player?.seekTo(target.coerceIn(0L, durationMs)); positionMs = target }
-                        scrubPositionMs = null
-                    },
-                    valueRange = 0f..durationMs.toFloat(),
-                    colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatPlayerTime(shownPosition), color = Muted, fontSize = 11.sp)
-                    Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Muted, fontSize = 11.sp)
-                }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(7.dp).background(if (player?.isCurrentMediaItemLive == true) Color(0xFFFF5252) else Muted, RoundedCornerShape(50)))
-                    Text(if (player?.isCurrentMediaItemLive == true) "LIVE STREAM" else "LIVE STREAM  •  SEEKING UNAVAILABLE",
-                        color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
-                Text("↶", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
-                    modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(8.dp))
-                Text("Speed ${playbackSpeed}×", color=Accent,
-                    modifier=Modifier.clickable {
-                        val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-                        val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
-                        playbackSpeed = next
-                        player?.setPlaybackSpeed(next)
-                    }.padding(8.dp))
-                Text("↷", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
-                    modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() } }.padding(8.dp))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
-                Text("♫", color=Accent, modifier=Modifier.clickable {
-                    player?.let { active -> TrackSelectionDialogBuilder(context, "Audio tracks", active, C.TRACK_TYPE_AUDIO).build().show() }
-                }.padding(8.dp))
-                Text("CC", color=Accent, modifier=Modifier.clickable {
-                    player?.let { active -> TrackSelectionDialogBuilder(context, "Subtitles", active, C.TRACK_TYPE_TEXT).setShowDisableOption(true).build().show() }
-                }.padding(8.dp))
-                Text("☼−", color=Accent, modifier=Modifier.clickable {
-                    brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
-                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
-                }.padding(8.dp))
-                Text("☼+", color=Accent, modifier=Modifier.clickable {
-                    brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
-                    activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
-                }.padding(8.dp))
-                Text("🔉", color=Accent, modifier=Modifier.clickable {
-                    val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume - 1).coerceAtLeast(0), 0)
-                }.padding(8.dp))
-                Text("🔊", color=Accent, modifier=Modifier.clickable {
-                    val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
-                }.padding(8.dp))
-            }
-        }
-        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Color(0xFF111217)).padding(horizontal=20.dp, vertical=14.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) {
-                Text(channel.name, color=Color.White, fontWeight=FontWeight.Bold, maxLines=1)
-                Text("Live TV  •  Provider stream", color=Muted, fontSize=12.sp)
-            }
-            Text(if (isPlaying) "Ⅱ" else "▶", color=Accent, modifier=Modifier.clickable {
-                val activePlayer = player
-                if (activePlayer != null) {
-                    if (activePlayer.isPlaying) activePlayer.pause() else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; activePlayer.play() }
-                } else { playbackError=null; playbackDetails=null; shouldResumePlayback=true; retry++ }
-            }.padding(10.dp))
-            Text("⛶", color=Accent, modifier=Modifier.clickable { fullscreenOverride=true }.padding(10.dp))
-        }
+
     }
 }
 
