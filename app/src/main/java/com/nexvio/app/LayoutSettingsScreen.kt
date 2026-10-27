@@ -1,6 +1,7 @@
 package com.nexvio.app
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -46,14 +47,25 @@ private val layoutPanel = Color(0xFF1B1D22)
 private val layoutMuted = Color(0xFF9A9DA6)
 private fun layoutPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
 
+// Preferences can survive app upgrades. Guard typed reads so an older value stored
+// with a different type cannot crash the Layout screen during composition.
+private fun safeLayoutString(prefs: SharedPreferences, key: String, default: String): String =
+    runCatching { prefs.getString(key, default) ?: default }.getOrDefault(default)
+
+private fun safeLayoutBoolean(prefs: SharedPreferences, key: String, default: Boolean): Boolean =
+    runCatching { prefs.getBoolean(key, default) }.getOrDefault(default)
+
+private fun safeLayoutFloat(prefs: SharedPreferences, key: String, default: Float): Float =
+    runCatching { prefs.getFloat(key, default) }.getOrDefault(default)
+
 @Composable
 fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember(context) { layoutPrefs(context) }
     LaunchedEffect(prefs) {
         if (!AppAppearanceState.initialized) {
-            AppAppearanceState.selectedTheme = prefs.getString("theme_name", "Emerald") ?: "Emerald"
-            AppAppearanceState.amoledBlack = prefs.getBoolean("amoled_black", false)
+            AppAppearanceState.selectedTheme = safeLayoutString(prefs, "theme_name", "Emerald")
+            AppAppearanceState.amoledBlack = safeLayoutBoolean(prefs, "amoled_black", false)
             AppAppearanceState.initialized = true
         }
     }
@@ -68,25 +80,25 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     var streamsDialog by remember { mutableStateOf(false) }
     var detailDialog by remember { mutableStateOf(false) }
     var customDialog by remember { mutableStateOf(false) }
-    var selectedIcon by remember { mutableStateOf(prefs.getString("app_icon", "Rose Gold") ?: "Rose Gold") }
-    var language by remember { mutableStateOf(prefs.getString("app_language", "Device language") ?: "Device language") }
-    var navStyle by remember { mutableStateOf(prefs.getString("navigation_style", "Adaptive") ?: "Adaptive") }
-    var navGlow by remember { mutableStateOf(prefs.getBoolean("navigation_glow", true)) }
-    var homeStyle by remember { mutableStateOf(prefs.getString("home_style", "Featured") ?: "Featured") }
-    var posterSize by remember { mutableStateOf(prefs.getString("poster_size", "Comfortable") ?: "Comfortable") }
-    var showDescriptions by remember { mutableStateOf(prefs.getBoolean("show_descriptions", true)) }
-    var posterWidth by remember { mutableFloatStateOf(prefs.getFloat("poster_card_width", 126f)) }
-    var posterRadius by remember { mutableFloatStateOf(prefs.getFloat("poster_corner_radius", 13f)) }
-    var continueEnabled by remember { mutableStateOf(prefs.getBoolean("continue_watching_enabled", true)) }
-    var continueCompleted by remember { mutableStateOf(prefs.getBoolean("continue_watching_completed", false)) }
+    var selectedIcon by remember { mutableStateOf(safeLayoutString(prefs, "app_icon", "Rose Gold")) }
+    var language by remember { mutableStateOf(safeLayoutString(prefs, "app_language", "Device language")) }
+    var navStyle by remember { mutableStateOf(safeLayoutString(prefs, "navigation_style", "Adaptive")) }
+    var navGlow by remember { mutableStateOf(safeLayoutBoolean(prefs, "navigation_glow", true)) }
+    var homeStyle by remember { mutableStateOf(safeLayoutString(prefs, "home_style", "Featured")) }
+    var posterSize by remember { mutableStateOf(safeLayoutString(prefs, "poster_size", "Comfortable")) }
+    var showDescriptions by remember { mutableStateOf(safeLayoutBoolean(prefs, "show_descriptions", true)) }
+    var posterWidth by remember { mutableFloatStateOf(safeLayoutFloat(prefs, "poster_card_width", 126f)) }
+    var posterRadius by remember { mutableFloatStateOf(safeLayoutFloat(prefs, "poster_corner_radius", 13f)) }
+    var continueEnabled by remember { mutableStateOf(safeLayoutBoolean(prefs, "continue_watching_enabled", true)) }
+    var continueCompleted by remember { mutableStateOf(safeLayoutBoolean(prefs, "continue_watching_completed", false)) }
     var collectionNames by remember {
         mutableStateOf(runCatching {
-            val array = JSONArray(prefs.getString("layout_collections", "[]"))
+            val array = JSONArray(safeLayoutString(prefs, "layout_collections", "[]"))
             (0 until array.length()).map { array.getString(it) }
         }.getOrDefault(emptyList()))
     }
     var newCollection by remember { mutableStateOf("") }
-    var amoled by remember { mutableStateOf(prefs.getBoolean("amoled_black", false)) }
+    var amoled by remember { mutableStateOf(safeLayoutBoolean(prefs, "amoled_black", false)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
