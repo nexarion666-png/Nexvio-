@@ -179,6 +179,9 @@ class MainActivity : ComponentActivity() {
         )
     }
     var showingWelcome by remember { mutableStateOf(!onboardingComplete) }
+    var restoringAccountProfiles by remember { mutableStateOf(false) }
+    var accountRestoreError by remember { mutableStateOf<String?>(null) }
+    val onboardingScope = rememberCoroutineScope()
     var current by remember { mutableStateOf("Home") }
     var profileGate by remember { mutableStateOf(!NexvioProfileStore.hasSavedProfiles(appearanceContext)) }
     var showingProfilePicker by remember { mutableStateOf(false) }
@@ -206,8 +209,19 @@ class MainActivity : ComponentActivity() {
 
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
         Surface(Modifier.fillMaxSize(), color=Ink) {
-            if (showingWelcome) {
+            if (restoringAccountProfiles) {
+                Column(
+                    Modifier.fillMaxSize().background(Ink).padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(color = Accent)
+                    Spacer(Modifier.height(18.dp))
+                    Text("Restoring your account and profiles…", color = Color.White, fontSize = 17.sp)
+                }
+            } else if (showingWelcome) {
                 NexvioWelcomeScreen(
+                    externalMessage = accountRestoreError,
                     onContinueWithoutAccount = {
                         onboardingPrefs.edit().putBoolean("complete", true).apply()
                         onboardingComplete = true
@@ -215,10 +229,35 @@ class MainActivity : ComponentActivity() {
                         profileGate = !NexvioProfileStore.hasSavedProfiles(appearanceContext)
                     },
                     onAuthenticated = {
-                        onboardingPrefs.edit().putBoolean("complete", true).apply()
-                        onboardingComplete = true
-                        showingWelcome = false
-                        profileGate = !NexvioProfileStore.hasSavedProfiles(appearanceContext)
+                        // Restore cloud profiles before deciding whether this is a first-time account.
+                        restoringAccountProfiles = true
+                        accountRestoreError = null
+                        onboardingScope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    syncNexvioAccount(appearanceContext)
+                                }
+                                onboardingPrefs.edit().putBoolean("complete", true).apply()
+                                onboardingComplete = true
+                                showingWelcome = false
+                                val profiles = NexvioProfileStore.all(appearanceContext)
+                                profileGate = profiles.isEmpty()
+                                if (profiles.isNotEmpty()) {
+                                    val active = profiles.firstOrNull {
+                                        it.id == NexvioProfileStore.activeId(appearanceContext)
+                                    } ?: profiles.first()
+                                    NexvioProfileStore.setActive(appearanceContext, active.id)
+                                    activeProfileId = active.id
+                                }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (e: Exception) {
+                                // Keep the user out of first-profile onboarding if cloud restore failed.
+                                accountRestoreError = "Couldn't restore your account profiles. Check your connection and try again. " + (e.message ?: "")
+                            } finally {
+                                restoringAccountProfiles = false
+                            }
+                        }
                     }
                 )
             } else if (profileGate || showingProfilePicker) {
