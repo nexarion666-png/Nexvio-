@@ -51,7 +51,7 @@ internal class OfflineDownloads(private val context: Context, private val profil
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
-            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_MOVIES, "Nexvio/$profileId/$title")
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_MOVIES, if (profileId == "primary") "Nexvio/$title" else "Nexvio/$profileId/$title")
         val id = manager.enqueue(request)
         prefs.edit().putString("ids", (ids() + id).distinct().joinToString(",")).apply()
         return id
@@ -78,7 +78,7 @@ internal class OfflineDownloads(private val context: Context, private val profil
     fun cancel(id: Long) { manager.remove(id) }
     fun open(id: Long): Uri? = manager.getUriForDownloadedFile(id)
     fun removeRecord(id: Long) { prefs.edit().putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
-    fun files(): List<File> { val root = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio")?.resolve(profileId) ?: return emptyList(); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
+    fun files(): List<File> { val base = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); val root = if (profileId == "primary") base else base.resolve(profileId); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
 
