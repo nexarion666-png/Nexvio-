@@ -913,6 +913,46 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 }
 
+@Composable
+private fun PlayerOverlayButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    fontSize: Int = 22,
+    enabled: Boolean = true
+) {
+    Box(
+        modifier.sizeIn(minWidth = 32.dp, minHeight = 40.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) Color.White else Color.White.copy(alpha = 0.35f),
+            fontSize = fontSize.sp,
+            maxLines = 1,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun PlayerFloatingButton(
+    label: String,
+    onClick: () -> Unit,
+    description: String,
+    fontSize: Int = 22
+) {
+    Box(
+        Modifier.size(46.dp).clip(CircleShape)
+            .background(Color(0x99080A0F))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = Color.White, fontSize = fontSize.sp, maxLines = 1, fontWeight = FontWeight.Medium)
+    }
+}
+
 private data class PlaybackFailure(val message: String, val details: String)
 
 private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
