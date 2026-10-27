@@ -119,7 +119,7 @@ internal object NexvioCloudSync {
         // A fresh account with no profiles must stay empty until the user creates one.
         // Never manufacture a default profile during background cloud sync.
         if (merged.isEmpty()) {
-            return Result(0, 0, "No profiles yet. Create your first profile to enable cloud sync.")
+            return@withContext Result(0, 0, "No profiles yet. Create your first profile to enable cloud sync.")
         }
         NexvioProfileStore.save(context, merged.values.toList())
 
