@@ -824,7 +824,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         .clickable { screenLocked = false; revealControls() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("▣", color = Color.White, fontSize = 23.sp)
+                    Icon(Icons.Filled.LockOpen, contentDescription = "Unlock controls", tint = Color.White, modifier = Modifier.size(24.dp))
                 }
             } else if (controlsVisible) {
                 Column(
@@ -837,10 +837,10 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        PlayerOverlayButton("‹", {
+                        PlayerIconButton(Icons.Filled.ArrowBack, "Back", {
                             if (fullscreen) fullscreenOverride = false else onBack()
                             revealControls()
-                        }, fontSize = 32)
+                        }, size = 26)
                         Text(
                             channel.name,
                             color = Color.White,
@@ -848,22 +848,19 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             maxLines = 1,
                             modifier = Modifier.weight(1f).padding(start = 4.dp, end = 3.dp)
                         )
-                        PlayerOverlayButton("⌁", {
+                        PlayerIconButton(Icons.Filled.Cast, "Cast", {
                             showPlayerMessage("Casting is not configured in this build.")
                             revealControls()
-                        }, fontSize = 22)
-                        PlayerOverlayButton("HD", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, fontSize = 14)
-                        PlayerOverlayButton("CC", { openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true) }, fontSize = 15)
-                        PlayerOverlayButton("☷", {
-                            if ((player?.mediaItemCount ?: 0) > 1) {
-                                showPlayerMessage("Use previous/next to navigate this playlist.")
-                            } else {
-                                showPlayerMessage("No playlist is attached to this stream.")
-                            }
+                        }, size = 23)
+                        PlayerIconButton(Icons.Filled.HighQuality, "Video quality", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, size = 25)
+                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true) }, size = 24)
+                        PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
+                            if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
+                            else showPlayerMessage("No playlist is attached to this stream.")
                             revealControls()
-                        }, fontSize = 20)
+                        }, size = 23)
                         Box {
-                            PlayerOverlayButton("⋮", { moreMenuExpanded = true; revealControls() }, fontSize = 24)
+                            PlayerIconButton(Icons.Filled.MoreVert, "More options", { moreMenuExpanded = true; revealControls() }, size = 25)
                             DropdownMenu(
                                 expanded = moreMenuExpanded,
                                 onDismissRequest = { moreMenuExpanded = false }
@@ -930,26 +927,26 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        PlayerFloatingButton("▣", {
+                        PlayerFloatingIconButton(Icons.Filled.Lock, "Lock screen", {
                             screenLocked = true
                             controlsVisible = false
-                        }, description = "Lock screen")
-                        PlayerFloatingButton(if (muted) "◖×" else "◖))", {
+                        })
+                        PlayerFloatingIconButton(if (muted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, if (muted) "Unmute" else "Mute", {
                             muted = !muted
                             revealControls()
-                        }, description = if (muted) "Unmute" else "Mute")
-                        PlayerFloatingButton("♬", {
+                        })
+                        PlayerFloatingIconButton(Icons.Filled.Headphones, "Audio tracks", {
                             openTrackDialog(C.TRACK_TYPE_AUDIO, "Audio tracks")
-                        }, description = "Audio tracks")
+                        })
                         PlayerFloatingButton("${playbackSpeed}×", {
                             cyclePlaybackSpeed()
                         }, description = "Playback speed", fontSize = 15)
-                        PlayerFloatingButton("›|", {
+                        PlayerFloatingIconButton(Icons.Filled.SkipNext, "Next item", {
                             val active = player
                             if (active != null && active.hasNextMediaItem()) active.seekToNextMediaItem()
                             else showPlayerMessage("There is no next item in this stream.")
                             revealControls()
-                        }, description = "Next item")
+                        })
                     }
                 }
 
@@ -1002,18 +999,18 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        PlayerOverlayButton("▣", {
+                        PlayerIconButton(Icons.Filled.Lock, "Lock controls", {
                             screenLocked = true
                             controlsVisible = false
-                        }, fontSize = 20)
-                        PlayerOverlayButton("↶10", {
+                        }, size = 22)
+                        PlayerIconButton(Icons.Filled.Replay10, "Rewind 10 seconds", {
                             player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() }
                             revealControls()
-                        }, fontSize = 16, enabled = player?.isCurrentMediaItemSeekable == true)
-                        PlayerOverlayButton("|◀", {
+                        }, size = 28, enabled = player?.isCurrentMediaItemSeekable == true)
+                        PlayerIconButton(Icons.Filled.SkipPrevious, "Previous item", {
                             player?.let { active -> if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem() }
                             revealControls()
-                        }, fontSize = 18, enabled = player?.hasPreviousMediaItem() == true)
+                        }, size = 26, enabled = player?.hasPreviousMediaItem() == true)
                         Box(
                             Modifier.size(50.dp).border(1.dp, Color.White.copy(alpha = 0.92f), CircleShape)
                                 .clickable {
@@ -1034,21 +1031,21 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, fontSize = 23.sp)
+                            Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(28.dp))
                         }
-                        PlayerOverlayButton("▶|", {
+                        PlayerIconButton(Icons.Filled.SkipNext, "Next item", {
                             player?.let { active -> if (active.hasNextMediaItem()) active.seekToNextMediaItem() }
                             revealControls()
-                        }, fontSize = 18, enabled = player?.hasNextMediaItem() == true)
-                        PlayerOverlayButton("10↷", {
+                        }, size = 26, enabled = player?.hasNextMediaItem() == true)
+                        PlayerIconButton(Icons.Filled.Forward10, "Forward 10 seconds", {
                             player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() }
                             revealControls()
-                        }, fontSize = 16, enabled = player?.isCurrentMediaItemSeekable == true)
+                        }, size = 28, enabled = player?.isCurrentMediaItemSeekable == true)
                         PlayerOverlayButton("Speed", { cyclePlaybackSpeed() }, fontSize = 12)
-                        PlayerOverlayButton(if (fullscreen) "⛶" else "⤢", {
+                        PlayerIconButton(if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, if (fullscreen) "Exit fullscreen" else "Enter fullscreen", {
                             fullscreenOverride = !fullscreen
                             revealControls()
-                        }, fontSize = 22)
+                        }, size = 25)
                     }
                 }
             }
