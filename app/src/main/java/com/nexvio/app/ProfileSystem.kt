@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -204,6 +205,12 @@ internal fun ProfileSystemScreen(
                                     Box(Modifier.align(Alignment.BottomEnd).size(30.dp).clip(CircleShape).background(ProfileGreen), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Edit, contentDescription = "Edit ${profile.name}", tint = ProfileBg, modifier = Modifier.size(17.dp))
                                     }
+                                    if (!profile.isPrimary) {
+                                        Box(Modifier.align(Alignment.TopEnd).size(28.dp).clip(CircleShape).background(Color(0xFF542B32))
+                                            .clickable { deleteTarget = profile }, contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete ${profile.name}", tint = Color.White, modifier = Modifier.size(15.dp))
+                                        }
+                                    }
                                 } else if (profile.isPrimary) {
                                     Box(Modifier.align(Alignment.BottomEnd).size(25.dp).clip(CircleShape).background(ProfileGreen), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Check, contentDescription = "Primary profile", tint = ProfileBg, modifier = Modifier.size(16.dp))
@@ -373,13 +380,14 @@ private fun ProfileAvatar(
     modifier: Modifier = Modifier
 ) {
     val avatar = NexvioAvatars.firstOrNull { it.id == avatarId } ?: NexvioAvatars.first()
+    var imageFailed by remember(customUrl) { mutableStateOf(false) }
     Box(modifier.size(size).clip(CircleShape).background(Color(avatar.color))
         .border(if (selected) 3.dp else 2.dp, if (selected) ProfileGreen else Color(0xFF35414B), CircleShape),
         contentAlignment = Alignment.Center) {
-        if (customUrl.isNotBlank()) {
+        if (customUrl.isNotBlank() && !imageFailed) {
             AsyncImage(model = customUrl, contentDescription = "Profile avatar",
                 modifier = Modifier.fillMaxSize().clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                onError = { })
+                onError = { imageFailed = true })
         } else Text(avatar.emoji, fontSize = (size.value * 0.43f).sp)
         if (selected) Box(Modifier.align(Alignment.BottomEnd).size(22.dp).clip(CircleShape).background(ProfileGreen), contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Check, contentDescription = "Selected", tint = ProfileBg, modifier = Modifier.size(14.dp))
