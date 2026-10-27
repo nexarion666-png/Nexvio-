@@ -20,6 +20,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -758,16 +759,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Color.Black)) {
-        if (!fullscreen) Row(Modifier.fillMaxWidth().background(Color(0xFF111217)).padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment=Alignment.CenterVertically) {
-            Text("‹", color=Accent, fontSize=28.sp, modifier=Modifier.clickable { onBack() }.padding(end = 12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("NOW PLAYING", color=Muted, fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.4.sp)
-                Text(channel.name, color=Color.White, fontWeight=FontWeight.SemiBold, maxLines=1)
-            }
-            Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "PLAYING", color=Accent, fontSize=10.sp, fontWeight=FontWeight.Bold,
-                modifier=Modifier.background(Color(0x332E9BFF), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 6.dp))
-        }
+    Column(Modifier.fillMaxSize().background(Color.Black), verticalArrangement = Arrangement.Center) {
+        if (!fullscreen) Spacer(Modifier.weight(1f))
         Box((if (fullscreen) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).background(Color.Black), contentAlignment=Alignment.Center) {
             if (player != null) {
                 AndroidView(
@@ -1057,7 +1050,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 }
             }
         }
-
+        if (!fullscreen) Spacer(Modifier.weight(1f))
     }
 }
 
