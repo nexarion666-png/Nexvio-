@@ -1,6 +1,11 @@
 package com.nexvio.app
 
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.AudioManager
@@ -55,6 +60,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.TrackSelectionDialogBuilder
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
@@ -163,6 +170,20 @@ class MainActivity : ComponentActivity() {
                         PluginRepositoryScreen(onBack = { detail = "Content providers" })
                     } else if (detail == "Watch history") {
                         WatchHistoryScreen(onPlay = { playing = it })
+                    } else if (detail == "Layout") {
+                        LayoutSettingsScreen()
+                    } else if (detail == "Content & Discovery") {
+                        ContentProvidersScreen(
+                            onOpenAddons = { detail = "Add-ons" },
+                            onOpenRepositories = { detail = "Plugin repositories" },
+                            onBack = { detail = "Content & Discovery" }
+                        )
+                    } else if (detail == "Playback") {
+                        PlaybackSettingsScreen()
+                    } else if (detail == "Integrations") {
+                        IntegrationsSettingsScreen()
+                    } else if (detail == "Notifications") {
+                        NotificationsSettingsScreen()
                     } else if (detail != null) {
                         Column {
                             Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment=Alignment.CenterVertically) {
@@ -799,6 +820,141 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 }
 
 @Composable private fun LibraryScreen() { LazyColumn(contentPadding=PaddingValues(20.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) { item { Text("Your Library", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("A home for your saved and watched titles", color=Muted) }; item { EmptySection("Favorites", "Saved TV channels are available in Live TV. Movie and series favorites require catalogue support.") }; item { EmptySection("Watch history", "Viewing history is not recorded in this phase.") }; item { EmptySection("Continue watching", "Playback progress is not persisted in Phase 2.") } } }
+
+private fun settingsPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+
+@Composable private fun LayoutSettingsScreen() {
+    val context = LocalContext.current
+    val prefs = remember { settingsPrefs(context) }
+    var homeStyle by remember { mutableStateOf(prefs.getString("home_style", "Featured") ?: "Featured") }
+    var posterSize by remember { mutableStateOf(prefs.getString("poster_size", "Comfortable") ?: "Comfortable") }
+    var showDescriptions by remember { mutableStateOf(prefs.getBoolean("show_descriptions", true)) }
+    SettingsPage("Layout", "Personalize how content is presented.") {
+        SettingsChoice("Home screen style", "Choose the default Home presentation.", listOf("Featured", "Grid", "Compact"), homeStyle) {
+            homeStyle = it; prefs.edit().putString("home_style", it).apply()
+        }
+        SettingsChoice("Poster size", "Adjust poster density across catalogue screens.", listOf("Compact", "Comfortable", "Large"), posterSize) {
+            posterSize = it; prefs.edit().putString("poster_size", it).apply()
+        }
+        SettingsToggle("Show content descriptions", "Display extra descriptions where available.", showDescriptions) {
+            showDescriptions = it; prefs.edit().putBoolean("show_descriptions", it).apply()
+        }
+        Text("Preferences are saved on this device. Some layout choices will apply as the corresponding catalogue layouts are connected.", color=Muted, fontSize=12.sp)
+    }
+}
+
+@Composable private fun PlaybackSettingsScreen() {
+    val context = LocalContext.current
+    val prefs = remember { settingsPrefs(context) }
+    var autoplay by remember { mutableStateOf(prefs.getBoolean("playback_autoplay", true)) }
+    var resume by remember { mutableStateOf(prefs.getBoolean("playback_resume", true)) }
+    var fit by remember { mutableStateOf(prefs.getString("playback_resize", "Fit") ?: "Fit") }
+    SettingsPage("Playback", "Choose your preferred playback behavior.") {
+        SettingsToggle("Autoplay streams", "Allow playback to start automatically when a stream is selected.", autoplay) {
+            autoplay = it; prefs.edit().putBoolean("playback_autoplay", it).apply()
+        }
+        SettingsToggle("Resume playback", "Remember the player's play/pause state during player recreation.", resume) {
+            resume = it; prefs.edit().putBoolean("playback_resume", it).apply()
+        }
+        SettingsChoice("Video sizing", "Default display sizing preference.", listOf("Fit", "Fill", "Zoom"), fit) {
+            fit = it; prefs.edit().putString("playback_resize", it).apply()
+        }
+        Text("These preferences are saved. Applying them to every provider and player path is a follow-up integration step.", color=Muted, fontSize=12.sp)
+    }
+}
+
+@Composable private fun IntegrationsSettingsScreen() {
+    SettingsPage("Integrations", "Connect external services when supported by Nexvio.") {
+        SettingsInfoCard("TMDB catalogue", "Used for movie and series metadata. API connection is managed by the catalogue feature.")
+        SettingsInfoCard("IPTV playlists", "Import an M3U/M3U8 playlist from the Live TV section.")
+        SettingsInfoCard("Provider add-ons", "Manage installed add-ons and plugin repositories under Content & Discovery.")
+        SettingsInfoCard("Account sync", "Cloud account synchronization is not configured in this build.")
+    }
+}
+
+@Composable private fun NotificationsSettingsScreen() {
+    val context = LocalContext.current
+    val activity = context.findActivity()
+    var message by remember { mutableStateOf<String?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) postNexvioTestNotification(context) else message = "Notification permission was not granted. You can enable it in Android app settings."
+    }
+    SettingsPage("Notifications", "Manage episode alerts and verify that notifications can appear on this device.") {
+        SettingsInfoCard("Episode release alerts", "Release alerts need a connected tracking provider and schedule service before real episode alerts can be sent.")
+        Button(onClick = {
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                postNexvioTestNotification(context)
+                message = "Test notification sent."
+            }
+        }, colors=ButtonDefaults.buttonColors(containerColor=Accent, contentColor=Color.White)) {
+            Text("Send test notification")
+        }
+        message?.let { Text(it, color=Muted, fontSize=12.sp) }
+        if (activity == null) Text("Open this screen from the Nexvio app to test notifications.", color=Muted, fontSize=12.sp)
+    }
+}
+
+private fun postNexvioTestNotification(context: Context) {
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val channelId = "nexvio_general"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        manager.createNotificationChannel(NotificationChannel(channelId, "Nexvio notifications", NotificationManager.IMPORTANCE_DEFAULT))
+    }
+    val notification = NotificationCompat.Builder(context, channelId)
+        .setSmallIcon(android.R.drawable.ic_media_play)
+        .setContentTitle("Nexvio notifications are working")
+        .setContentText("This is a test notification from your settings.")
+        .setAutoCancel(true)
+        .build()
+    manager.notify(4107, notification)
+}
+
+@Composable private fun SettingsPage(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxSize().padding(20.dp)) {
+        Text("‹  Back", color=Accent, modifier=Modifier.clickable { /* system back handler returns to Profile settings */ })
+        Spacer(Modifier.height(10.dp))
+        Text(title, fontSize=28.sp, fontWeight=FontWeight.ExtraBold)
+        Text(subtitle, color=Muted, fontSize=13.sp)
+        Spacer(Modifier.height(18.dp))
+        Column(verticalArrangement=Arrangement.spacedBy(12.dp), content=content)
+    }
+}
+
+@Composable private fun SettingsToggle(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight=FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(description, color=Muted, fontSize=12.sp, lineHeight=17.sp)
+        }
+        Switch(checked=checked, onCheckedChange=onCheckedChange)
+    }
+}
+
+@Composable private fun SettingsChoice(title: String, description: String, choices: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)) {
+        Text(title, fontWeight=FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(description, color=Muted, fontSize=12.sp, lineHeight=17.sp)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            choices.forEach { choice ->
+                FilterChip(selected=selected == choice, onClick={ onSelect(choice) }, label={ Text(choice, fontSize=11.sp) })
+            }
+        }
+    }
+}
+
+@Composable private fun SettingsInfoCard(title: String, description: String) {
+    Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)) {
+        Text(title, fontWeight=FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(description, color=Muted, fontSize=12.sp, lineHeight=17.sp)
+    }
+}
+
 @Composable private fun SettingsScreen(onDetail:(String)->Unit) {
     val sections = listOf(
         "PROFILE" to listOf("Switch Profile" to "Change to a different profile", "Account" to "Account and sync status", "Watch party" to "Watch together with a party code", "Tracking" to "Connect tracking providers and choose Library tracking"),
