@@ -95,8 +95,21 @@ internal object NexvioCloudSync {
                 updatedAt = data.optLong("updatedAt", System.currentTimeMillis())
             )
         }
-        // Keep locally created/edited profiles when IDs overlap; include cloud-only profiles.
-        localProfiles.forEach { merged[it.id] = it }
+        // Resolve profile conflicts by update time. A freshly initialized default profile
+        // must not replace an existing cloud primary profile just because it was created later.
+        localProfiles.forEach { local ->
+            val cloud = merged[local.id]
+            if (cloud == null) {
+                merged[local.id] = local
+            } else {
+                val localIsUntouchedDefault = local.id == "primary" &&
+                    local.name == "Main Profile" && local.avatarId == "fox" &&
+                    local.customAvatarUrl.isBlank() && local.updatedAt <= local.createdAt
+                if (!localIsUntouchedDefault && local.updatedAt >= cloud.updatedAt) {
+                    merged[local.id] = local
+                }
+            }
+        }
         if (merged.isEmpty()) merged["primary"] = NexvioProfile("primary", "Main Profile", "fox", isPrimary = true)
         NexvioProfileStore.save(context, merged.values.toList())
 
@@ -227,16 +240,16 @@ internal object NexvioCloudSync {
         }
         editor.apply()
 
+        // Upload the merged snapshot itself. SharedPreferences.Editor.apply() is async;
+        // serializing prefs.all immediately after apply() could upload stale local values
+        // and erase the cloud entries that were just merged.
         val upload = JSONObject()
-        prefs.all.forEach { (key, value) ->
-            if (skipDeviceLocalIptv && prefs.getBoolean("local", false) && key in setOf("source", "label", "local")) return@forEach
-            putPreference(upload, key, value)
-        }
-        // Preserve cloud values merged above even when local preferences were empty.
-        val mergedKeys = merged.keys()
-        while (mergedKeys.hasNext()) {
-            val key = mergedKeys.next()
-            if (!upload.has(key)) upload.put(key, merged.opt(key))
+        val uploadKeys = merged.keys()
+        while (uploadKeys.hasNext()) {
+            val key = uploadKeys.next()
+            if (skipDeviceLocalIptv && prefs.getBoolean("local", false) &&
+                key in setOf("source", "label", "local")) continue
+            upload.put(key, merged.opt(key))
         }
         val row = JSONArray().put(JSONObject()
             .put("account_id", accountId)
