@@ -229,7 +229,7 @@ internal object NexvioCloudSync {
         val localHasData = local.length() > 0
 
         val useRemote = when {
-            baseline == null -> preferRemoteOnFirstSync && remoteHasData
+            baseline == null -> remoteHasData
             remoteChanged && !localChanged -> true
             localChanged && !remoteChanged -> false
             remoteChanged && localChanged -> false // explicit sync on this device wins a conflict
