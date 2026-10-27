@@ -138,6 +138,10 @@ private object NexvioSupabaseAuth {
         request("auth/v1/recover", "POST", JSONObject().put("email", email))
     }
 
+    fun sendSignInLink(email: String) {
+        request("auth/v1/otp", "POST", JSONObject().put("email", email).put("create_user", false))
+    }
+
     fun signOut(context: Context) {
         val s = session(context)
         if (s != null) runCatching { request("auth/v1/logout", "POST", JSONObject(), s.accessToken) }
@@ -330,5 +334,124 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
             Text(it, color = if (isError) Color(0xFFFF8B8B) else AccountAccent, fontSize = 13.sp)
         }
         Text("Your password is sent directly to Supabase Auth over HTTPS and is not stored by Nexvio. Never share your password or any Supabase secret/service-role key.", color = AccountMuted, fontSize = 11.sp, lineHeight = 16.sp)
+    }
+}
+
+
+internal fun hasNexvioAccountSession(context: Context): Boolean =
+    NexvioSupabaseAuth.session(context) != null
+
+@Composable
+internal fun NexvioWelcomeScreen(
+    onContinueWithoutAccount: () -> Unit,
+    onAuthenticated: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var createAccount by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf(false) }
+    var showPassword by remember { mutableStateOf(false) }
+
+    fun perform(action: suspend () -> String, finishOnAuth: Boolean = false) {
+        if (busy) return
+        busy = true
+        message = null
+        scope.launch {
+            try {
+                message = withContext(Dispatchers.IO) { action() }
+                error = false
+                if (finishOnAuth && NexvioSupabaseAuth.session(context) != null) onAuthenticated()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                message = e.message ?: "Something went wrong. Please try again."
+                error = true
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    Column(
+        Modifier.fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(
+                listOf(Color(0xFF211039), Color(0xFF10091A), Color.Black)
+            ))
+            .statusBarsPadding().navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 26.dp, vertical = 22.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(28.dp))
+        Text("▶ NUVIO", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+        Text("Watch your library, anywhere", color = AccountMuted, fontSize = 15.sp)
+        Spacer(Modifier.height(44.dp))
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (createAccount) "Create Account" else "Welcome Back", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
+            Text(if (createAccount) "Create an account to sync your library and progress" else "Sign in to access your library and progress", color = AccountMuted, fontSize = 14.sp)
+        }
+        OutlinedTextField(
+            value = email, onValueChange = { email = it.trim() }, modifier = Modifier.fillMaxWidth(),
+            label = { Text("Email") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            shape = RoundedCornerShape(20.dp)
+        )
+        OutlinedTextField(
+            value = password, onValueChange = { password = it }, modifier = Modifier.fillMaxWidth(),
+            label = { Text("Password") }, singleLine = true,
+            visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = { TextButton(onClick = { showPassword = !showPassword }) { Text(if (showPassword) "Hide" else "Show", color = AccountMuted) } },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            shape = RoundedCornerShape(20.dp)
+        )
+        Button(
+            onClick = {
+                if (createAccount && password.length < 6) {
+                    message = "Use a password with at least 6 characters."; error = true
+                } else perform({
+                    if (createAccount) NexvioSupabaseAuth.signUp(context, email.trim(), password)
+                    else NexvioSupabaseAuth.signIn(context, email.trim(), password)
+                }, finishOnAuth = !createAccount)
+            },
+            enabled = !busy && email.contains("@") && password.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth().height(58.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF151019))
+        ) { Text(if (busy) "Please wait…" else if (createAccount) "Sign Up" else "Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(if (createAccount) "Already have an account? " else "Don't have an account? ", color = AccountMuted)
+            TextButton(onClick = { createAccount = !createAccount; message = null }) {
+                Text(if (createAccount) "Sign In" else "Sign Up", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            HorizontalDivider(Modifier.weight(1f), color = AccountPanel)
+            Text("  or  ", color = AccountMuted)
+            HorizontalDivider(Modifier.weight(1f), color = AccountPanel)
+        }
+        OutlinedButton(
+            onClick = {
+                if (!email.contains("@")) { message = "Enter your email address first."; error = true }
+                else perform({ NexvioSupabaseAuth.sendSignInLink(email.trim()); "Check your email for a sign-in link." })
+            },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(18.dp)
+        ) { Text("Sign In with Link", color = Color.White, fontSize = 16.sp) }
+
+        OutlinedButton(
+            onClick = onContinueWithoutAccount,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(18.dp)
+        ) { Text("Continue Without Account", color = Color.White, fontSize = 16.sp) }
+        Text("Your data will only be stored locally when you continue without an account.", color = AccountMuted, fontSize = 12.sp)
+        message?.let { Text(it, color = if (error) Color(0xFFFF8B8B) else AccountAccent, fontSize = 13.sp) }
+        Spacer(Modifier.height(12.dp))
     }
 }
