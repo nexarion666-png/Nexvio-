@@ -29,9 +29,9 @@ import kotlinx.coroutines.delay
 import java.io.File
 import java.net.URI
 
-internal class OfflineDownloads(private val context: Context) {
+internal class OfflineDownloads(private val context: Context, private val profileId: String = NexvioProfileStore.active(context).id) {
     private val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-    private val prefs = context.getSharedPreferences("nexvio_downloads", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(if (profileId == "primary") "nexvio_downloads" else "nexvio_downloads_$profileId", Context.MODE_PRIVATE)
     fun ids(): List<Long> = prefs.getString("ids", "").orEmpty().split(",").mapNotNull { it.toLongOrNull() }
     fun enqueue(rawUrl: String, rawTitle: String): Long {
         val parsed = URI(rawUrl.trim())
@@ -51,7 +51,7 @@ internal class OfflineDownloads(private val context: Context) {
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
-            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_MOVIES, "Nexvio/$title")
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_MOVIES, "Nexvio/$profileId/$title")
         val id = manager.enqueue(request)
         prefs.edit().putString("ids", (ids() + id).distinct().joinToString(",")).apply()
         return id
@@ -78,17 +78,17 @@ internal class OfflineDownloads(private val context: Context) {
     fun cancel(id: Long) { manager.remove(id) }
     fun open(id: Long): Uri? = manager.getUriForDownloadedFile(id)
     fun removeRecord(id: Long) { prefs.edit().putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
-    fun files(): List<File> { val root = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
+    fun files(): List<File> { val root = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio")?.resolve(profileId) ?: return emptyList(); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
 
-internal fun enqueueDiscoveredStream(context: Context, title: String, url: String): Long =
-    OfflineDownloads(context.applicationContext).enqueue(url, title)
+internal fun enqueueDiscoveredStream(context: Context, title: String, url: String, profileId: String = NexvioProfileStore.active(context).id): Long =
+    OfflineDownloads(context.applicationContext, profileId).enqueue(url, title)
 
 @Composable
-fun DownloadsScreen(onPlay: (TvChannel) -> Unit) {
+fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     val context = LocalContext.current
-    val store = remember { OfflineDownloads(context.applicationContext) }
+    val store = remember(context, profileId) { OfflineDownloads(context.applicationContext, profileId) }
     var rows by remember { mutableStateOf(store.rows()) }
     var error by remember { mutableStateOf<String?>(null) }
     var progressRefresh by remember { mutableIntStateOf(0) }
@@ -142,7 +142,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit) {
 }
 
  @Composable
-fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit) {
+fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     val context = LocalContext.current
     val watchlist = remember(context) { WatchlistStore(context) }
     var saved by remember { mutableStateOf(watchlist.all()) }
@@ -157,7 +157,7 @@ fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit) {
                 Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { showDownloads = false }.padding(end = 14.dp))
                 Text("Downloads", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
-            DownloadsScreen(onPlay = onPlay)
+            DownloadsScreen(onPlay = onPlay, profileId = profileId)
         }
         return
     }
