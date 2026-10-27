@@ -389,7 +389,7 @@ internal fun NexvioWelcomeScreen(
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(28.dp))
-        Text("▶ NUVIO", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+        Text("▶ NEXVIO", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
         Text("Watch your library, anywhere", color = AccountMuted, fontSize = 15.sp)
         Spacer(Modifier.height(44.dp))
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
