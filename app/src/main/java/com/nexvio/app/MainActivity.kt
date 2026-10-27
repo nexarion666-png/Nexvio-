@@ -519,6 +519,14 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
     )
 }
 
+private fun formatPlayerTime(milliseconds: Long): String {
+    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000L
+    val seconds = totalSeconds % 60
+    val minutes = (totalSeconds / 60) % 60
+    val hours = totalSeconds / 3_600
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(totalSeconds / 60, seconds)
+}
+
 @Composable private fun PlayerScreen(channel: TvChannel, onBack:()->Unit) {
     val context = LocalContext.current
     val playerPrefs = remember(context) { settingsPrefs(context) }
@@ -538,6 +546,8 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
     var shouldResumePlayback by rememberSaveable(channel.id) { mutableStateOf(true) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playbackSpeed by rememberSaveable(channel.id) { mutableFloatStateOf(1f) }
+    var positionMs by remember(channel.id) { mutableLongStateOf(0L) }
+    var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
     var brightnessLevel by rememberSaveable { mutableFloatStateOf(0.6f) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
@@ -668,6 +678,8 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             delay(1_000)
             saveTick++
             shouldResumePlayback = activePlayer.playWhenReady
+            positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+            durationMs = activePlayer.duration.takeIf { it > 0L && it != androidx.media3.common.C.TIME_UNSET } ?: 0L
             // Live streams should reopen at the provider's live edge. Preserve position
             // only for non-live media that supports a meaningful seek position.
             if (activePlayer.playbackState == Player.STATE_READY && !activePlayer.isCurrentMediaItemLive) {
@@ -764,7 +776,21 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             }
             if (fullscreen) Text("Exit fullscreen  ✕", color=Color.White, modifier=Modifier.align(Alignment.TopEnd).padding(14.dp).background(Panel, RoundedCornerShape(8.dp)).clickable { fullscreenOverride=false }.padding(10.dp))
         }
-        if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=10.dp, vertical=8.dp), verticalArrangement=Arrangement.spacedBy(6.dp)) {
+        if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=14.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
+                Slider(value = positionMs.coerceIn(0L, durationMs).toFloat(),
+                    onValueChange = { positionMs = it.toLong() },
+                    onValueChangeFinished = { player?.seekTo(positionMs.coerceIn(0L, durationMs)) },
+                    valueRange = 0f..durationMs.toFloat(),
+                    colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(formatPlayerTime(positionMs), color = Muted, fontSize = 11.sp)
+                    Text("-${formatPlayerTime((durationMs - positionMs).coerceAtLeast(0L))}", color = Muted, fontSize = 11.sp)
+                }
+            } else {
+                Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "Live stream • timeline unavailable for this source",
+                    color = if (player?.isCurrentMediaItemLive == true) Accent else Muted, fontSize = 11.sp)
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceEvenly, verticalAlignment=Alignment.CenterVertically) {
                 Text("↶", color=if (player?.isCurrentMediaItemSeekable == true) Accent else Muted,
                     modifier=Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(8.dp))
