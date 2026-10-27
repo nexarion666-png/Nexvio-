@@ -58,8 +58,8 @@ internal data class TmdbTitle(
     val mediaType: String
 )
 
-internal class WatchlistStore(context: Context) {
-    private val prefs = context.getSharedPreferences("nexvio_watchlist", Context.MODE_PRIVATE)
+internal class WatchlistStore(context: Context, profileId: String = NexvioProfileStore.active(context).id) {
+    private val prefs = context.getSharedPreferences(if (profileId == "primary") "nexvio_watchlist" else "nexvio_watchlist_$profileId", Context.MODE_PRIVATE)
     fun all(): List<TmdbTitle> {
         val array = runCatching { JSONArray(prefs.getString("items", "[]")) }.getOrElse { JSONArray() }
         return (0 until array.length()).mapNotNull { index ->
@@ -121,7 +121,7 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
 }
 
 @Composable
-internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit, onTitleSelected: (TmdbTitle) -> Unit) {
+internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit, onTitleSelected: (TmdbTitle) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     var query by remember { mutableStateOf("") }
     var titles by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -154,7 +154,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
     BackHandler(enabled = selected != null) { selected = null }
 
     selected?.let { item ->
-        TitleDetailPage(item = item, onBack = { selected = null }, onPlay = onPlay)
+        TitleDetailPage(item = item, onBack = { selected = null }, onPlay = onPlay, profileId = profileId)
         return
     }
 
@@ -224,9 +224,9 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
 }
 
 @Composable
-internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit, onFindStreams: (TmdbTitle, Int, Int) -> Unit = { _, _, _ -> }) {
+internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit, onFindStreams: (TmdbTitle, Int, Int) -> Unit = { _, _, _ -> }, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     val context = LocalContext.current
-    val watchlist = remember(context) { WatchlistStore(context) }
+    val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var savedToWatchlist by remember(item.id, item.mediaType) { mutableStateOf(watchlist.contains(item)) }
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
