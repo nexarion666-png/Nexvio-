@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
@@ -133,6 +134,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { NexvioApp(); NexvioUpdateChecker() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Refresh cloud profiles/settings whenever Nexvio is opened or returns to the foreground.
+        lifecycleScope.launch { syncNexvioAccountAutomatically(applicationContext) }
     }
 }
 
