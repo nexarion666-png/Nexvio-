@@ -774,7 +774,34 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 Spacer(Modifier.height(12.dp))
                 Button(onClick={ playbackError=null; shouldResumePlayback=true; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Accent, contentColor=Ink)) { Text("Retry") }
             }
-            if (fullscreen) Text("Exit fullscreen  ✕", color=Color.White, modifier=Modifier.align(Alignment.TopEnd).padding(14.dp).background(Panel, RoundedCornerShape(8.dp)).clickable { fullscreenOverride=false }.padding(10.dp))
+            if (fullscreen) {
+                Row(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                        .background(Color(0xB8000000)).padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("‹", color = Color.White, fontSize = 24.sp,
+                        modifier = Modifier.clickable { fullscreenOverride = false }.padding(6.dp))
+                    Text("↶ 10s", color = Color.White, modifier = Modifier.clickable {
+                        player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() }
+                    }.padding(6.dp))
+                    Text(if (isPlaying) "Ⅱ" else "▶", color = Accent, fontSize = 26.sp,
+                        modifier = Modifier.clickable { player?.let { if (it.isPlaying) it.pause() else it.play() } }.padding(6.dp))
+                    Text("10s ↷", color = Color.White, modifier = Modifier.clickable {
+                        player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() }
+                    }.padding(6.dp))
+                    Text("⛶", color = Color.White, fontSize = 22.sp,
+                        modifier = Modifier.clickable { fullscreenOverride = false }.padding(6.dp))
+                }
+                Text(channel.name, color = Color.White, maxLines = 1,
+                    modifier = Modifier.align(Alignment.TopStart).padding(14.dp)
+                        .background(Color(0xB8000000), RoundedCornerShape(8.dp)).padding(10.dp))
+                Text("Exit ✕", color = Color.White,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(14.dp)
+                        .background(Color(0xB8000000), RoundedCornerShape(8.dp))
+                        .clickable { fullscreenOverride = false }.padding(10.dp))
+            }
         }
         if (!fullscreen) Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal=14.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
