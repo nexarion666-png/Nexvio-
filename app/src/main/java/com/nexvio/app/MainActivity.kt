@@ -821,90 +821,209 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 Spacer(Modifier.height(12.dp))
                 Button(onClick={ playbackError=null; shouldResumePlayback=true; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Accent, contentColor=Ink)) { Text("Retry") }
             }
-            if (controlsVisible) {
+            if (screenLocked) {
+                Box(
+                    Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 18.dp)
+                        .size(46.dp).clip(CircleShape).background(Color(0x99080A0F))
+                        .clickable { screenLocked = false; revealControls() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("▣", color = Color.White, fontSize = 23.sp)
+                }
+            } else if (controlsVisible) {
+                Column(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(Color(0xD9000000), Color.Transparent)))
+                        .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 20.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        PlayerOverlayButton("‹", {
+                            if (fullscreen) fullscreenOverride = false else onBack()
+                            revealControls()
+                        }, fontSize = 32)
+                        Text(
+                            channel.name,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f).padding(start = 4.dp, end = 3.dp)
+                        )
+                        PlayerOverlayButton("⌁", {
+                            showPlayerMessage("Casting is not configured in this build.")
+                            revealControls()
+                        }, fontSize = 22)
+                        PlayerOverlayButton("HD", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, fontSize = 14)
+                        PlayerOverlayButton("CC", { openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true) }, fontSize = 15)
+                        PlayerOverlayButton("☷", {
+                            if ((player?.mediaItemCount ?: 0) > 1) {
+                                showPlayerMessage("Use previous/next to navigate this playlist.")
+                            } else {
+                                showPlayerMessage("No playlist is attached to this stream.")
+                            }
+                            revealControls()
+                        }, fontSize = 20)
+                        Box {
+                            PlayerOverlayButton("⋮", { moreMenuExpanded = true; revealControls() }, fontSize = 24)
+                            DropdownMenu(
+                                expanded = moreMenuExpanded,
+                                onDismissRequest = { moreMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(text = { Text("Video quality") }, onClick = {
+                                    moreMenuExpanded = false
+                                    openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality")
+                                })
+                                DropdownMenuItem(text = { Text("Audio tracks") }, onClick = {
+                                    moreMenuExpanded = false
+                                    openTrackDialog(C.TRACK_TYPE_AUDIO, "Audio tracks")
+                                })
+                                DropdownMenuItem(text = { Text("Subtitles") }, onClick = {
+                                    moreMenuExpanded = false
+                                    openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true)
+                                })
+                                DropdownMenuItem(text = { Text("Cycle playback speed") }, onClick = {
+                                    moreMenuExpanded = false
+                                    cyclePlaybackSpeed()
+                                })
+                                DropdownMenuItem(text = { Text("Retry stream") }, onClick = {
+                                    moreMenuExpanded = false
+                                    playbackError = null
+                                    playbackDetails = null
+                                    shouldResumePlayback = true
+                                    retry++
+                                    revealControls()
+                                })
+                            }
+                        }
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 15.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        PlayerFloatingButton("▣", {
+                            screenLocked = true
+                            controlsVisible = false
+                        }, description = "Lock screen")
+                        PlayerFloatingButton(if (muted) "◖×" else "◖))", {
+                            muted = !muted
+                            revealControls()
+                        }, description = if (muted) "Unmute" else "Mute")
+                        PlayerFloatingButton("♬", {
+                            openTrackDialog(C.TRACK_TYPE_AUDIO, "Audio tracks")
+                        }, description = "Audio tracks")
+                        PlayerFloatingButton("${playbackSpeed}×", {
+                            cyclePlaybackSpeed()
+                        }, description = "Playback speed", fontSize = 15)
+                        PlayerFloatingButton("›|", {
+                            val active = player
+                            if (active != null && active.hasNextMediaItem()) active.seekToNextMediaItem()
+                            else showPlayerMessage("There is no next item in this stream.")
+                            revealControls()
+                        }, description = "Next item")
+                    }
+                }
+
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .background(Color(0xD9101117), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9000000))))
+                        .padding(start = 14.dp, end = 14.dp, top = 24.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(channel.name, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                            modifier = Modifier.weight(1f))
-                        Text(if (player?.isCurrentMediaItemLive == true) "● LIVE" else "NEXVIO",
-                            color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Accent,
-                            fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 8.dp))
-                    }
-                    if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
-                        val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
-                        Slider(value = shownPosition.toFloat(),
-                            onValueChange = { scrubPositionMs = it.toLong() },
-                            onValueChangeFinished = {
-                                scrubPositionMs?.let { target ->
-                                    player?.seekTo(target.coerceIn(0L, durationMs))
-                                    positionMs = target
-                                }
-                                scrubPositionMs = null
-                            },
-                            valueRange = 0f..durationMs.toFloat(),
-                            colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
-                            modifier = Modifier.height(28.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatPlayerTime(shownPosition), color = Color.White, fontSize = 10.sp)
-                            Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Muted, fontSize = 10.sp)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        Text(formatPlayerTime(positionMs), color = Color.White, fontSize = 12.sp)
+                        if (player?.isCurrentMediaItemSeekable == true && durationMs > 0L) {
+                            val shownPosition = (scrubPositionMs ?: positionMs).coerceIn(0L, durationMs)
+                            Slider(
+                                value = shownPosition.toFloat(),
+                                onValueChange = {
+                                    scrubPositionMs = it.toLong()
+                                    revealControls()
+                                },
+                                onValueChangeFinished = {
+                                    scrubPositionMs?.let { target ->
+                                        val safeTarget = target.coerceIn(0L, durationMs)
+                                        player?.seekTo(safeTarget)
+                                        positionMs = safeTarget
+                                    }
+                                    scrubPositionMs = null
+                                    revealControls()
+                                },
+                                valueRange = 0f..durationMs.toFloat(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color.White,
+                                    inactiveTrackColor = Color(0x77FFFFFF)
+                                ),
+                                modifier = Modifier.weight(1f).height(28.dp)
+                            )
+                            Text("-${formatPlayerTime((durationMs - shownPosition).coerceAtLeast(0L))}", color = Color.White, fontSize = 12.sp)
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                            Text("LIVE", color = Color(0xFFFF7777), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
-                    } else {
-                        Text(if (player?.isCurrentMediaItemLive == true) "● LIVE STREAM  •  SEEKING UNAVAILABLE" else "LIVE STREAM",
-                            color = if (player?.isCurrentMediaItemLive == true) Color(0xFFFF7777) else Muted,
-                            fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                     }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("↶ 10s", color = if (player?.isCurrentMediaItemSeekable == true) Color.White else Muted,
-                            modifier = Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() } }.padding(5.dp))
-                        Text(if (isPlaying) "Ⅱ" else "▶", color = Accent, fontSize = 24.sp,
-                            modifier = Modifier.clickable {
-                                player?.let { active ->
-                                    if (active.isPlaying) active.pause() else { playbackError = null; playbackDetails = null; shouldResumePlayback = true; active.play() }
-                                } ?: run { playbackError = null; shouldResumePlayback = true; retry++ }
-                            }.padding(horizontal = 8.dp, vertical = 2.dp))
-                        Text("10s ↷", color = if (player?.isCurrentMediaItemSeekable == true) Color.White else Muted,
-                            modifier = Modifier.clickable { player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() } }.padding(5.dp))
-                        Text("Speed ${playbackSpeed}×", color = Accent, modifier = Modifier.clickable {
-                            val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-                            val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
-                            playbackSpeed = next
-                            player?.setPlaybackSpeed(next)
-                        }.padding(5.dp))
-                        Text(if (fullscreen) "Exit" else "⛶", color = Color.White,
-                            modifier = Modifier.clickable { fullscreenOverride = !fullscreen }.padding(5.dp))
-                    }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("♫", color = Accent, modifier = Modifier.clickable {
-                            player?.let { active -> TrackSelectionDialogBuilder(context, "Audio tracks", active, C.TRACK_TYPE_AUDIO).build().show() }
-                        }.padding(5.dp))
-                        Text("CC", color = Accent, modifier = Modifier.clickable {
-                            player?.let { active -> TrackSelectionDialogBuilder(context, "Subtitles", active, C.TRACK_TYPE_TEXT).setShowDisableOption(true).build().show() }
-                        }.padding(5.dp))
-                        Text("☼−", color = Accent, modifier = Modifier.clickable {
-                            brightnessLevel = (brightnessLevel - 0.1f).coerceAtLeast(0.05f)
-                            activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
-                        }.padding(5.dp))
-                        Text("☼+", color = Accent, modifier = Modifier.clickable {
-                            brightnessLevel = (brightnessLevel + 0.1f).coerceAtMost(1f)
-                            activity?.window?.attributes = activity.window.attributes.apply { screenBrightness = brightnessLevel }
-                        }.padding(5.dp))
-                        Text("🔉", color = Accent, modifier = Modifier.clickable {
-                            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume - 1).coerceAtLeast(0), 0)
-                        }.padding(5.dp))
-                        Text("🔊", color = Accent, modifier = Modifier.clickable {
-                            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (currentVolume + 1).coerceAtMost(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
-                        }.padding(5.dp))
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        PlayerOverlayButton("▣", {
+                            screenLocked = true
+                            controlsVisible = false
+                        }, fontSize = 20)
+                        PlayerOverlayButton("↶10", {
+                            player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() }
+                            revealControls()
+                        }, fontSize = 16, enabled = player?.isCurrentMediaItemSeekable == true)
+                        PlayerOverlayButton("|◀", {
+                            player?.let { active -> if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem() }
+                            revealControls()
+                        }, fontSize = 18, enabled = player?.hasPreviousMediaItem() == true)
+                        Box(
+                            Modifier.size(50.dp).border(1.dp, Color.White.copy(alpha = 0.92f), CircleShape)
+                                .clickable {
+                                    player?.let { active ->
+                                        if (active.isPlaying) active.pause()
+                                        else {
+                                            playbackError = null
+                                            playbackDetails = null
+                                            shouldResumePlayback = true
+                                            active.play()
+                                        }
+                                    } ?: run {
+                                        playbackError = null
+                                        shouldResumePlayback = true
+                                        retry++
+                                    }
+                                    revealControls()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(if (isPlaying) "Ⅱ" else "▶", color = Color.White, fontSize = 23.sp)
+                        }
+                        PlayerOverlayButton("▶|", {
+                            player?.let { active -> if (active.hasNextMediaItem()) active.seekToNextMediaItem() }
+                            revealControls()
+                        }, fontSize = 18, enabled = player?.hasNextMediaItem() == true)
+                        PlayerOverlayButton("10↷", {
+                            player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() }
+                            revealControls()
+                        }, fontSize = 16, enabled = player?.isCurrentMediaItemSeekable == true)
+                        PlayerOverlayButton("Speed", { cyclePlaybackSpeed() }, fontSize = 12)
+                        PlayerOverlayButton(if (fullscreen) "⛶" else "⤢", {
+                            fullscreenOverride = !fullscreen
+                            revealControls()
+                        }, fontSize = 22)
                     }
                 }
             }
