@@ -116,6 +116,13 @@ private object NexvioSupabaseAuth {
     }
 }
 
+
+/** Best-effort background sync for an existing signed-in session. */
+internal suspend fun syncNexvioAccountAutomatically(context: Context) {
+    val activeSession = NexvioSupabaseAuth.session(context) ?: return
+    runCatching { NexvioCloudSync.sync(context.applicationContext, activeSession.accessToken) }
+}
+
 @Composable
 internal fun AccountSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -198,7 +205,15 @@ internal fun AccountSettingsScreen(onBack: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                 )
                 Button(
-                    onClick = { perform { NexvioSupabaseAuth.signIn(context, email.trim(), password) } },
+                    onClick = {
+                        perform {
+                            val signedInMessage = NexvioSupabaseAuth.signIn(context, email.trim(), password)
+                            // Sync immediately after login so the user does not need to open Settings again.
+                            val activeSession = NexvioSupabaseAuth.session(context)
+                            if (activeSession != null) NexvioCloudSync.sync(context, activeSession.accessToken)
+                            signedInMessage
+                        }
+                    },
                     enabled = !busy && email.contains("@") && password.isNotEmpty(),
                     colors = ButtonDefaults.buttonColors(containerColor = AccountAccent, contentColor = Color(0xFF101510)),
                     modifier = Modifier.fillMaxWidth()
