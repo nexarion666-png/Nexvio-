@@ -594,8 +594,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars())
-        else controller.show(WindowInsetsCompat.Type.systemBars())
+        // Keep Android's status/navigation bars available as in the reference player;
+        // the video and its controls use the remaining safe content area.
+        controller.show(WindowInsetsCompat.Type.systemBars())
     }
     DisposableEffect(activity) {
         onDispose {
@@ -838,8 +839,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         PlayerIconButton(Icons.Filled.ArrowBack, "Back", {
-                            if (fullscreen) fullscreenOverride = false else onBack()
-                            revealControls()
+                            onBack()
                         }, size = 26)
                         Text(
                             channel.name,
