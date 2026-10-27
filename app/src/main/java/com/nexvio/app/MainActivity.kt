@@ -223,13 +223,13 @@ class MainActivity : ComponentActivity() {
                                 Text("‹  Back", color=Accent, modifier=Modifier.clickable { detail=null })
                                 Spacer(Modifier.width(18.dp)); Text(detail!!, fontSize=20.sp, fontWeight=FontWeight.Bold)
                             }
-                            if (detail == "Downloads") DownloadsScreen(onPlay = { playing = it }) else InfoPage(detail!!)
+                            if (detail == "Downloads") DownloadsScreen(onPlay = { playing = it }, profileId = activeProfileId) else InfoPage(detail!!)
                         }
                     } else when(current) {
                         "Home" -> HomeScreen(profileId = activeProfileId, onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
                         "Search" -> TmdbCatalogueScreen(searchKind, onPlay = { playing = it }, onTitleSelected = { selectedTitle = it })
                         "Live TV" -> LiveScreen(onDetail={detail=it}, onPlay={ playing=it })
-                        "Library" -> OfflineLibraryScreen(onPlay = { playing = it })
+                        "Library" -> OfflineLibraryScreen(onPlay = { playing = it }, profileId = activeProfileId)
                         else -> SettingsScreen(onDetail={ item ->
                         if (item == "Switch Profile") {
                             showingProfilePicker = true
