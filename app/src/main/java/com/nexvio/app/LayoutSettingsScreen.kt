@@ -10,10 +10,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -93,7 +89,6 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
         }.getOrDefault(emptyList()))
     }
     var newCollection by remember { mutableStateOf("") }
-    var collectionEditor by remember { mutableStateOf(false) }
     var amoled by remember { mutableStateOf(prefs.getBoolean("amoled_black", false)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -104,9 +99,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                }
+                Text("‹", color = Color.White, fontSize = 34.sp, modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 10.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Layout", color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold)
             }
@@ -141,8 +134,8 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                                     .background(theme.color, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (selected) Icon(Icons.Default.Check, contentDescription = "Selected", tint = if (theme.name == "White" || theme.name == "Amber") Color.Black else Color.White, modifier = Modifier.size(22.dp))
-                                if (theme.name == "Custom" && !selected) Icon(Icons.Default.Edit, contentDescription = "Customize accent", tint = Color.White, modifier = Modifier.size(19.dp))
+                                if (selected) Text("✓", color = if (theme.name == "White" || theme.name == "Amber") Color.Black else Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                if (theme.name == "Custom" && !selected) Text("✎", color = Color.White, fontSize = 19.sp)
                             }
                             Spacer(Modifier.height(8.dp))
                             Text(theme.name, color = if (selected) theme.color else Color.White.copy(alpha = .78f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, fontSize = 12.sp)
@@ -171,25 +164,25 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
         item {
             LayoutSectionTitle("HOME")
             LayoutCard {
-                LayoutActionRow("Home Layout", "Adjust home layout, content visibility, and poster behavior", onClick = { homeDialog = true })
+                LayoutActionRow("Home Layout", description = "Adjust home layout, content visibility, and poster behavior", onClick = { homeDialog = true })
                 LayoutDivider()
-                LayoutActionRow("Collections", "Create custom catalog groupings with folders shown on Home", onClick = { collectionsDialog = true })
+                LayoutActionRow("Collections", description = "Create custom catalog groupings with folders shown on Home", onClick = { collectionsDialog = true })
                 LayoutDivider()
-                LayoutActionRow("Continue Watching", "Settings for the Continue Watching section", onClick = { continueDialog = true })
+                LayoutActionRow("Continue Watching", description = "Settings for the Continue Watching section", onClick = { continueDialog = true })
                 LayoutDivider()
-                LayoutActionRow("Poster Card Style", "Tune card width and corner radius", onClick = { posterDialog = true })
+                LayoutActionRow("Poster Card Style", description = "Tune card width and corner radius", onClick = { posterDialog = true })
             }
         }
         item {
             LayoutSectionTitle("STREAMS")
             LayoutCard {
-                LayoutActionRow("Streams", "Stream result display and badge URL rules", onClick = { streamsDialog = true })
+                LayoutActionRow("Streams", description = "Stream result display and badge URL rules", onClick = { streamsDialog = true })
             }
         }
         item {
             LayoutSectionTitle("DETAIL PAGE")
             LayoutCard {
-                LayoutActionRow("Detail Page", "Detail-page options available in this build", onClick = { detailDialog = true })
+                LayoutActionRow("Detail Page", description = "Detail-page options available in this build", onClick = { detailDialog = true })
             }
         }
         item {
