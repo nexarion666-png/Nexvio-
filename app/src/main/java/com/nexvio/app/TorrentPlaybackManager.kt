@@ -31,7 +31,7 @@ internal object TorrentPlaybackManager {
             require(infoHash.matches(Regex("(?i)[0-9a-f]{40}"))) { "Invalid torrent info hash." }
             val session = engine(context.applicationContext)
             val hash = infoHash.lowercase()
-            var found = session.find(Sha1Hash(hash))
+            var found = session.find(Sha1Hash.parseHex(hash))
             if (found == null || !found.isValid) {
                 onStatus("Adding torrent and discovering peers…")
                 session.download("magnet:?xt=urn:btih:" + hash, File(context.filesDir, "torrent-streams/" + hash), org.libtorrent4j.TorrentFlags.SEQUENTIAL_DOWNLOAD)
@@ -39,7 +39,7 @@ internal object TorrentPlaybackManager {
             val deadline = System.currentTimeMillis() + 90000L
             var torrentInfo: TorrentInfo? = null
             while (System.currentTimeMillis() < deadline) {
-                found = session.find(Sha1Hash(hash))
+                found = session.find(Sha1Hash.parseHex(hash))
                 if (found != null && found.isValid) {
                     torrentInfo = runCatching { found.torrentFile() }.getOrNull()
                     if (torrentInfo != null && torrentInfo.isValid) break
