@@ -366,25 +366,29 @@ class MainActivity : ComponentActivity() {
                     })
                     }
                 }
+                val navPrefs = settingsPrefs(appearanceContext)
+                val navStyle = navPrefs.getString("navigation_style", "Adaptive") ?: "Adaptive"
+                val navGlow = navPrefs.getBoolean("navigation_glow", true)
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = if (navStyle == "Compact") 6.dp else 12.dp, vertical = if (navStyle == "Compact") 5.dp else 10.dp)
                         .background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
-                        .padding(horizontal = 5.dp, vertical = 5.dp),
+                        .padding(horizontal = 5.dp, vertical = if (navStyle == "Compact") 2.dp else 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     listOf("Home","Search","Live TV","Library","Profile").forEach { item ->
                         val selected = current == item && selectedTitle == null && detail == null
                         Column(
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(32.dp))
-                                .background(if (selected) Ink else Color.Transparent)
+                                .background(if (selected && navGlow) Accent.copy(alpha = 0.16f) else if (selected) Ink else Color.Transparent)
                                 .clickable { streamSearch = null; detail = null; selectedTitle = null; current = item }
-                                .padding(vertical = 9.dp),
+                                .padding(vertical = if (navStyle == "Compact") 5.dp else 9.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(if (navStyle == "Compact") 1.dp else 4.dp)
                         ) {
                             Text(when(item) { "Home" -> "⌂"; "Search" -> "⌕"; "Live TV" -> "⊙"; "Library" -> "▤"; else -> "●" },
-                                color = if (selected) Accent else Muted, fontSize = 21.sp, lineHeight = 23.sp)
-                            Text(item, color = if (selected) Accent else Muted, fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                                color = if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 18.sp else 21.sp, lineHeight = 23.sp)
+                            if (navStyle != "Minimal") Text(item, color = if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 9.sp else 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
                         }
                     }
                 }
@@ -396,6 +400,12 @@ class MainActivity : ComponentActivity() {
 @Composable private fun Brand() { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(12.dp)), contentAlignment=Alignment.Center) { Text("N", color=Ink, fontSize=25.sp, fontWeight=FontWeight.Black) }; Spacer(Modifier.width(10.dp)); Column { Text("NEXVIO", fontWeight=FontWeight.Black, letterSpacing=2.sp, fontSize=19.sp); Text("Movies • Series • Live TV", color=Muted, fontSize=11.sp) } } }
 @Composable private fun HomeScreen(profileId: String, onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
+    val prefs = remember(context, profileId) { settingsPrefs(context) }
+    val homeStyle = prefs.getString("home_style", "Featured") ?: "Featured"
+    val showDescriptions = prefs.getBoolean("show_descriptions", true)
+    val posterSize = prefs.getString("poster_size", "Comfortable") ?: "Comfortable"
+    val posterWidth = prefs.getFloat("poster_card_width", 126f) * when (posterSize) { "Compact" -> 0.82f; "Large" -> 1.15f; else -> 1f }
+    val posterRadius = prefs.getFloat("poster_corner_radius", 13f)
     val historyStore = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
@@ -424,7 +434,7 @@ class MainActivity : ComponentActivity() {
         }
         item {
             val featured = featuredTitles.getOrNull(if (featuredTitles.isEmpty()) 0 else featuredIndex % featuredTitles.size)
-            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { featured?.let(onTitleSelected) }) {
+            if (homeStyle != "Grid") Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(if (homeStyle == "Compact") 240.dp else 380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { featured?.let(onTitleSelected) }) {
                 if (featured?.posterPath != null) AsyncImage(model="https://image.tmdb.org/t/p/w780${featured.posterPath}",contentDescription=featured.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color(0xCC101114),RoundedCornerShape(24.dp)))
                 Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
@@ -432,8 +442,10 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(8.dp))
                     Text(featured?.title ?: "Find your next favourite",color=Color.White,fontSize=29.sp,lineHeight=34.sp,fontWeight=FontWeight.ExtraBold,maxLines=2)
                     Spacer(Modifier.height(8.dp))
-                    Text(featured?.overview?.takeIf{it.isNotBlank()} ?: "Discover trending movies, popular series and live TV.",color=Color.White.copy(alpha=.82f),fontSize=13.sp,lineHeight=19.sp,maxLines=3)
-                    Spacer(Modifier.height(15.dp))
+                    if (showDescriptions && homeStyle != "Compact") {
+                        Text(featured?.overview?.takeIf{it.isNotBlank()} ?: "Discover trending movies, popular series and live TV.",color=Color.White.copy(alpha=.82f),fontSize=13.sp,lineHeight=19.sp,maxLines=3)
+                        Spacer(Modifier.height(15.dp))
+                    }
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                         Text("▶  Explore movies",color=Color.White,fontWeight=FontWeight.Bold,modifier=Modifier.background(Accent,RoundedCornerShape(11.dp)).clickable { onOpen("Movies") }.padding(horizontal=14.dp,vertical=11.dp))
                         Text("Series",color=Color.White,fontWeight=FontWeight.Bold,modifier=Modifier.background(Panel,RoundedCornerShape(11.dp)).clickable { onOpen("Series") }.padding(horizontal=14.dp,vertical=11.dp))
@@ -442,9 +454,27 @@ class MainActivity : ComponentActivity() {
             }
         }
         item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
-        item { HomePosterRow(movies, onTitleSelected) }
+        if (homeStyle == "Grid") {
+            items(movies.chunked(2).size) { index ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    movies.chunked(2)[index].forEach { title -> HomePosterCard(title, onTitleSelected, posterWidth, posterRadius, showDescriptions, Modifier.weight(1f)) }
+                    if (movies.chunked(2)[index].size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        } else {
+            item { HomePosterRow(movies, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+        }
         item { HomeTitleRow("Popular Series","See all") { onOpen("Series") } }
-        item { HomePosterRow(series, onTitleSelected) }
+        if (homeStyle == "Grid") {
+            items(series.chunked(2).size) { index ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    series.chunked(2)[index].forEach { title -> HomePosterCard(title, onTitleSelected, posterWidth, posterRadius, showDescriptions, Modifier.weight(1f)) }
+                    if (series.chunked(2)[index].size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        } else {
+            item { HomePosterRow(series, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+        }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 HomeQuickCard("Live TV","Watch channels",Modifier.weight(1f)) { onOpen("Live TV") }
@@ -464,17 +494,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:(TmdbTitle)->Unit) {
+@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:(TmdbTitle)->Unit,posterWidth:Float=126f,posterRadius:Float=13f,showDescriptions:Boolean=true) {
     if(titles.isEmpty()) Text("Loading titles…",color=Muted,modifier=Modifier.padding(horizontal=18.dp))
     else LazyRow(contentPadding=PaddingValues(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         items(titles,key={"poster-${it.mediaType}-${it.id}"}) { title ->
-            Column(Modifier.width(126.dp).clickable { onClick(title) }) {
-                AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height(182.dp).background(Panel,RoundedCornerShape(13.dp)))
-                Spacer(Modifier.height(7.dp))
-                Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
-                Text(title.year,color=Muted,fontSize=11.sp)
-            }
+            HomePosterCard(title,onClick,posterWidth,posterRadius,showDescriptions)
         }
+    }
+}
+
+@Composable private fun HomePosterCard(title:TmdbTitle,onClick:(TmdbTitle)->Unit,posterWidth:Float,posterRadius:Float,showDescriptions:Boolean,modifier:Modifier=Modifier) {
+    Column(modifier.width(posterWidth.dp).clickable { onClick(title) }) {
+        AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height((posterWidth*1.45f).dp).clip(RoundedCornerShape(posterRadius.dp)).background(Panel,RoundedCornerShape(posterRadius.dp)))
+        Spacer(Modifier.height(7.dp))
+        Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
+        if(showDescriptions) Text(title.year,color=Muted,fontSize=11.sp)
     }
 }
 
