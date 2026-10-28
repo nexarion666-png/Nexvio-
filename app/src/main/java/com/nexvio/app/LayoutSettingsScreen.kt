@@ -45,11 +45,7 @@ private val themeColors = listOf(
 
 private val layoutPanel = Color(0xFF1B1D22)
 private val layoutMuted = Color(0xFF9A9DA6)
-private fun layoutPrefs(context: Context): SharedPreferences {
-    val profile = NexvioProfileStore.active(context)
-    val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
-    return context.getSharedPreferences(name, Context.MODE_PRIVATE)
-}
+private fun layoutPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
 
 // Preferences can survive app upgrades. Guard typed reads so an older value stored
 // with a different type cannot crash the Layout screen during composition.
@@ -103,14 +99,6 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     }
     var newCollection by remember { mutableStateOf("") }
     var amoled by remember { mutableStateOf(safeLayoutBoolean(prefs, "amoled_black", false)) }
-    var detailShowOverview by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_overview", true)) }
-    var detailShowRating by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_rating", true)) }
-    var detailShowWatchlist by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_watchlist", true)) }
-    var detailHeroHeight by remember { mutableFloatStateOf(safeLayoutFloat(prefs, "detail_hero_height", 330f)) }
-    var streamSort by remember { mutableStateOf(safeLayoutString(prefs, "stream_sort", "Quality")) }
-    var streamProviderName by remember { mutableStateOf(safeLayoutBoolean(prefs, "stream_show_provider", true)) }
-    var streamQualityBadge by remember { mutableStateOf(safeLayoutBoolean(prefs, "stream_show_quality", true)) }
-    var streamCompact by remember { mutableStateOf(safeLayoutBoolean(prefs, "stream_compact_rows", false)) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -245,7 +233,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                     Text("Glow effect", modifier = Modifier.weight(1f))
                     Switch(checked = navGlow, onCheckedChange = { navGlow = it; prefs.edit().putBoolean("navigation_glow", it).apply() })
                 }
-                Text("Navigation style and glow are applied to the main bottom navigation.", color = layoutMuted, fontSize = 12.sp)
+                Text("These preferences are saved; custom navigation rendering is not yet wired to every route.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = { navigationDialog = false }) { Text("Done") } }
         )
@@ -265,7 +253,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                     Text("Show descriptions", modifier = Modifier.weight(1f))
                     Switch(checked = showDescriptions, onCheckedChange = { showDescriptions = it; prefs.edit().putBoolean("show_descriptions", it).apply() })
                 }
-                Text("Home presentation and description visibility apply to the Home screen. Collections appear below when you add titles to them.", color = layoutMuted, fontSize = 12.sp)
+                Text("Section reordering and per-section visibility are not supported by the current Home screen.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = { homeDialog = false }) { Text("Done") } }
         )
@@ -280,17 +268,13 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(name, modifier = Modifier.weight(1f))
                         TextButton(onClick = {
-                            val updatedCollections = collectionNames - name
-                            collectionNames = updatedCollections
-                            prefs.edit()
-                                .putString("layout_collections", JSONArray(updatedCollections).toString())
-                                .remove("layout_collection_items_$name")
-                                .apply()
+                            collectionNames = collectionNames - name
+                            prefs.edit().putString("layout_collections", JSONArray(collectionNames).toString()).apply()
                         }) { Text("Remove") }
                     }
                 }
                 OutlinedTextField(value = newCollection, onValueChange = { newCollection = it }, label = { Text("New collection name") }, singleLine = true)
-                Text("Create a collection here, then open a movie or series detail page and add that title to the collection. Collections sync with this profile's settings.", color = layoutMuted, fontSize = 12.sp)
+                Text("Collections are stored locally. Catalog assignment and Home folder rendering are not available in this build yet.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = {
                 val name = newCollection.trim()
@@ -311,7 +295,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
             text = { Column {
                 Row(verticalAlignment = Alignment.CenterVertically) { Text("Show section", modifier = Modifier.weight(1f)); Switch(checked = continueEnabled, onCheckedChange = { continueEnabled = it; prefs.edit().putBoolean("continue_watching_enabled", it).apply() }) }
                 Row(verticalAlignment = Alignment.CenterVertically) { Text("Include completed titles", modifier = Modifier.weight(1f)); Switch(checked = continueCompleted, onCheckedChange = { continueCompleted = it; prefs.edit().putBoolean("continue_watching_completed", it).apply() }) }
-                Text("These filters are applied to the Home Continue Watching section.", color = layoutMuted, fontSize = 12.sp)
+                Text("Continue Watching reads the existing watch-history store; these display filters are saved but not yet applied to Home.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = { continueDialog = false }) { Text("Done") } }
         )
@@ -325,56 +309,16 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                 Slider(value = posterWidth, onValueChange = { posterWidth = it; prefs.edit().putFloat("poster_card_width", it).apply() }, valueRange = 90f..180f)
                 Text("Corner radius: ${posterRadius.toInt()} dp")
                 Slider(value = posterRadius, onValueChange = { posterRadius = it; prefs.edit().putFloat("poster_corner_radius", it).apply() }, valueRange = 0f..28f)
-                Text("These values control poster width and corner radius on Home and catalogue cards.", color = layoutMuted, fontSize = 12.sp)
+                Text("Values are saved; existing poster components still use their current dimensions until wired to these preferences.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = { posterDialog = false }) { Text("Done") } }
         )
     }
     if (streamsDialog) {
-        AlertDialog(
-            onDismissRequest = { streamsDialog = false },
-            title = { Text("Streams") },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Sort stream results", fontWeight = FontWeight.SemiBold)
-                listOf("Quality", "Provider", "Title").forEach { value ->
-                    Row(Modifier.fillMaxWidth().clickable { streamSort = value; prefs.edit().putString("stream_sort", value).apply() }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = streamSort == value, onClick = { streamSort = value; prefs.edit().putString("stream_sort", value).apply() })
-                        Text(value)
-                    }
-                }
-                LayoutDivider()
-                LayoutToggleRow("Show provider name", "Display the add-on/provider label on each result.", streamProviderName) {
-                    streamProviderName = it; prefs.edit().putBoolean("stream_show_provider", it).apply()
-                }
-                LayoutToggleRow("Show quality badge", "Display the detected quality beside each stream.", streamQualityBadge) {
-                    streamQualityBadge = it; prefs.edit().putBoolean("stream_show_quality", it).apply()
-                }
-                LayoutToggleRow("Compact result rows", "Reduce vertical spacing in stream results.", streamCompact) {
-                    streamCompact = it; prefs.edit().putBoolean("stream_compact_rows", it).apply()
-                }
-            } },
-            confirmButton = { TextButton(onClick = { streamsDialog = false }) { Text("Done") } }
-        )
+        AlertDialog(onDismissRequest = { streamsDialog = false }, title = { Text("Streams") }, text = { Text("Stream selection is currently handled by Nexvio's existing provider result flow. Advanced badge URL and result-display overrides are not exposed by this build, so stream-search behavior remains unchanged.") }, confirmButton = { TextButton(onClick = { streamsDialog = false }) { Text("Done") } })
     }
     if (detailDialog) {
-        AlertDialog(
-            onDismissRequest = { detailDialog = false },
-            title = { Text("Detail Page") },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LayoutToggleRow("Show overview", "Show the title description.", detailShowOverview) {
-                    detailShowOverview = it; prefs.edit().putBoolean("detail_show_overview", it).apply()
-                }
-                LayoutToggleRow("Show rating", "Show the rating and release year metadata.", detailShowRating) {
-                    detailShowRating = it; prefs.edit().putBoolean("detail_show_rating", it).apply()
-                }
-                LayoutToggleRow("Show watchlist button", "Allow adding/removing titles from your watchlist.", detailShowWatchlist) {
-                    detailShowWatchlist = it; prefs.edit().putBoolean("detail_show_watchlist", it).apply()
-                }
-                Text("Hero image height: ${detailHeroHeight.toInt()} dp")
-                Slider(value = detailHeroHeight, onValueChange = { detailHeroHeight = it; prefs.edit().putFloat("detail_hero_height", it).apply() }, valueRange = 180f..440f)
-            } },
-            confirmButton = { TextButton(onClick = { detailDialog = false }) { Text("Done") } }
-        )
+        AlertDialog(onDismissRequest = { detailDialog = false }, title = { Text("Detail Page") }, text = { Text("Nexvio currently uses the existing title detail layout. No additional detail-page preferences are defined in the current implementation.") }, confirmButton = { TextButton(onClick = { detailDialog = false }) { Text("Done") } })
     }
 }
 
