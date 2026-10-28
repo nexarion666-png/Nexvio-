@@ -38,6 +38,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val ProfileBg = Color(0xFF090D12)
 private val ProfileCard = Color(0xFF171D23)
@@ -172,6 +175,8 @@ internal fun ProfileSystemScreen(
     var editor by remember { mutableStateOf<NexvioProfile?>(null) }
     var creating by remember { mutableStateOf(profiles.isEmpty() && requireSelection) }
     var deleteTarget by remember { mutableStateOf<NexvioProfile?>(null) }
+    var deletionStatus by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     fun refresh() { profiles = NexvioProfileStore.all(context); activeId = NexvioProfileStore.activeId(context) }
 
@@ -265,6 +270,7 @@ internal fun ProfileSystemScreen(
                         }
                     }
                 }
+                deletionStatus?.let { Text(it, color = ProfileMuted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) }
                 Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     if (managing) {
                         OutlinedButton(onClick = { managing = false; refresh() }, shape = RoundedCornerShape(50), colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileGreen)) { Text("Done") }
@@ -282,11 +288,33 @@ internal fun ProfileSystemScreen(
     if (deleteTarget != null) AlertDialog(
         onDismissRequest = { deleteTarget = null },
         title = { Text("Delete ${deleteTarget!!.name}?") },
-        text = { Text(if (deleteTarget!!.isPrimary) "This will delete the primary profile. Another profile will automatically become the primary profile. This action cannot be undone." else "This profile will be removed from this device. This action cannot be undone.") },
+        text = { Text(
+            (if (deleteTarget!!.isPrimary) "Another remaining profile will automatically become primary. " else "") +
+                (if (hasNexvioAccountSession(context)) "This profile will be permanently deleted from your Nexvio account and removed across devices after sync. " else "This profile will be permanently deleted from this device. ") +
+                "This action cannot be undone."
+        ) },
         confirmButton = { TextButton(onClick = {
-            runCatching { NexvioProfileStore.delete(context, deleteTarget!!.id) }
+            val targetId = deleteTarget!!.id
+            val result = runCatching { NexvioProfileStore.delete(context, targetId) }
             deleteTarget = null
             refresh()
+            if (result.isFailure) {
+                deletionStatus = result.exceptionOrNull()?.message ?: "Could not delete this profile."
+            } else if (hasNexvioAccountSession(context)) {
+                deletionStatus = "Deleting profile across your devices…"
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) { syncNexvioAccount(context) }
+                        deletionStatus = "Profile deletion synced across your Nexvio account."
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        deletionStatus = "Deleted locally. Cloud sync will retry when a connection is available."
+                    }
+                }
+            } else {
+                deletionStatus = "Profile deleted from this device."
+            }
         }) { Text("Delete", color = Color(0xFFFF7777)) } },
         dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
     )
