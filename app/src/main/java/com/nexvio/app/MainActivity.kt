@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.content.Context
 import android.content.ContextWrapper
@@ -27,6 +28,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -836,6 +838,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
     // Landscape is fullscreen by default. Back exits fullscreen first; rotating again
     // clears the temporary override so orientation-driven fullscreen works normally.
     LaunchedEffect(configuration.orientation) { fullscreenOverride = null }
+    // Start every video in landscape and return the app to portrait when the player closes.
+    DisposableEffect(activity) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
     LaunchedEffect(fullscreen, activity) {
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -1055,6 +1064,27 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                     }
                                 }
                             )
+                        }.pointerInput(player, activity, audioManager) {
+                            detectVerticalDragGestures { change, dragAmount ->
+                                if (screenLocked || kotlin.math.abs(dragAmount) < 0.5f) return@detectVerticalDragGestures
+                                val width = size.width.toFloat().coerceAtLeast(1f)
+                                val x = change.position.x
+                                if (x < width / 2f) {
+                                    val window = activity?.window
+                                    if (window != null) {
+                                        val current = window.attributes.screenBrightness.takeIf { it >= 0f } ?: brightnessLevel
+                                        brightnessLevel = (current - dragAmount / 900f).coerceIn(0.05f, 1f)
+                                        window.attributes = window.attributes.apply { screenBrightness = brightnessLevel }
+                                    }
+                                } else {
+                                    val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                                    val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                    val step = if (kotlin.math.abs(dragAmount) >= 1f) kotlin.math.ceil(kotlin.math.abs(dragAmount) / 24f).toInt().coerceAtLeast(1) else 1
+                                    val newVolume = if (dragAmount < 0f) (currentVolume + step).coerceAtMost(maxVolume) else (currentVolume - step).coerceAtLeast(0)
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+                                }
+                                change.consume()
+                            }
                         }
                 )
             }
@@ -1239,33 +1269,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         }
                     }
 
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 15.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        PlayerFloatingIconButton(Icons.Filled.Lock, "Lock screen", {
-                            screenLocked = true
-                            controlsVisible = false
-                        })
-                        PlayerFloatingIconButton(if (muted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, if (muted) "Unmute" else "Mute", {
-                            muted = !muted
-                            revealControls()
-                        })
-                        PlayerFloatingIconButton(Icons.Filled.Headphones, "Audio tracks", {
-                            openTrackDialog(C.TRACK_TYPE_AUDIO, "Audio tracks")
-                        })
-                        PlayerFloatingButton("${playbackSpeed}×", {
-                            cyclePlaybackSpeed()
-                        }, description = "Playback speed", fontSize = 15)
-                        PlayerFloatingIconButton(Icons.Filled.SkipNext, "Next item", {
-                            val active = player
-                            if (active != null && active.hasNextMediaItem()) active.seekToNextMediaItem()
-                            else showPlayerMessage("There is no next item in this stream.")
-                            revealControls()
-                        })
-                    }
-                }
+                                    }
 
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
@@ -1318,60 +1322,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         }
                     }
 
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        PlayerIconButton(Icons.Filled.Lock, "Lock controls", {
-                            screenLocked = true
-                            controlsVisible = false
-                        }, size = 22)
-                        PlayerIconButton(Icons.Filled.Replay10, "Rewind 10 seconds", {
-                            player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() }
-                            revealControls()
-                        }, size = 28, enabled = player?.isCurrentMediaItemSeekable == true)
-                        PlayerIconButton(Icons.Filled.SkipPrevious, "Previous item", {
-                            player?.let { active -> if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem() }
-                            revealControls()
-                        }, size = 26, enabled = player?.hasPreviousMediaItem() == true)
-                        Box(
-                            Modifier.size(50.dp).border(1.dp, Color.White.copy(alpha = 0.92f), CircleShape)
-                                .clickable {
-                                    player?.let { active ->
-                                        if (active.isPlaying) active.pause()
-                                        else {
-                                            playbackError = null
-                                            playbackDetails = null
-                                            shouldResumePlayback = true
-                                            active.play()
-                                        }
-                                    } ?: run {
-                                        playbackError = null
-                                        shouldResumePlayback = true
-                                        retry++
-                                    }
-                                    revealControls()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(28.dp))
-                        }
-                        PlayerIconButton(Icons.Filled.SkipNext, "Next item", {
-                            player?.let { active -> if (active.hasNextMediaItem()) active.seekToNextMediaItem() }
-                            revealControls()
-                        }, size = 26, enabled = player?.hasNextMediaItem() == true)
-                        PlayerIconButton(Icons.Filled.Forward10, "Forward 10 seconds", {
-                            player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() }
-                            revealControls()
-                        }, size = 28, enabled = player?.isCurrentMediaItemSeekable == true)
-                        PlayerOverlayButton("Speed", { cyclePlaybackSpeed() }, fontSize = 12)
-                        PlayerIconButton(if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, if (fullscreen) "Exit fullscreen" else "Enter fullscreen", {
-                            fullscreenOverride = !fullscreen
-                            revealControls()
-                        }, size = 25)
-                    }
-                        }
+                                            }
                     }
                 }
             }
