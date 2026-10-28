@@ -91,6 +91,11 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     var posterRadius by remember { mutableFloatStateOf(safeLayoutFloat(prefs, "poster_corner_radius", 13f)) }
     var continueEnabled by remember { mutableStateOf(safeLayoutBoolean(prefs, "continue_watching_enabled", true)) }
     var continueCompleted by remember { mutableStateOf(safeLayoutBoolean(prefs, "continue_watching_completed", false)) }
+    var detailShowPoster by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_poster", true)) }
+    var detailShowMetadata by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_metadata", true)) }
+    var detailShowOverview by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_overview", true)) }
+    var detailShowWatchlist by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_watchlist", true)) }
+    var detailShowEpisodes by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_episodes", true)) }
     var collectionNames by remember {
         mutableStateOf(runCatching {
             val array = JSONArray(safeLayoutString(prefs, "layout_collections", "[]"))
@@ -325,7 +330,36 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
         AlertDialog(onDismissRequest = { streamsDialog = false }, title = { Text("Streams") }, text = { Text("Stream selection is currently handled by Nexvio's existing provider result flow. Advanced badge URL and result-display overrides are not exposed by this build, so stream-search behavior remains unchanged.") }, confirmButton = { TextButton(onClick = { streamsDialog = false }) { Text("Done") } })
     }
     if (detailDialog) {
-        AlertDialog(onDismissRequest = { detailDialog = false }, title = { Text("Detail Page") }, text = { Text("Nexvio currently uses the existing title detail layout. No additional detail-page preferences are defined in the current implementation.") }, confirmButton = { TextButton(onClick = { detailDialog = false }) { Text("Done") } })
+        AlertDialog(
+            onDismissRequest = { detailDialog = false },
+            title = { Text("Detail Page") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show poster artwork", modifier = Modifier.weight(1f))
+                        Switch(checked = detailShowPoster, onCheckedChange = { detailShowPoster = it; prefs.edit().putBoolean("detail_show_poster", it).apply() })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show year and rating", modifier = Modifier.weight(1f))
+                        Switch(checked = detailShowMetadata, onCheckedChange = { detailShowMetadata = it; prefs.edit().putBoolean("detail_show_metadata", it).apply() })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show overview", modifier = Modifier.weight(1f))
+                        Switch(checked = detailShowOverview, onCheckedChange = { detailShowOverview = it; prefs.edit().putBoolean("detail_show_overview", it).apply() })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show watchlist button", modifier = Modifier.weight(1f))
+                        Switch(checked = detailShowWatchlist, onCheckedChange = { detailShowWatchlist = it; prefs.edit().putBoolean("detail_show_watchlist", it).apply() })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show season and episode picker", modifier = Modifier.weight(1f))
+                        Switch(checked = detailShowEpisodes, onCheckedChange = { detailShowEpisodes = it; prefs.edit().putBoolean("detail_show_episodes", it).apply() })
+                    }
+                    Text("These options change the movie and series detail page. Stream discovery remains available.", color = layoutMuted, fontSize = 12.sp)
+                }
+            },
+            confirmButton = { TextButton(onClick = { detailDialog = false }) { Text("Done") } }
+        )
     }
 }
 
