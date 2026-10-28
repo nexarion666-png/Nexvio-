@@ -233,7 +233,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                     Text("Glow effect", modifier = Modifier.weight(1f))
                     Switch(checked = navGlow, onCheckedChange = { navGlow = it; prefs.edit().putBoolean("navigation_glow", it).apply() })
                 }
-                Text("These preferences are saved; custom navigation rendering is not yet wired to every route.", color = layoutMuted, fontSize = 12.sp)
+                Text("Adaptive uses the standard bar, Compact reduces its height, and Minimal hides labels. Glow highlights the selected destination.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = { navigationDialog = false }) { Text("Done") } }
         )
@@ -249,11 +249,18 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                         RadioButton(selected = homeStyle == value, onClick = { homeStyle = value; prefs.edit().putString("home_style", value).apply() }); Text(value)
                     }
                 }
+                Text("Poster size", fontWeight = FontWeight.SemiBold)
+                listOf("Compact", "Comfortable", "Large").forEach { value ->
+                    Row(Modifier.fillMaxWidth().clickable { posterSize = value; prefs.edit().putString("poster_size", value).apply() }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = posterSize == value, onClick = { posterSize = value; prefs.edit().putString("poster_size", value).apply() })
+                        Spacer(Modifier.width(8.dp)); Text(value)
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Show descriptions", modifier = Modifier.weight(1f))
                     Switch(checked = showDescriptions, onCheckedChange = { showDescriptions = it; prefs.edit().putBoolean("show_descriptions", it).apply() })
                 }
-                Text("Section reordering and per-section visibility are not supported by the current Home screen.", color = layoutMuted, fontSize = 12.sp)
+                Text("Featured shows the hero banner, Grid uses two columns, and Compact reduces the hero height.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = { homeDialog = false }) { Text("Done") } }
         )
@@ -309,7 +316,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                 Slider(value = posterWidth, onValueChange = { posterWidth = it; prefs.edit().putFloat("poster_card_width", it).apply() }, valueRange = 90f..180f)
                 Text("Corner radius: ${posterRadius.toInt()} dp")
                 Slider(value = posterRadius, onValueChange = { posterRadius = it; prefs.edit().putFloat("poster_corner_radius", it).apply() }, valueRange = 0f..28f)
-                Text("Values are saved; existing poster components still use their current dimensions until wired to these preferences.", color = layoutMuted, fontSize = 12.sp)
+                Text("Poster width and corner radius apply to Home poster cards.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = { posterDialog = false }) { Text("Done") } }
         )
