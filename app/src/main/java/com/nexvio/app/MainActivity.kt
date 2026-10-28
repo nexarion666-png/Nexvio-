@@ -401,6 +401,18 @@ class MainActivity : ComponentActivity() {
 @Composable private fun HomeScreen(profileId: String, onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
     val prefs = remember(context, profileId) { settingsPrefs(context) }
+    val collectionPrefs = remember(context) { context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE) }
+    var collectionRevision by remember(collectionPrefs) { mutableIntStateOf(0) }
+    DisposableEffect(collectionPrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "layout_collections" || key == "layout_collection_items") collectionRevision++
+        }
+        collectionPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { collectionPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val customCollections = remember(collectionPrefs, collectionRevision) {
+        CustomCollectionStore.names(context).map { name -> name to CustomCollectionStore.titles(context, name) }.filter { it.second.isNotEmpty() }
+    }
     var posterSettingsRevision by remember(prefs) { mutableIntStateOf(0) }
     DisposableEffect(prefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -486,6 +498,21 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             item { HomePosterRow(series, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+        }
+        customCollections.forEach { (collectionName, collectionTitles) ->
+            item { HomeTitleRow(collectionName, "Edit") { onDetail("Layout") } }
+            if (homeStyle == "Grid") {
+                items(collectionTitles.chunked(2).size) { index ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        collectionTitles.chunked(2)[index].forEach { title ->
+                            HomePosterCard(title, onTitleSelected, posterWidth, posterRadius, showDescriptions, Modifier.weight(1f), fillCell = true)
+                        }
+                        if (collectionTitles.chunked(2)[index].size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            } else {
+                item { HomePosterRow(collectionTitles, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+            }
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
