@@ -297,7 +297,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.weight(1f)) {
                     if (streamSearch != null) {
                         val request = streamSearch!!
-                        StreamSearchPage(item = request.first, seasonNumber = request.second, episodeNumber = request.third, onBack = { streamSearch = null }, onPlay = { playing = it })
+                        StreamSearchPage(item = request.first, seasonNumber = request.second, episodeNumber = request.third, onBack = { streamSearch = null }, onPlay = { playing = it }, profileId = activeProfileId)
                     } else if (selectedTitle != null) {
                         TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it }, onFindStreams = { item, season, episode -> streamSearch = Triple(item, season, episode) }, profileId = activeProfileId)
                     } else if (detail == "Content providers") {
