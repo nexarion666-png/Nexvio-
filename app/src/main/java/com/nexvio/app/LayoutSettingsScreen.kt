@@ -280,8 +280,12 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(name, modifier = Modifier.weight(1f))
                         TextButton(onClick = {
-                            collectionNames = collectionNames - name
-                            prefs.edit().putString("layout_collections", JSONArray(collectionNames).toString()).apply()
+                            val updatedCollections = collectionNames - name
+                            collectionNames = updatedCollections
+                            prefs.edit()
+                                .putString("layout_collections", JSONArray(updatedCollections).toString())
+                                .remove("layout_collection_items_$name")
+                                .apply()
                         }) { Text("Remove") }
                     }
                 }
