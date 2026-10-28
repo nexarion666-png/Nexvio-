@@ -614,7 +614,18 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                                     android.util.Log.w("NexvioStreams", "$addonName returned HTTP $code")
                                     return@async
                                 }
-                                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                                val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
+                                val trimmedBody = responseBody.trimStart()
+                                if (trimmedBody.startsWith("<!DOCTYPE", ignoreCase = true) || trimmedBody.startsWith("<html", ignoreCase = true)) {
+                                    onProviderStatus(addonName, "Failed — server returned HTML, not stream JSON")
+                                    android.util.Log.w("NexvioStreams", "$addonName returned HTML instead of a Stremio stream response")
+                                    return@async
+                                }
+                                val json = try { JSONObject(responseBody) } catch (_: Exception) {
+                                    onProviderStatus(addonName, "Failed — invalid JSON response")
+                                    android.util.Log.w("NexvioStreams", "$addonName returned invalid JSON")
+                                    return@async
+                                }
                                 val streams = json.optJSONArray("streams") ?: run {
                                     onProviderStatus(addonName, "Failed — response has no streams array")
                                     android.util.Log.w("NexvioStreams", "$addonName response has no streams array")
