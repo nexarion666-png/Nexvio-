@@ -123,15 +123,6 @@ internal object TorrentPlaybackManager {
             val firstPiece = (absoluteStart / pieceSize).toInt()
             val lastPiece = (absoluteEnd / pieceSize).toInt()
             val output = client.getOutputStream()
-            val response = if (rangeHeader == null) "200 OK" else "206 Partial Content"
-            val headers = StringBuilder()
-                .append("HTTP/1.1 ").append(response).append("\r\n")
-                .append("Content-Type: video/mp4\r\nAccept-Ranges: bytes\r\n")
-                .append("Content-Length: ").append(end - start + 1).append("\r\n")
-                .also { if (rangeHeader != null) it.append("Content-Range: bytes ").append(start).append("-").append(end).append("/").append(length).append("\r\n") }
-                .append("Connection: close\r\n\r\n").toString()
-            output.write(headers.toByteArray(Charsets.ISO_8859_1))
-            output.flush()
             for (piece in firstPiece..lastPiece) if (!torrent.havePiece(piece)) {
                 runCatching { torrent.setPieceDeadline(piece, (piece - firstPiece) * 100) }
             }
@@ -146,6 +137,15 @@ internal object TorrentPlaybackManager {
                 runCatching { output.write("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n".toByteArray()) }
                 return
             }
+            val response = if (rangeHeader == null) "200 OK" else "206 Partial Content"
+            val headers = StringBuilder()
+                .append("HTTP/1.1 ").append(response).append("\r\n")
+                .append("Content-Type: video/mp4\r\nAccept-Ranges: bytes\r\n")
+                .append("Content-Length: ").append(end - start + 1).append("\r\n")
+                .also { if (rangeHeader != null) it.append("Content-Range: bytes ").append(start).append("-").append(end).append("/").append(length).append("\r\n") }
+                .append("Connection: close\r\n\r\n").toString()
+            output.write(headers.toByteArray(Charsets.ISO_8859_1))
+            output.flush()
             RandomAccessFile(file, "r").use { raf ->
                 raf.seek(start)
                 var remaining = end - start + 1
