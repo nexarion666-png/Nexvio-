@@ -193,6 +193,24 @@ class MainActivity : ComponentActivity() {
     var streamSearch by remember { mutableStateOf<Triple<TmdbTitle, Int, Int>?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
 
+    // If another device permanently deletes the active profile, switch this device to a
+    // remaining profile as soon as the background account sync has removed it locally.
+    LaunchedEffect(appearanceContext, activeProfileId) {
+        while (true) {
+            delay(2500)
+            val profiles = NexvioProfileStore.all(appearanceContext)
+            if (profiles.isNotEmpty() && profiles.none { it.id == activeProfileId }) {
+                val next = profiles.firstOrNull { it.id == NexvioProfileStore.activeId(appearanceContext) } ?: profiles.first()
+                NexvioProfileStore.setActive(appearanceContext, next.id)
+                activeProfileId = next.id
+                current = "Home"
+                detail = null
+                selectedTitle = null
+                streamSearch = null
+            }
+        }
+    }
+
     // Handle Back in screen order so it returns to the previous screen instead of closing the app.
     BackHandler(enabled = showingWelcome || profileGate || showingProfilePicker || playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
         when {
@@ -279,7 +297,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.weight(1f)) {
                     if (streamSearch != null) {
                         val request = streamSearch!!
-                        StreamSearchPage(item = request.first, seasonNumber = request.second, episodeNumber = request.third, onBack = { streamSearch = null }, onPlay = { playing = it })
+                        StreamSearchPage(item = request.first, seasonNumber = request.second, episodeNumber = request.third, onBack = { streamSearch = null }, onPlay = { playing = it }, profileId = activeProfileId)
                     } else if (selectedTitle != null) {
                         TitleDetailPage(item = selectedTitle!!, onBack = { selectedTitle = null }, onPlay = { playing = it }, onFindStreams = { item, season, episode -> streamSearch = Triple(item, season, episode) }, profileId = activeProfileId)
                     } else if (detail == "Content providers") {
@@ -348,25 +366,28 @@ class MainActivity : ComponentActivity() {
                     })
                     }
                 }
+                val navPrefs = settingsPrefs(appearanceContext)
+                val navStyle = navPrefs.getString("navigation_style", "Adaptive") ?: "Adaptive"
+                val navGlow = navPrefs.getBoolean("navigation_glow", true)
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = if (navStyle == "Compact") 6.dp else 12.dp, vertical = if (navStyle == "Compact") 5.dp else 10.dp)
                         .background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
-                        .padding(horizontal = 5.dp, vertical = 5.dp),
+                        .padding(horizontal = 5.dp, vertical = if (navStyle == "Compact") 2.dp else 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     listOf("Home","Search","Live TV","Library","Profile").forEach { item ->
                         val selected = current == item && selectedTitle == null && detail == null
                         Column(
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(32.dp))
-                                .background(if (selected) Ink else Color.Transparent)
+                                .background(if (selected && navGlow) Accent.copy(alpha = 0.16f) else if (selected) Ink else Color.Transparent)
                                 .clickable { streamSearch = null; detail = null; selectedTitle = null; current = item }
-                                .padding(vertical = 9.dp),
+                                .padding(vertical = if (navStyle == "Compact") 5.dp else 9.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(if (navStyle == "Compact") 1.dp else 4.dp)
                         ) {
                             Text(when(item) { "Home" -> "⌂"; "Search" -> "⌕"; "Live TV" -> "⊙"; "Library" -> "▤"; else -> "●" },
-                                color = if (selected) Accent else Muted, fontSize = 21.sp, lineHeight = 23.sp)
-                            Text(item, color = if (selected) Accent else Muted, fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                                color = if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 18.sp else 21.sp, lineHeight = 23.sp)
+                            if (navStyle != "Minimal") Text(item, color = if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 9.sp else 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
                         }
                     }
                 }
@@ -379,12 +400,33 @@ class MainActivity : ComponentActivity() {
 @Composable private fun HomeScreen(profileId: String, onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
     val historyStore = remember(context, profileId) { WatchHistoryStore(context, profileId) }
+    val prefs = remember(context, profileId) { settingsPrefs(context) }
+    val homeStyle = prefs.getString("home_style", "Featured") ?: "Featured"
+    val showDescriptions = prefs.getBoolean("show_descriptions", true)
+    val basePosterWidth = when (prefs.getString("poster_size", "Comfortable")) {
+        "Compact" -> prefs.getFloat("poster_card_width", 126f) * 0.82f
+        "Large" -> prefs.getFloat("poster_card_width", 126f) * 1.15f
+        else -> prefs.getFloat("poster_card_width", 126f)
+    }
+    val posterWidth = (if (homeStyle == "Compact") basePosterWidth * 0.82f else basePosterWidth).coerceIn(90f, 180f)
+    val posterRadius = prefs.getFloat("poster_corner_radius", 13f).coerceIn(0f, 28f)
+    val continueEnabled = prefs.getBoolean("continue_watching_enabled", true)
+    val includeCompleted = prefs.getBoolean("continue_watching_completed", false)
+    val collections = remember(context, profileId) {
+        runCatching {
+            val array = org.json.JSONArray(prefs.getString("layout_collections", "[]") ?: "[]")
+            (0 until array.length()).map { array.getString(it) }.filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+    val collectionTitlesByName = remember(context, profileId, collections) {
+        collections.associateWith { name -> loadCollectionTitles(context, profileId, name) }
+    }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var featuredIndex by remember { mutableIntStateOf(0) }
     val featuredTitles = remember(movies, series) { (movies + series).distinctBy { it.mediaType + "-" + it.id } }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(profileId) {
         while (true) { watchEntries = historyStore.all(); delay(1500) }
     }
     LaunchedEffect(Unit) {
@@ -404,17 +446,19 @@ class MainActivity : ComponentActivity() {
                 Brand()
             }
         }
-        item {
+        if (homeStyle == "Featured") item {
             val featured = featuredTitles.getOrNull(if (featuredTitles.isEmpty()) 0 else featuredIndex % featuredTitles.size)
-            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { featured?.let(onTitleSelected) }) {
+            Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(380.dp).clip(RoundedCornerShape(24.dp)).background(Panel).clickable { featured?.let(onTitleSelected) }) {
                 if (featured?.posterPath != null) AsyncImage(model="https://image.tmdb.org/t/p/w780${featured.posterPath}",contentDescription=featured.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color(0xCC101114),RoundedCornerShape(24.dp)))
                 Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
                     Text("FEATURED TODAY",color=Accent,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
                     Spacer(Modifier.height(8.dp))
                     Text(featured?.title ?: "Find your next favourite",color=Color.White,fontSize=29.sp,lineHeight=34.sp,fontWeight=FontWeight.ExtraBold,maxLines=2)
-                    Spacer(Modifier.height(8.dp))
-                    Text(featured?.overview?.takeIf{it.isNotBlank()} ?: "Discover trending movies, popular series and live TV.",color=Color.White.copy(alpha=.82f),fontSize=13.sp,lineHeight=19.sp,maxLines=3)
+                    if (showDescriptions) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(featured?.overview?.takeIf{it.isNotBlank()} ?: "Discover trending movies, popular series and live TV.",color=Color.White.copy(alpha=.82f),fontSize=13.sp,lineHeight=19.sp,maxLines=3)
+                    }
                     Spacer(Modifier.height(15.dp))
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                         Text("▶  Explore movies",color=Color.White,fontWeight=FontWeight.Bold,modifier=Modifier.background(Accent,RoundedCornerShape(11.dp)).clickable { onOpen("Movies") }.padding(horizontal=14.dp,vertical=11.dp))
@@ -423,19 +467,65 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
-        item { HomePosterRow(movies, onTitleSelected) }
-        item { HomeTitleRow("Popular Series","See all") { onOpen("Series") } }
-        item { HomePosterRow(series, onTitleSelected) }
+        if (homeStyle == "Grid") {
+            item {
+                HomeTitleRow("Movies", "See all") { onOpen("Movies") }
+                HomePosterGrid(movies, onTitleSelected, posterRadius, showDescriptions)
+            }
+            item {
+                HomeTitleRow("Series", "See all") { onOpen("Series") }
+                HomePosterGrid(series, onTitleSelected, posterRadius, showDescriptions)
+            }
+        } else {
+            item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
+            item { HomePosterRow(movies, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+            item { HomeTitleRow("Popular Series","See all") { onOpen("Series") } }
+            item { HomePosterRow(series, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+        }
+        collections.forEach { collectionName ->
+            val collectionTitles = collectionTitlesByName[collectionName].orEmpty()
+            item {
+                HomeTitleRow(collectionName, "Edit") { onDetail("Layout") }
+            }
+            item {
+                if (collectionTitles.isEmpty()) {
+                    Text("Open a title and use Add to collection to put items here.", color=Muted, fontSize=12.sp, modifier=Modifier.padding(horizontal=18.dp))
+                } else {
+                    HomePosterRow(collectionTitles, onTitleSelected, posterWidth, posterRadius, showDescriptions)
+                }
+            }
+        }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 HomeQuickCard("Live TV","Watch channels",Modifier.weight(1f)) { onOpen("Live TV") }
                 HomeQuickCard("My Library","Your downloads",Modifier.weight(1f)) { onDetail("Downloads") }
             }
         }
-        item { Column(Modifier.padding(horizontal=18.dp)) { WatchHistorySection("Continue watching",watchEntries.filter{it.positionMs>0L&&!it.completed}.take(5),onPlay,onSeeAll={onDetail("Watch history")}) } }
+        if (continueEnabled) item {
+            val continuing = watchEntries.filter { it.positionMs > 0L && (includeCompleted || !it.completed) }.take(5)
+            if (continuing.isNotEmpty()) Column(Modifier.padding(horizontal=18.dp)) {
+                WatchHistorySection("Continue watching", continuing, onPlay, onSeeAll={onDetail("Watch history")})
+            }
+        }
         item { Column(Modifier.padding(horizontal=18.dp)) { WatchHistorySection("Recently watched",watchEntries.take(5),onPlay,onSeeAll={onDetail("Watch history")}) } }
     }
+}
+
+private fun loadCollectionTitles(context: Context, profileId: String, collectionName: String): List<TmdbTitle> {
+    val profile = NexvioProfileStore.find(context, profileId) ?: NexvioProfileStore.active(context)
+    val prefsName = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
+    val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    return runCatching {
+        val array = org.json.JSONArray(prefs.getString("layout_collection_items_$collectionName", "[]") ?: "[]")
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            TmdbTitle(
+                item.optInt("id"), item.optString("title"), item.optString("overview"),
+                item.optString("posterPath").takeIf { it.isNotBlank() && it != "null" },
+                item.optString("year"), item.optDouble("rating"), item.optString("mediaType", "movie")
+            )
+        }
+    }.getOrDefault(emptyList())
 }
 
 @Composable private fun HomeTitleRow(title:String,action:String,onClick:()->Unit) {
@@ -446,15 +536,55 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun HomePosterRow(titles:List<TmdbTitle>,onClick:(TmdbTitle)->Unit) {
-    if(titles.isEmpty()) Text("Loading titles…",color=Muted,modifier=Modifier.padding(horizontal=18.dp))
-    else LazyRow(contentPadding=PaddingValues(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-        items(titles,key={"poster-${it.mediaType}-${it.id}"}) { title ->
-            Column(Modifier.width(126.dp).clickable { onClick(title) }) {
-                AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height(182.dp).background(Panel,RoundedCornerShape(13.dp)))
+@Composable private fun HomePosterRow(
+    titles: List<TmdbTitle>,
+    onClick: (TmdbTitle) -> Unit,
+    posterWidth: Float = 126f,
+    posterRadius: Float = 13f,
+    showDescriptions: Boolean = true
+) {
+    if (titles.isEmpty()) Text("Loading titles…", color = Muted, modifier = Modifier.padding(horizontal = 18.dp))
+    else LazyRow(contentPadding = PaddingValues(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(titles, key = { "poster-${it.mediaType}-${it.id}" }) { title ->
+            Column(Modifier.width(posterWidth.dp).clickable { onClick(title) }) {
+                AsyncImage(
+                    model = title.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                    contentDescription = title.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height((posterWidth * 1.44f).dp)
+                        .clip(RoundedCornerShape(posterRadius.dp)).background(Panel)
+                )
                 Spacer(Modifier.height(7.dp))
-                Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
-                Text(title.year,color=Muted,fontSize=11.sp)
+                Text(title.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                if (showDescriptions) Text(title.year, color = Muted, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomePosterGrid(titles: List<TmdbTitle>, onClick: (TmdbTitle) -> Unit, posterRadius: Float, showDescriptions: Boolean) {
+    if (titles.isEmpty()) {
+        Text("Loading titles…", color = Muted, modifier = Modifier.padding(horizontal = 18.dp))
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        titles.chunked(2).forEach { rowTitles ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                rowTitles.forEach { title ->
+                    Column(Modifier.weight(1f).clickable { onClick(title) }) {
+                        AsyncImage(
+                            model = title.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                            contentDescription = title.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(235.dp).clip(RoundedCornerShape(posterRadius.dp)).background(Panel)
+                        )
+                        Spacer(Modifier.height(7.dp))
+                        Text(title.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                        if (showDescriptions) Text(title.year, color = Muted, fontSize = 11.sp)
+                    }
+                }
+                if (rowTitles.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }

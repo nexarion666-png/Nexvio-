@@ -23,6 +23,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -122,6 +123,11 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
 
 @Composable
 internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit, onTitleSelected: (TmdbTitle) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
+    val context = LocalContext.current
+    val prefs = remember(context, profileId) { detailSettingsPrefs(context, profileId) }
+    val posterWidth = prefs.getFloat("poster_card_width", 126f).coerceIn(90f, 180f)
+    val posterRadius = prefs.getFloat("poster_corner_radius", 13f).coerceIn(0f, 28f)
+    val posterSize = prefs.getString("poster_size", "Comfortable") ?: "Comfortable"
     var query by remember { mutableStateOf("") }
     var titles by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -197,7 +203,11 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                 Text("No matching movies or series found.", color = CatalogueMuted)
             }
             else -> LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Adaptive(minSize = when (posterSize) {
+                    "Compact" -> (posterWidth * 0.82f).dp
+                    "Large" -> (posterWidth * 1.15f).dp
+                    else -> posterWidth.dp
+                }),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -209,7 +219,8 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(230.dp).background(CataloguePanel, RoundedCornerShape(14.dp))
+                            modifier = Modifier.fillMaxWidth().height((posterWidth * 1.44f).dp)
+                                .clip(RoundedCornerShape(posterRadius.dp)).background(CataloguePanel)
                         )
                         Spacer(Modifier.height(7.dp))
                         Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2)
@@ -223,11 +234,44 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
     }
 }
 
+private fun detailSettingsPrefs(context: Context, profileId: String): android.content.SharedPreferences {
+    val profile = NexvioProfileStore.find(context, profileId) ?: NexvioProfileStore.active(context)
+    val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
+    return context.getSharedPreferences(name, Context.MODE_PRIVATE)
+}
+
+private fun saveTitleToCollection(prefs: android.content.SharedPreferences, collectionName: String, title: TmdbTitle) {
+    val key = "layout_collection_items_$collectionName"
+    val array = runCatching { org.json.JSONArray(prefs.getString(key, "[]") ?: "[]") }.getOrDefault(org.json.JSONArray())
+    val items = (0 until array.length()).mapNotNull { array.optJSONObject(it) }
+        .filterNot { it.optInt("id") == title.id && it.optString("mediaType") == title.mediaType }
+    val updated = org.json.JSONArray()
+    items.forEach(updated::put)
+    updated.put(org.json.JSONObject()
+        .put("id", title.id).put("title", title.title).put("overview", title.overview)
+        .put("posterPath", title.posterPath).put("year", title.year)
+        .put("rating", title.rating).put("mediaType", title.mediaType))
+    prefs.edit().putString(key, updated.toString()).apply()
+}
+
 @Composable
 internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit, onFindStreams: (TmdbTitle, Int, Int) -> Unit = { _, _, _ -> }, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     val context = LocalContext.current
+    val prefs = remember(context, profileId) { detailSettingsPrefs(context, profileId) }
+    val showOverview = prefs.getBoolean("detail_show_overview", true)
+    val showRating = prefs.getBoolean("detail_show_rating", true)
+    val showWatchlist = prefs.getBoolean("detail_show_watchlist", true)
+    val heroHeight = prefs.getFloat("detail_hero_height", 330f).coerceIn(180f, 440f)
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var savedToWatchlist by remember(item.id, item.mediaType) { mutableStateOf(watchlist.contains(item)) }
+    val collections = remember(context, profileId) {
+        runCatching {
+            val array = org.json.JSONArray(prefs.getString("layout_collections", "[]") ?: "[]")
+            (0 until array.length()).map { array.getString(it) }.filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+    var collectionDialog by remember { mutableStateOf(false) }
+    var collectionMessage by remember { mutableStateOf<String?>(null) }
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
     Column(Modifier.fillMaxSize().background(CatalogueInk)) {
@@ -239,7 +283,7 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
         }
         androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
             item {
-                Box(Modifier.fillMaxWidth().height(330.dp).background(CataloguePanel), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(heroHeight.dp).background(CataloguePanel), contentAlignment = Alignment.Center) {
                     AsyncImage(model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" }, contentDescription = item.title, modifier = Modifier.fillMaxSize())
                 }
             }
@@ -247,19 +291,29 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                 Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp)) {
                     Text(item.title, color = Color.White, fontSize = 29.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(year, color = CatalogueMuted, fontSize = 14.sp)
-                        Text("•", color = CatalogueMuted)
-                        Text("★ $rating / 10", color = CatalogueAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("•", color = CatalogueMuted)
-                        Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
+                    if (showRating) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(year, color = CatalogueMuted, fontSize = 14.sp)
+                            Text("•", color = CatalogueMuted)
+                            Text("★ $rating / 10", color = CatalogueAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("•", color = CatalogueMuted)
+                            Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
+                        }
                     }
-                    Button(onClick = { if (savedToWatchlist) watchlist.remove(item) else watchlist.add(item); savedToWatchlist = !savedToWatchlist }, colors = ButtonDefaults.buttonColors(containerColor = CataloguePanel, contentColor = CatalogueAccent)) { Text(if (savedToWatchlist) "✓  In watchlist" else "＋  Add to watchlist") }
+                    if (showWatchlist) {
+                        Button(onClick = { if (savedToWatchlist) watchlist.remove(item) else watchlist.add(item); savedToWatchlist = !savedToWatchlist }, colors = ButtonDefaults.buttonColors(containerColor = CataloguePanel, contentColor = CatalogueAccent)) { Text(if (savedToWatchlist) "✓  In watchlist" else "＋  Add to watchlist") }
+                    }
+                    if (collections.isNotEmpty()) {
+                        OutlinedButton(onClick = { collectionDialog = true }, modifier = Modifier.padding(top = 6.dp)) { Text("＋  Add to collection") }
+                    }
+                    collectionMessage?.let { Text(it, color = CatalogueAccent, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
                     Spacer(Modifier.height(24.dp))
-                    Text("Overview", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
-                    Spacer(Modifier.height(24.dp))
+                    if (showOverview) {
+                        Text("Overview", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
+                        Spacer(Modifier.height(24.dp))
+                    }
                     var selectedSeason by remember(item.id) { mutableIntStateOf(1) }
                     var selectedEpisode by remember(item.id) { mutableIntStateOf(1) }
                     if (item.mediaType == "tv") {
@@ -275,11 +329,27 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
             }
         }
     }
+    if (collectionDialog) {
+        AlertDialog(
+            onDismissRequest = { collectionDialog = false },
+            title = { Text("Add to collection") },
+            text = { Column {
+                collections.forEach { name ->
+                    TextButton(onClick = {
+                        saveTitleToCollection(prefs, name, item)
+                        collectionMessage = "Added to $name."
+                        collectionDialog = false
+                    }, modifier = Modifier.fillMaxWidth()) { Text(name) }
+                }
+            } },
+            confirmButton = { TextButton(onClick = { collectionDialog = false }) { Text("Cancel") } }
+        )
+    }
 }
 
 
 @Composable
-internal fun StreamSearchPage(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onBack: () -> Unit, onPlay: (TvChannel) -> Unit) {
+internal fun StreamSearchPage(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onBack: () -> Unit, onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     Column(Modifier.fillMaxSize().background(CatalogueInk)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹  Back", color = CatalogueAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
@@ -289,7 +359,7 @@ internal fun StreamSearchPage(item: TmdbTitle, seasonNumber: Int, episodeNumber:
             }
         }
         androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-            item { StreamDiscoverySection(item, seasonNumber, episodeNumber, onPlay, autoStart = true, fullPage = true) }
+            item { StreamDiscoverySection(item, seasonNumber, episodeNumber, onPlay, autoStart = true, fullPage = true, profileId = profileId) }
         }
     }
 }
@@ -536,8 +606,13 @@ private fun streamDedupeKey(stream: DiscoveredStream): String =
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit, autoStart: Boolean = false, fullPage: Boolean = false) {
+private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit, autoStart: Boolean = false, fullPage: Boolean = false, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember(context, profileId) { detailSettingsPrefs(context, profileId) }
+    val streamSort = prefs.getString("stream_sort", "Quality") ?: "Quality"
+    val showProvider = prefs.getBoolean("stream_show_provider", true)
+    val showQuality = prefs.getBoolean("stream_show_quality", true)
+    val compactRows = prefs.getBoolean("stream_compact_rows", false)
     val scope = rememberCoroutineScope()
     var streams by remember(item.id, item.mediaType) { mutableStateOf<List<DiscoveredStream>>(emptyList()) }
     var loading by remember(item.id, item.mediaType) { mutableStateOf(false) }
@@ -663,12 +738,25 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     }
                 }
             }
-            val visibleStreams = streams.filter { stream ->
+            val filteredStreams = streams.filter { stream ->
                 (selectedProvider == "All" || stream.addonName == selectedProvider) &&
                 (qualityFilter == "All qualities" ||
                     (qualityFilter == "Quality unknown" && stream.quality == "Quality unknown") ||
                     stream.quality.equals(qualityFilter, ignoreCase = true) ||
                     (qualityFilter == "4K" && stream.quality.equals("2160P", ignoreCase = true)))
+            }
+            val visibleStreams = when (streamSort) {
+                "Provider" -> filteredStreams.sortedBy { it.addonName.lowercase() }
+                "Title" -> filteredStreams.sortedBy { it.title.lowercase() }
+                else -> filteredStreams.sortedByDescending { stream ->
+                    when {
+                        stream.quality.contains("2160", true) || stream.quality.contains("4K", true) -> 4
+                        stream.quality.contains("1080", true) -> 3
+                        stream.quality.contains("720", true) -> 2
+                        stream.quality.contains("480", true) -> 1
+                        else -> 0
+                    }
+                }
             }
             if (visibleStreams.isEmpty()) Text("No sources match this quality filter.", color = CatalogueMuted, fontSize = 12.sp)
             visibleStreams.forEach { stream ->
@@ -690,16 +778,18 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                             ))
                             },
                             onLongClick = { downloadTarget = stream }
-                        ).padding(12.dp),
+                        ).padding(if (compactRows) 7.dp else 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(stream.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        Text(stream.addonName, color = CatalogueMuted, fontSize = 11.sp)
+                        if (showProvider) Text(stream.addonName, color = CatalogueMuted, fontSize = 11.sp)
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text(stream.quality, color = CatalogueAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(6.dp))
+                    if (showQuality) {
+                        Text(stream.quality, color = CatalogueAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text("▶", color = CatalogueAccent)
                 }
             }
