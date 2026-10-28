@@ -399,6 +399,9 @@ class MainActivity : ComponentActivity() {
             (0 until array.length()).map { array.getString(it) }.filter { it.isNotBlank() }
         }.getOrDefault(emptyList())
     }
+    val collectionTitlesByName = remember(context, profileId, collections) {
+        collections.associateWith { name -> loadCollectionTitles(context, profileId, name) }
+    }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
@@ -450,9 +453,7 @@ class MainActivity : ComponentActivity() {
         item { HomeTitleRow(if (homeStyle == "Grid") "Series" else "Popular Series","See all") { onOpen("Series") } }
         item { HomePosterRow(series, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
         collections.forEach { collectionName ->
-            val collectionTitles = remember(context, profileId, collectionName) {
-                loadCollectionTitles(context, profileId, collectionName)
-            }
+            val collectionTitles = collectionTitlesByName[collectionName].orEmpty()
             item {
                 HomeTitleRow(collectionName, "Edit") { onDetail("Layout") }
             }
