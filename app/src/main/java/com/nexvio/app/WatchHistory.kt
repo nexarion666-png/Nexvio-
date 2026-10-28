@@ -94,7 +94,8 @@ internal fun WatchHistorySection(
     title: String,
     entries: List<WatchEntry>,
     onPlay: (TvChannel) -> Unit,
-    onSeeAll: (() -> Unit)? = null
+    onSeeAll: (() -> Unit)? = null,
+    onRemove: ((WatchEntry) -> Unit)? = null
 ) {
     androidx.compose.foundation.layout.Column(
         modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
@@ -119,19 +120,19 @@ internal fun WatchHistorySection(
         } else entries.forEach { entry ->
             androidx.compose.foundation.layout.Row(
                 modifier = androidx.compose.ui.Modifier.fillMaxWidth()
-                    .background(Color(0xFF1B1D22), RoundedCornerShape(14.dp))
-                    .clickable { onPlay(entry.toChannel()) }.padding(10.dp),
+                    .background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(10.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
                 coil.compose.AsyncImage(
                     model = entry.posterUrl,
                     contentDescription = entry.title,
                     modifier = androidx.compose.ui.Modifier.width(58.dp).height(78.dp)
-                        .background(Color(0xFF101114), RoundedCornerShape(8.dp)),
+                        .background(Color(0xFF101114), RoundedCornerShape(8.dp))
+                        .clickable { onPlay(entry.toChannel()) },
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
-                androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                androidx.compose.foundation.layout.Column(Modifier.weight(1f).clickable { onPlay(entry.toChannel()) }) {
                     androidx.compose.material3.Text(entry.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
                     androidx.compose.material3.Text(
                         if (entry.completed) "Watched" else if (entry.positionMs > 0L) "Continue watching" else entry.mediaType.replaceFirstChar { it.uppercase() },
@@ -148,7 +149,14 @@ internal fun WatchHistorySection(
                     }
                 }
                 androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
-                androidx.compose.material3.Text("▶", color = Color(0xFFB7F36B))
+                androidx.compose.material3.Text("▶", color = Color(0xFFB7F36B), modifier = Modifier.clickable { onPlay(entry.toChannel()) }.padding(4.dp))
+                if (onRemove != null) {
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
+                    androidx.compose.material3.Text(
+                        "×", color = Color(0xFF9A9DA6), fontSize = 24.sp,
+                        modifier = Modifier.clickable { onRemove(entry) }.padding(horizontal = 6.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
     }
