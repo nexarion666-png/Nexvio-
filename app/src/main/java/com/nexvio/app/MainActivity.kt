@@ -1082,7 +1082,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     Icon(Icons.Filled.LockOpen, contentDescription = "Unlock controls", tint = Color.White, modifier = Modifier.size(24.dp))
                 }
             } else {
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = controlsVisible,
                     enter = fadeIn(animationSpec = tween(durationMillis = 180)),
                     exit = fadeOut(animationSpec = tween(durationMillis = 220)),
