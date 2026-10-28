@@ -19,6 +19,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -792,6 +796,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var screenLocked by rememberSaveable(channel.id) { mutableStateOf(false) }
     var muted by rememberSaveable(channel.id) { mutableStateOf(false) }
     var moreMenuExpanded by remember { mutableStateOf(false) }
+    var trackDialogOpen by remember { mutableStateOf(false) }
     var positionMs by remember(channel.id) { mutableLongStateOf(0L) }
     var scrubPositionMs by remember(channel.id) { mutableStateOf<Long?>(null) }
     var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
@@ -808,11 +813,17 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
         val builder = TrackSelectionDialogBuilder(context, title, active, trackType)
         if (showDisableOption) builder.setShowDisableOption(true)
-        builder.build().show()
+        val dialog = builder.build()
+        trackDialogOpen = true
+        dialog.setOnDismissListener {
+            trackDialogOpen = false
+            revealControls()
+        }
+        dialog.show()
         revealControls()
     }
     fun cyclePlaybackSpeed() {
-        val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+        val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
         val next = speeds[(speeds.indexOf(playbackSpeed).takeIf { it >= 0 }?.plus(1) ?: 0) % speeds.size]
         playbackSpeed = next
         player?.setPlaybackSpeed(next)
@@ -829,14 +840,20 @@ private fun formatPlayerTime(milliseconds: Long): String {
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        // Keep Android's status/navigation bars available as in the reference player;
-        // the video and its controls use the remaining safe content area.
-        controller.show(WindowInsetsCompat.Type.systemBars())
+        if (fullscreen) {
+            // Hide status and navigation bars at the Activity window level. Transient
+            // bars may appear for a deliberate system gesture and Android hides them again.
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
     }
     DisposableEffect(activity) {
         onDispose {
             activity?.window?.let { window ->
-                WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+                val controller = WindowInsetsControllerCompat(window, window.decorView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             }
         }
     }
@@ -960,8 +977,10 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
-    LaunchedEffect(controlsVisible, channel.id, controlsInteraction, screenLocked, playbackError, moreMenuExpanded) {
-        if (controlsVisible && playbackError == null && !screenLocked && !moreMenuExpanded) {
+    LaunchedEffect(controlsVisible, channel.id, controlsInteraction, screenLocked, playbackError, moreMenuExpanded, trackDialogOpen, isPlaying) {
+        // Keep controls visible while paused, while an error needs attention, or while
+        // a track-selection dialog/menu is open. Resume the timer when playback resumes.
+        if (controlsVisible && isPlaying && playbackError == null && !screenLocked && !moreMenuExpanded && !trackDialogOpen) {
             delay(3_500)
             controlsVisible = false
         }
@@ -1062,8 +1081,71 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 ) {
                     Icon(Icons.Filled.LockOpen, contentDescription = "Unlock controls", tint = Color.White, modifier = Modifier.size(24.dp))
                 }
-            } else if (controlsVisible) {
-                Column(
+            } else {
+                AnimatedVisibility(
+                    visible = controlsVisible,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 180)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 220)),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Box(Modifier.fillMaxSize()) {
+                        Row(
+                            Modifier.align(Alignment.Center)
+                                .background(Color(0x66000000), RoundedCornerShape(48.dp))
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PlayerIconButton(
+                                Icons.Filled.Replay10,
+                                "Rewind 10 seconds",
+                                {
+                                    player?.let { if (it.isCurrentMediaItemSeekable) it.seekBack() }
+                                    revealControls()
+                                },
+                                size = 34,
+                                enabled = player?.isCurrentMediaItemSeekable == true
+                            )
+                            Box(
+                                Modifier.size(64.dp).clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.14f))
+                                    .clickable {
+                                        player?.let { active ->
+                                            if (active.isPlaying) active.pause()
+                                            else {
+                                                playbackError = null
+                                                playbackDetails = null
+                                                shouldResumePlayback = true
+                                                active.play()
+                                            }
+                                        } ?: run {
+                                            playbackError = null
+                                            shouldResumePlayback = true
+                                            retry++
+                                        }
+                                        revealControls()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause playback" else "Start playback",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(42.dp)
+                                )
+                            }
+                            PlayerIconButton(
+                                Icons.Filled.Forward10,
+                                "Forward 10 seconds",
+                                {
+                                    player?.let { if (it.isCurrentMediaItemSeekable) it.seekForward() }
+                                    revealControls()
+                                },
+                                size = 34,
+                                enabled = player?.isCurrentMediaItemSeekable == true
+                            )
+                        }
+                        Column(
                     Modifier.align(Alignment.TopCenter).fillMaxWidth()
                         .background(Brush.verticalGradient(listOf(Color(0xD9000000), Color.Transparent)))
                         .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 20.dp)
@@ -1288,6 +1370,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             fullscreenOverride = !fullscreen
                             revealControls()
                         }, size = 25)
+                    }
+                        }
                     }
                 }
             }
