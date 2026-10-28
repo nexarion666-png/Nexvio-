@@ -122,6 +122,11 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
 
 @Composable
 internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit, onTitleSelected: (TmdbTitle) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
+    val context = LocalContext.current
+    val prefs = remember(context, profileId) { detailSettingsPrefs(context, profileId) }
+    val posterWidth = prefs.getFloat("poster_card_width", 126f).coerceIn(90f, 180f)
+    val posterRadius = prefs.getFloat("poster_corner_radius", 13f).coerceIn(0f, 28f)
+    val posterSize = prefs.getString("poster_size", "Comfortable") ?: "Comfortable"
     var query by remember { mutableStateOf("") }
     var titles by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -197,7 +202,11 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                 Text("No matching movies or series found.", color = CatalogueMuted)
             }
             else -> LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Adaptive(minSize = when (posterSize) {
+                    "Compact" -> (posterWidth * 0.82f).dp
+                    "Large" -> (posterWidth * 1.15f).dp
+                    else -> posterWidth.dp
+                }),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -209,7 +218,8 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(230.dp).background(CataloguePanel, RoundedCornerShape(14.dp))
+                            modifier = Modifier.fillMaxWidth().height((posterWidth * 1.44f).dp)
+                                .clip(RoundedCornerShape(posterRadius.dp)).background(CataloguePanel)
                         )
                         Spacer(Modifier.height(7.dp))
                         Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2)
