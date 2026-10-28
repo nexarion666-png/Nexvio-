@@ -114,7 +114,7 @@ internal class OfflineDownloads(private val context: Context, private val profil
                 val base = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
                 val root = if (profileId == "primary") base?.resolve("Nexvio")
                     else base?.resolve("Nexvio")?.resolve(profileId)
-                val safeTitle = title.replace("/", "_").replace("\\\\", "_").take(100)
+                val safeTitle = title.replace("/", "_").replace("\\", "_").take(100)
                 val file = root?.resolve(safeTitle)
                 if (file != null && file.isFile && file.canRead()) return Uri.fromFile(file)
             }
