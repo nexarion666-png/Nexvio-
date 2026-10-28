@@ -161,6 +161,27 @@ internal object NexvioProfileStore {
         }
 
         save(context, normalized)
+        if (deletedPrimary) {
+            // The primary profile uses the shared settings bucket. Move the promoted
+            // profile's own settings into that bucket instead of inheriting the deleted
+            // primary profile's preferences.
+            val promoted = normalized.first { it.isPrimary }
+            val source = context.getSharedPreferences("nexvio_settings_profile_${promoted.id}", Context.MODE_PRIVATE)
+            val target = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+            val editor = target.edit().clear()
+            source.all.forEach { (key, value) ->
+                when (value) {
+                    is String -> editor.putString(key, value)
+                    is Boolean -> editor.putBoolean(key, value)
+                    is Int -> editor.putInt(key, value)
+                    is Long -> editor.putLong(key, value)
+                    is Float -> editor.putFloat(key, value)
+                    is Set<*> -> editor.putStringSet(key, value.filterIsInstance<String>().toSet())
+                }
+            }
+            editor.commit()
+            source.edit().clear().commit()
+        }
         if (activeId(context) == id) setActive(context, normalized.first().id)
     }
 }
