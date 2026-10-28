@@ -404,7 +404,7 @@ class MainActivity : ComponentActivity() {
     var posterSettingsRevision by remember(prefs) { mutableIntStateOf(0) }
     DisposableEffect(prefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key in setOf("home_style", "show_descriptions", "poster_size", "poster_card_width", "poster_corner_radius")) {
+            if (key in setOf("home_style", "show_descriptions", "poster_size", "poster_card_width", "poster_corner_radius", "continue_watching_enabled", "continue_watching_completed")) {
                 posterSettingsRevision++
             }
         }
@@ -416,6 +416,8 @@ class MainActivity : ComponentActivity() {
     val posterSize = remember(prefs, posterSettingsRevision) { prefs.getString("poster_size", "Comfortable") ?: "Comfortable" }
     val posterWidth = remember(prefs, posterSettingsRevision) { prefs.getFloat("poster_card_width", 126f) * when (posterSize) { "Compact" -> 0.82f; "Large" -> 1.15f; else -> 1f } }
     val posterRadius = remember(prefs, posterSettingsRevision) { prefs.getFloat("poster_corner_radius", 13f) }
+    val continueWatchingEnabled = remember(prefs, posterSettingsRevision) { prefs.getBoolean("continue_watching_enabled", true) }
+    val showCompletedInContinueWatching = remember(prefs, posterSettingsRevision) { prefs.getBoolean("continue_watching_completed", false) }
     val historyStore = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
@@ -491,7 +493,20 @@ class MainActivity : ComponentActivity() {
                 HomeQuickCard("My Library","Your downloads",Modifier.weight(1f)) { onDetail("Downloads") }
             }
         }
-        item { Column(Modifier.padding(horizontal=18.dp)) { WatchHistorySection("Continue watching",watchEntries.filter{it.positionMs>0L&&!it.completed}.take(5),onPlay,onSeeAll={onDetail("Watch history")}) } }
+        if (continueWatchingEnabled) {
+            item {
+                Column(Modifier.padding(horizontal = 18.dp)) {
+                    val continueEntries = watchEntries.filter { it.positionMs > 0L && (showCompletedInContinueWatching || !it.completed) }.take(5)
+                    WatchHistorySection(
+                        title = "Continue watching",
+                        entries = continueEntries,
+                        onPlay = onPlay,
+                        onSeeAll = { onDetail("Watch history") },
+                        onRemove = { entry -> historyStore.remove(entry.id); watchEntries = historyStore.all() }
+                    )
+                }
+            }
+        }
         item { Column(Modifier.padding(horizontal=18.dp)) { WatchHistorySection("Recently watched",watchEntries.take(5),onPlay,onSeeAll={onDetail("Watch history")}) } }
     }
 }
