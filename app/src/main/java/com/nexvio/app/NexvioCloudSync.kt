@@ -80,10 +80,42 @@ internal object NexvioCloudSync {
 
         val localProfiles = NexvioProfileStore.all(context)
         val remoteRows = JSONArray(request("rest/v1/nexvio_profiles?select=profile_id,profile_data&account_id=eq.$accountId"))
+        val tombstonePrefs = context.getSharedPreferences("nexvio_profile_tombstones", Context.MODE_PRIVATE)
+        val deletedProfileIds = tombstonePrefs.getStringSet("ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val remoteDeletedIds = mutableSetOf<String>()
+        for (i in 0 until remoteRows.length()) {
+            val data = remoteRows.optJSONObject(i)?.optJSONObject("profile_data") ?: continue
+            if (data.optBoolean("deleted", false)) {
+                data.optString("id").takeIf { it.isNotBlank() }?.let(remoteDeletedIds::add)
+            }
+        }
+        deletedProfileIds.addAll(remoteDeletedIds)
+        tombstonePrefs.edit().putStringSet("ids", deletedProfileIds).apply()
+
+        // Tombstones are durable rows in the existing account-owned profile table. A stale
+        // device can never recreate a deleted profile because the tombstone wins on every sync.
+        val tombstonePayload = JSONArray()
+        deletedProfileIds.filterNot { it in remoteDeletedIds }.forEach { deletedId ->
+            val tombstone = JSONObject()
+                .put("id", deletedId)
+                .put("deleted", true)
+                .put("deletedAt", System.currentTimeMillis())
+            tombstonePayload.put(JSONObject()
+                .put("account_id", accountId)
+                .put("profile_id", deletedId)
+                .put("profile_data", tombstone)
+                .put("updated_at", java.time.Instant.now().toString()))
+        }
+        if (tombstonePayload.length() > 0) {
+            request("rest/v1/nexvio_profiles?on_conflict=account_id,profile_id", "POST", tombstonePayload.toString(),
+                "resolution=merge-duplicates,return=minimal")
+        }
+
         val merged = linkedMapOf<String, NexvioProfile>()
         for (i in 0 until remoteRows.length()) {
             val data = remoteRows.optJSONObject(i)?.optJSONObject("profile_data") ?: continue
             val id = data.optString("id").takeIf { it.isNotBlank() } ?: continue
+            if (data.optBoolean("deleted", false) || id in deletedProfileIds) continue
             merged[id] = NexvioProfile(
                 id = id,
                 name = data.optString("name", "Main Profile"),
@@ -98,6 +130,7 @@ internal object NexvioCloudSync {
         // Resolve profile conflicts by update time. A freshly initialized default profile
         // must not replace an existing cloud primary profile just because it was created later.
         localProfiles.forEach { local ->
+            if (local.id in deletedProfileIds) return@forEach
             val cloud = merged[local.id]
             if (cloud == null) {
                 merged[local.id] = local
