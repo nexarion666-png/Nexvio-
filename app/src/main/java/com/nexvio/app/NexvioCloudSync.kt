@@ -81,7 +81,8 @@ internal object NexvioCloudSync {
         val localProfiles = NexvioProfileStore.all(context)
         val remoteRows = JSONArray(request("rest/v1/nexvio_profiles?select=profile_id,profile_data&account_id=eq.$accountId"))
         val tombstonePrefs = context.getSharedPreferences("nexvio_profile_tombstones", Context.MODE_PRIVATE)
-        val deletedProfileIds = tombstonePrefs.getStringSet("ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val tombstoneKey = nexvioProfileTombstoneKey(context)
+        val deletedProfileIds = tombstonePrefs.getStringSet(tombstoneKey, emptySet())?.toMutableSet() ?: mutableSetOf()
         val remoteDeletedIds = mutableSetOf<String>()
         for (i in 0 until remoteRows.length()) {
             val data = remoteRows.optJSONObject(i)?.optJSONObject("profile_data") ?: continue
@@ -90,7 +91,7 @@ internal object NexvioCloudSync {
             }
         }
         deletedProfileIds.addAll(remoteDeletedIds)
-        tombstonePrefs.edit().putStringSet("ids", deletedProfileIds).apply()
+        tombstonePrefs.edit().putStringSet(tombstoneKey, deletedProfileIds).apply()
 
         // Tombstones are durable rows in the existing account-owned profile table. A stale
         // device can never recreate a deleted profile because the tombstone wins on every sync.
