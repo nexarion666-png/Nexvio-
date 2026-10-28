@@ -52,6 +52,12 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
+    // Android API 24-compatible torrent engine.
+    implementation("org.libtorrent4j:libtorrent4j:2.0.5-23")
+    runtimeOnly("org.libtorrent4j:libtorrent4j-android-arm64:2.0.5-23")
+    runtimeOnly("org.libtorrent4j:libtorrent4j-android-arm:2.0.5-23")
+    runtimeOnly("org.libtorrent4j:libtorrent4j-android-x86_64:2.0.5-23")
+    runtimeOnly("org.libtorrent4j:libtorrent4j-android-x86:2.0.5-23")
     implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
