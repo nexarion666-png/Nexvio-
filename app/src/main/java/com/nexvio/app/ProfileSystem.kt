@@ -150,12 +150,15 @@ internal object NexvioProfileStore {
         } else {
             remaining
         }
-        // Persist a deletion tombstone locally. Cloud sync uploads it to the signed-in
-        // account and other devices must respect it instead of restoring stale profile rows.
-        val tombstonePrefs = context.applicationContext.getSharedPreferences("nexvio_profile_tombstones", Context.MODE_PRIVATE)
-        val tombstones = tombstonePrefs.getStringSet("ids", emptySet())?.toMutableSet() ?: mutableSetOf()
-        tombstones.add(id)
-        tombstonePrefs.edit().putStringSet("ids", tombstones).apply()
+        // Only signed-in account deletions need a cloud tombstone. Scope it by account
+        // so a local-only profile deletion cannot affect a different account later.
+        if (hasNexvioAccountSession(context)) {
+            val tombstonePrefs = context.applicationContext.getSharedPreferences("nexvio_profile_tombstones", Context.MODE_PRIVATE)
+            val key = nexvioProfileTombstoneKey(context)
+            val tombstones = tombstonePrefs.getStringSet(key, emptySet())?.toMutableSet() ?: mutableSetOf()
+            tombstones.add(id)
+            tombstonePrefs.edit().putStringSet(key, tombstones).apply()
+        }
 
         save(context, normalized)
         if (activeId(context) == id) setActive(context, normalized.first().id)
