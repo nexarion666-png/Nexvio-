@@ -91,6 +91,10 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     var posterRadius by remember { mutableFloatStateOf(safeLayoutFloat(prefs, "poster_corner_radius", 13f)) }
     var continueEnabled by remember { mutableStateOf(safeLayoutBoolean(prefs, "continue_watching_enabled", true)) }
     var continueCompleted by remember { mutableStateOf(safeLayoutBoolean(prefs, "continue_watching_completed", false)) }
+    var streamSortOrder by remember { mutableStateOf(safeLayoutString(prefs, "stream_sort_order", "Recommended")) }
+    var streamCompactRows by remember { mutableStateOf(safeLayoutBoolean(prefs, "stream_compact_rows", false)) }
+    var streamShowProvider by remember { mutableStateOf(safeLayoutBoolean(prefs, "stream_show_provider", true)) }
+    var streamShowQuality by remember { mutableStateOf(safeLayoutBoolean(prefs, "stream_show_quality", true)) }
     var detailShowPoster by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_poster", true)) }
     var detailShowMetadata by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_metadata", true)) }
     var detailShowOverview by remember { mutableStateOf(safeLayoutBoolean(prefs, "detail_show_overview", true)) }
@@ -282,11 +286,12 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                         TextButton(onClick = {
                             collectionNames = collectionNames - name
                             prefs.edit().putString("layout_collections", JSONArray(collectionNames).toString()).apply()
+                            CustomCollectionStore.removeCollection(context, name)
                         }) { Text("Remove") }
                     }
                 }
                 OutlinedTextField(value = newCollection, onValueChange = { newCollection = it }, label = { Text("New collection name") }, singleLine = true)
-                Text("Collections are stored locally. Catalog assignment and Home folder rendering are not available in this build yet.", color = layoutMuted, fontSize = 12.sp)
+                Text("Collections are stored on this device. Add titles from a title details page to show them on Home.", color = layoutMuted, fontSize = 12.sp)
             } },
             confirmButton = { TextButton(onClick = {
                 val name = newCollection.trim()
@@ -327,7 +332,56 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
         )
     }
     if (streamsDialog) {
-        AlertDialog(onDismissRequest = { streamsDialog = false }, title = { Text("Streams") }, text = { Text("Stream selection is currently handled by Nexvio's existing provider result flow. Advanced badge URL and result-display overrides are not exposed by this build, so stream-search behavior remains unchanged.") }, confirmButton = { TextButton(onClick = { streamsDialog = false }) { Text("Done") } })
+        AlertDialog(
+            onDismissRequest = { streamsDialog = false },
+            title = { Text("Streams") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Sort results", fontWeight = FontWeight.SemiBold)
+                    listOf("Recommended", "Quality (high to low)", "Provider A–Z").forEach { option ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                streamSortOrder = option
+                                prefs.edit().putString("stream_sort_order", option).apply()
+                            },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = streamSortOrder == option,
+                                onClick = {
+                                    streamSortOrder = option
+                                    prefs.edit().putString("stream_sort_order", option).apply()
+                                }
+                            )
+                            Text(option)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Compact stream rows", modifier = Modifier.weight(1f))
+                        Switch(checked = streamCompactRows, onCheckedChange = {
+                            streamCompactRows = it
+                            prefs.edit().putBoolean("stream_compact_rows", it).apply()
+                        })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show provider names", modifier = Modifier.weight(1f))
+                        Switch(checked = streamShowProvider, onCheckedChange = {
+                            streamShowProvider = it
+                            prefs.edit().putBoolean("stream_show_provider", it).apply()
+                        })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show quality badges", modifier = Modifier.weight(1f))
+                        Switch(checked = streamShowQuality, onCheckedChange = {
+                            streamShowQuality = it
+                            prefs.edit().putBoolean("stream_show_quality", it).apply()
+                        })
+                    }
+                    Text("Changes apply to stream search results.", color = layoutMuted, fontSize = 12.sp)
+                }
+            },
+            confirmButton = { TextButton(onClick = { streamsDialog = false }) { Text("Done") } }
+        )
     }
     if (detailDialog) {
         AlertDialog(
