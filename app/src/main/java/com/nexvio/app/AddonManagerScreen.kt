@@ -62,7 +62,16 @@ private object AddonManifestClient {
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("User-Agent", "Nexvio/1.0 Android")
             val status = connection.responseCode
-            if (status !in 200..299) throw IllegalStateException("Manifest server returned HTTP $status.")
+            if (status !in 200..299) {
+                val explanation = when (status) {
+                    403 -> "Access was denied. This add-on may block direct requests or require its configured install URL."
+                    404 -> "Manifest not found. The add-on URL may be outdated or the service may have been removed."
+                    429 -> "The add-on rate limit was reached. Wait a while and try again."
+                    in 500..599 -> "The add-on server is temporarily failing. Try again later."
+                    else -> "Check the manifest URL and the add-on's access requirements."
+                }
+                throw IllegalStateException("Manifest server returned HTTP $status. $explanation")
+            }
             if (connection.contentLengthLong > ADDON_MAX_BYTES) throw IllegalStateException("Manifest exceeds the 1 MB limit.")
             val bytes = connection.inputStream.use { input ->
                 val out = java.io.ByteArrayOutputStream()
@@ -77,8 +86,16 @@ private object AddonManifestClient {
                 }
                 out.toByteArray()
             }
-            val json = try { JSONObject(bytes.toString(Charsets.UTF_8)) } catch (_: Exception) {
-                throw IllegalArgumentException("The server did not return a valid JSON manifest.")
+            val responseText = bytes.toString(Charsets.UTF_8)
+            val contentType = connection.contentType.orEmpty()
+            val json = try { JSONObject(responseText) } catch (_: Exception) {
+                val looksLikeHtml = responseText.trimStart().startsWith("<!DOCTYPE", true) ||
+                    responseText.trimStart().startsWith("<html", true) ||
+                    contentType.contains("text/html", true)
+                if (looksLikeHtml) {
+                    throw IllegalArgumentException("This URL returned a web page (HTML), not a Stremio add-on JSON manifest. Check the add-on's official installation instructions and use its generated manifest URL.")
+                }
+                throw IllegalArgumentException("The server response is not a valid JSON manifest.")
             }
             val name = json.optString("name").trim()
             val version = json.optString("version").trim()
