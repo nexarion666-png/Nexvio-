@@ -76,7 +76,51 @@ internal class OfflineDownloads(private val context: Context, private val profil
         }
     }
     fun cancel(id: Long) { manager.remove(id) }
-    fun open(id: Long): Uri? = manager.getUriForDownloadedFile(id)
+    fun open(id: Long): Uri? {
+        // DownloadManager's getUriForDownloadedFile() returns a provider URI such as
+        // content://downloads/all_downloads/884 on some Android versions. Media3 cannot
+        // necessarily read that URI because DownloadProvider does not grant this app
+        // access to that internal all_downloads URI. These downloads are deliberately
+        // saved in this app's own external-files Movies directory, so play the actual
+        // app-owned file instead.
+        val cursor = manager.query(DownloadManager.Query().setFilterById(id)) ?: return null
+        cursor.use {
+            if (!it.moveToFirst()) return null
+
+            val localUriIndex = it.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+            val localUri = if (localUriIndex >= 0) it.getString(localUriIndex) else null
+            if (!localUri.isNullOrBlank()) {
+                val parsed = Uri.parse(localUri)
+                if (parsed.scheme.equals("file", ignoreCase = true)) {
+                    val file = File(parsed.path.orEmpty())
+                    if (file.isFile && file.canRead()) return Uri.fromFile(file)
+                }
+            }
+
+            // COLUMN_LOCAL_FILENAME is deprecated on newer Android releases, but where
+            // provided it gives us the real path without needing DownloadProvider access.
+            val filenameIndex = it.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME)
+            val filename = if (filenameIndex >= 0) it.getString(filenameIndex) else null
+            if (!filename.isNullOrBlank()) {
+                val file = File(filename)
+                if (file.isFile && file.canRead()) return Uri.fromFile(file)
+            }
+
+            // Last-resort path for downloads created by Nexvio: setDestinationInExternalFilesDir
+            // stores the file under Movies/Nexvio[/<profileId>]/<sanitized title>.
+            val titleIndex = it.getColumnIndex(DownloadManager.COLUMN_TITLE)
+            val title = if (titleIndex >= 0) it.getString(titleIndex) else null
+            if (!title.isNullOrBlank()) {
+                val base = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+                val root = if (profileId == "primary") base?.resolve("Nexvio")
+                    else base?.resolve("Nexvio")?.resolve(profileId)
+                val safeTitle = title.replace("/", "_").replace("\\\\", "_").take(100)
+                val file = root?.resolve(safeTitle)
+                if (file != null && file.isFile && file.canRead()) return Uri.fromFile(file)
+            }
+        }
+        return null
+    }
     fun removeRecord(id: Long) { prefs.edit().putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
     fun files(): List<File> { val base = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); val root = if (profileId == "primary") base else base.resolve(profileId); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
