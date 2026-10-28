@@ -860,7 +860,28 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                         .combinedClickable(
                             onClick = {
                             if (stream.infoHash != null) {
-                                downloadMessage = "This add-on returned a torrent source (info hash), not a direct video URL. Nexvio currently lists it but cannot play torrent-only results until a torrent/debrid resolver is integrated."
+                                scope.launch {
+                                    downloadMessage = "Connecting to torrent peers…"
+                                    try {
+                                        val localUrl = TorrentPlaybackManager.prepare(context, stream.infoHash, stream.fileIdx) { status ->
+                                            downloadMessage = status
+                                        }
+                                        downloadMessage = null
+                                        onPlay(TvChannel(
+                                            id = "torrent-" + stream.infoHash,
+                                            name = item.title + " • " + stream.quality,
+                                            streamUrl = localUrl,
+                                            logoUrl = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
+                                            category = stream.addonName,
+                                            tvgId = null,
+                                            tvgName = stream.title,
+                                            isFavorite = false,
+                                            requestHeaders = emptyMap()
+                                        ))
+                                    } catch (e: Exception) {
+                                        downloadMessage = "Torrent could not start: " + (e.message ?: "No peers or metadata available")
+                                    }
+                                }
                             } else onPlay(TvChannel(
                                 id = "addon-${item.mediaType}-${item.id}-${stream.url.hashCode()}",
                                 name = "${item.title} • ${stream.quality}",
