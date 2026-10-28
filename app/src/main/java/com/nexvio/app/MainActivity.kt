@@ -403,11 +403,12 @@ class MainActivity : ComponentActivity() {
     val prefs = remember(context, profileId) { settingsPrefs(context) }
     val homeStyle = prefs.getString("home_style", "Featured") ?: "Featured"
     val showDescriptions = prefs.getBoolean("show_descriptions", true)
-    val posterWidth = when (prefs.getString("poster_size", "Comfortable")) {
-        "Compact" -> (prefs.getFloat("poster_card_width", 126f) * 0.82f).coerceIn(90f, 180f)
-        "Large" -> (prefs.getFloat("poster_card_width", 126f) * 1.15f).coerceIn(90f, 180f)
-        else -> prefs.getFloat("poster_card_width", 126f).coerceIn(90f, 180f)
+    val basePosterWidth = when (prefs.getString("poster_size", "Comfortable")) {
+        "Compact" -> prefs.getFloat("poster_card_width", 126f) * 0.82f
+        "Large" -> prefs.getFloat("poster_card_width", 126f) * 1.15f
+        else -> prefs.getFloat("poster_card_width", 126f)
     }
+    val posterWidth = (if (homeStyle == "Compact") basePosterWidth * 0.82f else basePosterWidth).coerceIn(90f, 180f)
     val posterRadius = prefs.getFloat("poster_corner_radius", 13f).coerceIn(0f, 28f)
     val continueEnabled = prefs.getBoolean("continue_watching_enabled", true)
     val includeCompleted = prefs.getBoolean("continue_watching_completed", false)
@@ -466,10 +467,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        item { HomeTitleRow(if (homeStyle == "Grid") "Movies" else "Trending Movies","See all") { onOpen("Movies") } }
-        item { HomePosterRow(movies, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
-        item { HomeTitleRow(if (homeStyle == "Grid") "Series" else "Popular Series","See all") { onOpen("Series") } }
-        item { HomePosterRow(series, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+        if (homeStyle == "Grid") {
+            item {
+                HomeTitleRow("Movies", "See all") { onOpen("Movies") }
+                HomePosterGrid(movies, onTitleSelected, posterRadius, showDescriptions)
+            }
+            item {
+                HomeTitleRow("Series", "See all") { onOpen("Series") }
+                HomePosterGrid(series, onTitleSelected, posterRadius, showDescriptions)
+            }
+        } else {
+            item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
+            item { HomePosterRow(movies, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+            item { HomeTitleRow("Popular Series","See all") { onOpen("Series") } }
+            item { HomePosterRow(series, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+        }
         collections.forEach { collectionName ->
             val collectionTitles = collectionTitlesByName[collectionName].orEmpty()
             item {
@@ -545,6 +557,34 @@ private fun loadCollectionTitles(context: Context, profileId: String, collection
                 Spacer(Modifier.height(7.dp))
                 Text(title.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
                 if (showDescriptions) Text(title.year, color = Muted, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomePosterGrid(titles: List<TmdbTitle>, onClick: (TmdbTitle) -> Unit, posterRadius: Float, showDescriptions: Boolean) {
+    if (titles.isEmpty()) {
+        Text("Loading titles…", color = Muted, modifier = Modifier.padding(horizontal = 18.dp))
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        titles.chunked(2).forEach { rowTitles ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                rowTitles.forEach { title ->
+                    Column(Modifier.weight(1f).clickable { onClick(title) }) {
+                        AsyncImage(
+                            model = title.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                            contentDescription = title.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(235.dp).clip(RoundedCornerShape(posterRadius.dp)).background(Panel)
+                        )
+                        Spacer(Modifier.height(7.dp))
+                        Text(title.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                        if (showDescriptions) Text(title.year, color = Muted, fontSize = 11.sp)
+                    }
+                }
+                if (rowTitles.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
