@@ -401,11 +401,21 @@ class MainActivity : ComponentActivity() {
 @Composable private fun HomeScreen(profileId: String, onOpen:(String)->Unit,onDetail:(String)->Unit,onPlay:(TvChannel)->Unit,onTitleSelected:(TmdbTitle)->Unit) {
     val context = LocalContext.current
     val prefs = remember(context, profileId) { settingsPrefs(context) }
-    val homeStyle = prefs.getString("home_style", "Featured") ?: "Featured"
-    val showDescriptions = prefs.getBoolean("show_descriptions", true)
-    val posterSize = prefs.getString("poster_size", "Comfortable") ?: "Comfortable"
-    val posterWidth = prefs.getFloat("poster_card_width", 126f) * when (posterSize) { "Compact" -> 0.82f; "Large" -> 1.15f; else -> 1f }
-    val posterRadius = prefs.getFloat("poster_corner_radius", 13f)
+    var posterSettingsRevision by remember(prefs) { mutableIntStateOf(0) }
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key in setOf("home_style", "show_descriptions", "poster_size", "poster_card_width", "poster_corner_radius")) {
+                posterSettingsRevision++
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val homeStyle = remember(prefs, posterSettingsRevision) { prefs.getString("home_style", "Featured") ?: "Featured" }
+    val showDescriptions = remember(prefs, posterSettingsRevision) { prefs.getBoolean("show_descriptions", true) }
+    val posterSize = remember(prefs, posterSettingsRevision) { prefs.getString("poster_size", "Comfortable") ?: "Comfortable" }
+    val posterWidth = remember(prefs, posterSettingsRevision) { prefs.getFloat("poster_card_width", 126f) * when (posterSize) { "Compact" -> 0.82f; "Large" -> 1.15f; else -> 1f } }
+    val posterRadius = remember(prefs, posterSettingsRevision) { prefs.getFloat("poster_corner_radius", 13f) }
     val historyStore = remember(context, profileId) { WatchHistoryStore(context, profileId) }
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
@@ -457,7 +467,7 @@ class MainActivity : ComponentActivity() {
         if (homeStyle == "Grid") {
             items(movies.chunked(2).size) { index ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    movies.chunked(2)[index].forEach { title -> HomePosterCard(title, onTitleSelected, posterWidth, posterRadius, showDescriptions, Modifier.weight(1f)) }
+                    movies.chunked(2)[index].forEach { title -> HomePosterCard(title, onTitleSelected, posterWidth, posterRadius, showDescriptions, Modifier.weight(1f), fillCell = true) }
                     if (movies.chunked(2)[index].size == 1) Spacer(Modifier.weight(1f))
                 }
             }
@@ -503,8 +513,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun HomePosterCard(title:TmdbTitle,onClick:(TmdbTitle)->Unit,posterWidth:Float,posterRadius:Float,showDescriptions:Boolean,modifier:Modifier=Modifier) {
-    Column(modifier.width(posterWidth.dp).clickable { onClick(title) }) {
+@Composable private fun HomePosterCard(title:TmdbTitle,onClick:(TmdbTitle)->Unit,posterWidth:Float,posterRadius:Float,showDescriptions:Boolean,modifier:Modifier=Modifier,fillCell:Boolean=false) {
+    val cardModifier = if (fillCell) modifier.fillMaxWidth() else modifier.width(posterWidth.dp)
+    Column(cardModifier.clickable { onClick(title) }) {
         AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height((posterWidth*1.45f).dp).clip(RoundedCornerShape(posterRadius.dp)).background(Panel,RoundedCornerShape(posterRadius.dp)))
         Spacer(Modifier.height(7.dp))
         Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
