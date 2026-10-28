@@ -390,9 +390,6 @@ internal fun AccountSettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit =
 internal fun hasNexvioAccountSession(context: Context): Boolean =
     NexvioSupabaseAuth.session(context) != null
 
-internal fun hasNexvioAccountSession(context: Context): Boolean =
-    NexvioSupabaseAuth.session(context) != null
-
 /** Stable local bucket for pending deletion tombstones, isolated per signed-in email. */
 internal fun nexvioProfileTombstoneKey(context: Context): String {
     val email = NexvioSupabaseAuth.session(context)?.email?.trim()?.lowercase().orEmpty()
