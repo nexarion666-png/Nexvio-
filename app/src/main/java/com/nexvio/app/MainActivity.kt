@@ -193,6 +193,24 @@ class MainActivity : ComponentActivity() {
     var streamSearch by remember { mutableStateOf<Triple<TmdbTitle, Int, Int>?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
 
+    // If another device permanently deletes the active profile, switch this device to a
+    // remaining profile as soon as the background account sync has removed it locally.
+    LaunchedEffect(appearanceContext, activeProfileId) {
+        while (true) {
+            delay(2500)
+            val profiles = NexvioProfileStore.all(appearanceContext)
+            if (profiles.isNotEmpty() && profiles.none { it.id == activeProfileId }) {
+                val next = profiles.firstOrNull { it.id == NexvioProfileStore.activeId(appearanceContext) } ?: profiles.first()
+                NexvioProfileStore.setActive(appearanceContext, next.id)
+                activeProfileId = next.id
+                current = "Home"
+                detail = null
+                selectedTitle = null
+                streamSearch = null
+            }
+        }
+    }
+
     // Handle Back in screen order so it returns to the previous screen instead of closing the app.
     BackHandler(enabled = showingWelcome || profileGate || showingProfilePicker || playing != null || streamSearch != null || selectedTitle != null || detail != null || current != "Home") {
         when {
