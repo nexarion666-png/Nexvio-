@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -413,7 +415,9 @@ private data class DiscoveredStream(
     val title: String,
     val url: String,
     val quality: String,
-    val headers: Map<String, String> = emptyMap()
+    val headers: Map<String, String> = emptyMap(),
+    val infoHash: String? = null,
+    val fileIdx: Int? = null
 )
 
 private data class TmdbSeason(val number: Int, val name: String, val episodeCount: Int)
@@ -618,13 +622,16 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
                                 }
                                 val found = (0 until streams.length()).mapNotNull { i ->
                                     val stream = streams.optJSONObject(i) ?: return@mapNotNull null
-                                    val url = stream.optString("url").trim()
-                                    if (!url.startsWith("https://") && !url.startsWith("http://")) return@mapNotNull null
+                                    val url = stream.optString("url").trim().takeIf { it.startsWith("https://") || it.startsWith("http://") }
+                                    val infoHash = stream.optString("infoHash").trim().takeIf { it.matches(Regex("(?i)^[a-f0-9]{40}$")) }
+                                    // Torrentio commonly returns infoHash/fileIdx instead of a direct URL.
+                                    // Keep those results visible rather than silently discarding them.
+                                    if (url == null && infoHash == null) return@mapNotNull null
                                     val label = stream.optString("title").ifBlank { stream.optString("name") }.ifBlank { addonName }
                                     val quality = Regex("(?i)(2160p|1080p|720p|480p|360p|4k)").find("$label ${stream.optString("name")}")?.value?.uppercase() ?: "Quality unknown"
-                                    val headersJson = stream.optJSONObject("headers")
+                                    val headersJson = stream.optJSONObject("behaviorHints")?.optJSONObject("proxyHeaders")?.optJSONObject("request") ?: stream.optJSONObject("headers")
                                     val headers = headersJson?.let { obj -> buildMap { val keys = obj.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, obj.optString(key)) } } }.orEmpty()
-                                    DiscoveredStream(addonName, label, url, quality, headers)
+                                    DiscoveredStream(addonName, label, url ?: "", quality, headers, infoHash, if (stream.has("fileIdx") && !stream.isNull("fileIdx")) stream.optInt("fileIdx") else null)
                                 }
                                 publish(found)
                                 onProviderStatus(addonName, if (found.isEmpty()) "Completed — no streams" else "Completed — ${found.size} stream(s)")
@@ -645,7 +652,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
 }
 
 private fun streamDedupeKey(stream: DiscoveredStream): String =
-    listOf(stream.addonName, stream.url, stream.title, stream.quality,
+    listOf(stream.addonName, stream.url, stream.infoHash.orEmpty(), stream.fileIdx?.toString().orEmpty(), stream.title, stream.quality,
         stream.headers.toSortedMap().entries.joinToString("&") { "${it.key}=${it.value}" }).joinToString("\u0000")
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -659,6 +666,13 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     val showStreamProvider = remember(item.id, item.mediaType) { streamPrefs.getBoolean("stream_show_provider", true) }
     val showStreamQuality = remember(item.id, item.mediaType) { streamPrefs.getBoolean("stream_show_quality", true) }
     var streams by remember(item.id, item.mediaType) { mutableStateOf<List<DiscoveredStream>>(emptyList()) }
+    val addonNames = remember(context) {
+        val installed = runCatching { org.json.JSONArray(context.getSharedPreferences("nexvio_addons", Context.MODE_PRIVATE).getString("installed", "[]") ?: "[]") }.getOrElse { org.json.JSONArray() }
+        (0 until installed.length()).mapNotNull { installed.optJSONObject(it) }
+            .filter { it.optBoolean("enabled", true) }
+            .map { it.optString("name").ifBlank { "Add-on" } }.distinct()
+    }
+    val providerStatuses = remember(item.id, item.mediaType) { androidx.compose.runtime.mutableStateMapOf<String, String>().apply { addonNames.forEach { put(it, "Waiting") } } }
     var loading by remember(item.id, item.mediaType) { mutableStateOf(false) }
     var searched by remember(item.id, item.mediaType) { mutableStateOf(false) }
     var error by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
@@ -696,7 +710,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             try {
                 streams = fetchAddonStreams(context, item, seasonNumber, episodeNumber, onStreams = { found ->
                     withContext(Dispatchers.Main) { streams = found; error = null }
-                }, onProviderStatus = { _, _ -> })
+                }, onProviderStatus = { provider, status ->
+                    withContext(Dispatchers.Main) { providerStatuses[provider] = status }
+                })
                 if (streams.isEmpty()) error = "No streams were returned. The installed provider may use an unsupported protocol, or this title may not be available."
             } catch (e: Exception) { error = e.message ?: "Stream discovery failed." }
             finally { loading = false }
@@ -731,7 +747,30 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
     }
 
     Column(if (fullPage) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
-        if (!fullPage) Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        if (fullPage) {
+            Box(Modifier.fillMaxWidth().height(260.dp).background(CataloguePanel)) {
+                AsyncImage(model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color(0xCC101114)).padding(horizontal = 16.dp, vertical = 18.dp)) {
+                    Text(if (item.mediaType == "movie") "MOVIE" else "S${seasonNumber} E${episodeNumber}", color = CatalogueAccent, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                    Text(item.title, color = Color.White, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(if (item.mediaType == "movie") "Movie" else "Season $seasonNumber • Episode $episodeNumber", color = CatalogueMuted, fontSize = 14.sp)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                addonNames.forEach { name ->
+                    val status = providerStatuses[name] ?: "Waiting"
+                    val isGood = status.startsWith("Completed") && !status.contains("no streams")
+                    val isBad = status.startsWith("Failed")
+                    Column(Modifier.background(if (isGood) Color(0xFF183323) else CataloguePanel, RoundedCornerShape(22.dp)).padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(status, color = when { isGood -> Color(0xFF7FE0A0); isBad -> Color(0xFFFF8A8A); else -> CatalogueMuted }, fontSize = 10.sp, maxLines = 1)
+                    }
+                }
+                if (addonNames.isEmpty()) Text("No enabled add-ons", color = CatalogueMuted, modifier = Modifier.padding(10.dp))
+            }
+            Spacer(Modifier.height(18.dp))
+        } else Text("Where to watch", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(
             if (item.mediaType == "movie") "Search enabled Stremio add-ons and compatible Nuvio repository scrapers for playable sources."
@@ -809,7 +848,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     Modifier.fillMaxWidth().background(CatalogueInk, RoundedCornerShape(10.dp))
                         .combinedClickable(
                             onClick = {
-                            onPlay(TvChannel(
+                            if (stream.infoHash != null) {
+                                downloadMessage = "This add-on returned a torrent source (info hash), not a direct video URL. Nexvio currently lists it but cannot play torrent-only results until a torrent/debrid resolver is integrated."
+                            } else onPlay(TvChannel(
                                 id = "addon-${item.mediaType}-${item.id}-${stream.url.hashCode()}",
                                 name = "${item.title} • ${stream.quality}",
                                 streamUrl = stream.url,
