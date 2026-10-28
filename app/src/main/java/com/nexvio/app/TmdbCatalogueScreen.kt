@@ -226,6 +226,12 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
 @Composable
 internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvChannel) -> Unit, onFindStreams: (TmdbTitle, Int, Int) -> Unit = { _, _, _ -> }, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
     val context = LocalContext.current
+    val detailPrefs = remember(context) { context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE) }
+    val showDetailPoster = remember(item.id, item.mediaType, profileId) { detailPrefs.getBoolean("detail_show_poster", true) }
+    val showDetailMetadata = remember(item.id, item.mediaType, profileId) { detailPrefs.getBoolean("detail_show_metadata", true) }
+    val showDetailOverview = remember(item.id, item.mediaType, profileId) { detailPrefs.getBoolean("detail_show_overview", true) }
+    val showDetailWatchlist = remember(item.id, item.mediaType, profileId) { detailPrefs.getBoolean("detail_show_watchlist", true) }
+    val showDetailEpisodes = remember(item.id, item.mediaType, profileId) { detailPrefs.getBoolean("detail_show_episodes", true) }
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var savedToWatchlist by remember(item.id, item.mediaType) { mutableStateOf(watchlist.contains(item)) }
     val year = item.year.ifBlank { "Unknown year" }
@@ -238,31 +244,47 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                 fontSize = 19.sp, fontWeight = FontWeight.Bold)
         }
         androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
-            item {
-                Box(Modifier.fillMaxWidth().height(330.dp).background(CataloguePanel), contentAlignment = Alignment.Center) {
-                    AsyncImage(model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" }, contentDescription = item.title, modifier = Modifier.fillMaxSize())
+            if (showDetailPoster) {
+                item {
+                    Box(Modifier.fillMaxWidth().height(330.dp).background(CataloguePanel), contentAlignment = Alignment.Center) {
+                        AsyncImage(
+                            model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" },
+                            contentDescription = item.title,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
             item {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp)) {
                     Text(item.title, color = Color.White, fontSize = 29.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(year, color = CatalogueMuted, fontSize = 14.sp)
-                        Text("•", color = CatalogueMuted)
-                        Text("★ $rating / 10", color = CatalogueAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("•", color = CatalogueMuted)
-                        Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
+                    if (showDetailMetadata) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(year, color = CatalogueMuted, fontSize = 14.sp)
+                            Text("•", color = CatalogueMuted)
+                            Text("★ $rating / 10", color = CatalogueAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("•", color = CatalogueMuted)
+                            Text(if (item.mediaType == "movie") "Movie" else "Series", color = CatalogueMuted, fontSize = 14.sp)
+                        }
                     }
-                    Button(onClick = { if (savedToWatchlist) watchlist.remove(item) else watchlist.add(item); savedToWatchlist = !savedToWatchlist }, colors = ButtonDefaults.buttonColors(containerColor = CataloguePanel, contentColor = CatalogueAccent)) { Text(if (savedToWatchlist) "✓  In watchlist" else "＋  Add to watchlist") }
+                    if (showDetailWatchlist) {
+                        Button(
+                            onClick = { if (savedToWatchlist) watchlist.remove(item) else watchlist.add(item); savedToWatchlist = !savedToWatchlist },
+                            colors = ButtonDefaults.buttonColors(containerColor = CataloguePanel, contentColor = CatalogueAccent)
+                        ) { Text(if (savedToWatchlist) "✓  In watchlist" else "＋  Add to watchlist") }
+                    }
                     Spacer(Modifier.height(24.dp))
-                    Text("Overview", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
-                    Spacer(Modifier.height(24.dp))
+                    if (showDetailOverview) {
+                        Text("Overview", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
+                        Spacer(Modifier.height(24.dp))
+                    }
                     var selectedSeason by remember(item.id) { mutableIntStateOf(1) }
                     var selectedEpisode by remember(item.id) { mutableIntStateOf(1) }
-                    if (item.mediaType == "tv") {
+                    if (item.mediaType == "tv" && showDetailEpisodes) {
                         SeriesEpisodePicker(item = item, onSelection = { season, episode ->
                             selectedSeason = season
                             selectedEpisode = episode
