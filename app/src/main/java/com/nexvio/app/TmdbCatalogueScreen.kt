@@ -77,6 +77,61 @@ internal class WatchlistStore(context: Context, profileId: String = NexvioProfil
     }
 }
 
+internal object CustomCollectionStore {
+    private fun prefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+
+    fun names(context: Context): List<String> {
+        val array = runCatching { JSONArray(prefs(context).getString("layout_collections", "[]")) }.getOrElse { JSONArray() }
+        return (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+    }
+
+    fun titles(context: Context, name: String): List<TmdbTitle> {
+        val root = runCatching { JSONObject(prefs(context).getString("layout_collection_items", "{}")) }.getOrElse { JSONObject() }
+        val array = root.optJSONArray(name) ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val obj = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = obj.optInt("id", 0)
+            if (id <= 0) return@mapNotNull null
+            TmdbTitle(
+                id = id,
+                title = obj.optString("title", "Untitled"),
+                overview = obj.optString("overview"),
+                posterPath = obj.optString("posterPath").takeIf { it.isNotBlank() && it != "null" },
+                year = obj.optString("year"),
+                rating = obj.optDouble("rating", 0.0),
+                mediaType = obj.optString("mediaType", "movie")
+            )
+        }
+    }
+
+    fun add(context: Context, name: String, title: TmdbTitle) {
+        val settings = prefs(context)
+        val root = runCatching { JSONObject(settings.getString("layout_collection_items", "{}")) }.getOrElse { JSONObject() }
+        val old = root.optJSONArray(name) ?: JSONArray()
+        val titles = (0 until old.length()).mapNotNull { old.optJSONObject(it) }
+            .filterNot { it.optInt("id") == title.id && it.optString("mediaType") == title.mediaType }
+        val array = JSONArray()
+        titles.forEach { array.put(it) }
+        array.put(JSONObject()
+            .put("id", title.id)
+            .put("title", title.title)
+            .put("overview", title.overview)
+            .put("posterPath", title.posterPath)
+            .put("year", title.year)
+            .put("rating", title.rating)
+            .put("mediaType", title.mediaType))
+        root.put(name, array)
+        settings.edit().putString("layout_collection_items", root.toString()).apply()
+    }
+
+    fun removeCollection(context: Context, name: String) {
+        val settings = prefs(context)
+        val root = runCatching { JSONObject(settings.getString("layout_collection_items", "{}")) }.getOrElse { JSONObject() }
+        root.remove(name)
+        settings.edit().putString("layout_collection_items", root.toString()).apply()
+    }
+}
+
 internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<TmdbTitle> = withContext(Dispatchers.IO) {
     require(TMDB_API_KEY != "PASTE_YOUR_TMDB_API_KEY_HERE" && TMDB_API_KEY.isNotBlank()) {
         "Add your TMDB API key in TmdbCatalogueScreen.kt before building the app."
@@ -234,6 +289,9 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
     val showDetailEpisodes = remember(item.id, item.mediaType, profileId) { detailPrefs.getBoolean("detail_show_episodes", true) }
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var savedToWatchlist by remember(item.id, item.mediaType) { mutableStateOf(watchlist.contains(item)) }
+    var collectionDialog by remember(item.id, item.mediaType) { mutableStateOf(false) }
+    var collectionNames by remember(item.id, item.mediaType) { mutableStateOf(CustomCollectionStore.names(context)) }
+    var collectionMessage by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
     Column(Modifier.fillMaxSize().background(CatalogueInk)) {
@@ -274,6 +332,40 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                             onClick = { if (savedToWatchlist) watchlist.remove(item) else watchlist.add(item); savedToWatchlist = !savedToWatchlist },
                             colors = ButtonDefaults.buttonColors(containerColor = CataloguePanel, contentColor = CatalogueAccent)
                         ) { Text(if (savedToWatchlist) "✓  In watchlist" else "＋  Add to watchlist") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            collectionNames = CustomCollectionStore.names(context)
+                            collectionDialog = true
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CatalogueAccent)
+                    ) { Text("＋  Add to collection") }
+                    collectionMessage?.let { Text(it, color = CatalogueAccent, fontSize = 12.sp) }
+                    if (collectionDialog) {
+                        AlertDialog(
+                            onDismissRequest = { collectionDialog = false },
+                            title = { Text("Add to collection") },
+                            text = {
+                                if (collectionNames.isEmpty()) {
+                                    Text("You have no custom collections yet. Create one in Settings → Layout → Collections.")
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        collectionNames.forEach { collectionName ->
+                                            TextButton(
+                                                onClick = {
+                                                    CustomCollectionStore.add(context, collectionName, item)
+                                                    collectionMessage = "Added to $collectionName"
+                                                    collectionDialog = false
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) { Text(collectionName, modifier = Modifier.fillMaxWidth()) }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = { TextButton(onClick = { collectionDialog = false }) { Text("Done") } }
+                        )
                     }
                     Spacer(Modifier.height(24.dp))
                     if (showDetailOverview) {
@@ -561,6 +653,11 @@ private fun streamDedupeKey(stream: DiscoveredStream): String =
 private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit, autoStart: Boolean = false, fullPage: Boolean = false) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+    val streamPrefs = remember(context) { context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE) }
+    val streamSortOrder = remember(item.id, item.mediaType) { streamPrefs.getString("stream_sort_order", "Recommended") ?: "Recommended" }
+    val compactStreamRows = remember(item.id, item.mediaType) { streamPrefs.getBoolean("stream_compact_rows", false) }
+    val showStreamProvider = remember(item.id, item.mediaType) { streamPrefs.getBoolean("stream_show_provider", true) }
+    val showStreamQuality = remember(item.id, item.mediaType) { streamPrefs.getBoolean("stream_show_quality", true) }
     var streams by remember(item.id, item.mediaType) { mutableStateOf<List<DiscoveredStream>>(emptyList()) }
     var loading by remember(item.id, item.mediaType) { mutableStateOf(false) }
     var searched by remember(item.id, item.mediaType) { mutableStateOf(false) }
@@ -685,12 +782,25 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     }
                 }
             }
-            val visibleStreams = streams.filter { stream ->
+            val filteredStreams = streams.filter { stream ->
                 (selectedProvider == "All" || stream.addonName == selectedProvider) &&
                 (qualityFilter == "All qualities" ||
                     (qualityFilter == "Quality unknown" && stream.quality == "Quality unknown") ||
                     stream.quality.equals(qualityFilter, ignoreCase = true) ||
                     (qualityFilter == "4K" && stream.quality.equals("2160P", ignoreCase = true)))
+            }
+            fun qualityRank(value: String): Int = when {
+                value.contains("2160", true) || value.contains("4K", true) -> 2160
+                value.contains("1080", true) -> 1080
+                value.contains("720", true) -> 720
+                value.contains("480", true) -> 480
+                value.contains("360", true) -> 360
+                else -> 0
+            }
+            val visibleStreams = when (streamSortOrder) {
+                "Quality (high to low)" -> filteredStreams.sortedWith(compareByDescending<DiscoveredStream> { qualityRank(it.quality) }.thenBy { it.addonName.lowercase() })
+                "Provider A–Z" -> filteredStreams.sortedWith(compareBy<DiscoveredStream> { it.addonName.lowercase() }.thenBy { it.title.lowercase() })
+                else -> filteredStreams
             }
             if (visibleStreams.isEmpty()) Text("No sources match this quality filter.", color = CatalogueMuted, fontSize = 12.sp)
             visibleStreams.forEach { stream ->
@@ -712,16 +822,18 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                             ))
                             },
                             onLongClick = { downloadTarget = stream }
-                        ).padding(12.dp),
+                        ).padding(if (compactStreamRows) 8.dp else 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(stream.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        Text(stream.addonName, color = CatalogueMuted, fontSize = 11.sp)
+                        Text(stream.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = if (compactStreamRows) 12.sp else 13.sp)
+                        if (showStreamProvider) Text(stream.addonName, color = CatalogueMuted, fontSize = 11.sp)
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text(stream.quality, color = CatalogueAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(6.dp))
+                    if (showStreamQuality) {
+                        Text(stream.quality, color = CatalogueAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text("▶", color = CatalogueAccent)
                 }
             }
