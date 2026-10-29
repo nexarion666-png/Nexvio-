@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 type StateRow = { state_data: Record<string, unknown> | null }
-const PRIMARY_PROFILE = 'primary'
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -12,12 +11,13 @@ function asRecord(value: unknown): Record<string, unknown> {
 export async function loadCloudSettings(
   client: SupabaseClient,
   accountId: string,
+  profileId = 'primary',
 ): Promise<Record<string, unknown>> {
   const { data, error } = await client
     .from('nexvio_profile_state')
     .select('state_data')
     .eq('account_id', accountId)
-    .eq('profile_id', PRIMARY_PROFILE)
+    .eq('profile_id', profileId)
     .eq('state_key', 'settings')
     .maybeSingle()
   if (error) throw error
@@ -28,12 +28,13 @@ export async function saveCloudSettings(
   client: SupabaseClient,
   accountId: string,
   settings: Record<string, unknown>,
+  profileId = 'primary',
 ): Promise<void> {
   const { data, error } = await client
     .from('nexvio_profile_state')
     .select('state_data')
     .eq('account_id', accountId)
-    .eq('profile_id', PRIMARY_PROFILE)
+    .eq('profile_id', profileId)
     .eq('state_key', 'settings')
     .maybeSingle()
   if (error) throw error
@@ -45,7 +46,7 @@ export async function saveCloudSettings(
     .from('nexvio_profile_state')
     .upsert({
       account_id: accountId,
-      profile_id: PRIMARY_PROFILE,
+      profile_id: profileId,
       state_key: 'settings',
       state_data: stateData,
       updated_at: new Date().toISOString(),

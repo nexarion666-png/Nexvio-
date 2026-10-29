@@ -23,7 +23,6 @@ export type CloudTitle = {
 
 type StateRow = { state_data: Record<string, unknown> | null }
 
-const PRIMARY_PROFILE = 'primary'
 const WATCHLIST_KEY = 'watchlist'
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -94,23 +93,24 @@ function toAndroidTitle(item: CloudTitle): Record<string, unknown> {
 async function ensurePrimaryProfile(
   client: SupabaseClient,
   accountId: string,
+  profileId = 'primary',
 ): Promise<void> {
   const { data, error } = await client
     .from('nexvio_profiles')
     .select('profile_id,profile_data')
     .eq('account_id', accountId)
-    .eq('profile_id', PRIMARY_PROFILE)
+    .eq('profile_id', profileId)
     .maybeSingle()
   if (error) throw error
   if (data) return
 
   const now = Date.now()
   const profile = {
-    id: PRIMARY_PROFILE,
-    name: 'Main Profile',
+    id: profileId,
+    name: profileId === 'primary' ? 'Main Profile' : 'Profile',
     avatar: 'fox',
     customAvatar: '',
-    primary: true,
+    primary: profileId === 'primary',
     primaryAddons: true,
     createdAt: now,
     updatedAt: now,
@@ -119,7 +119,7 @@ async function ensurePrimaryProfile(
     .from('nexvio_profiles')
     .upsert({
       account_id: accountId,
-      profile_id: PRIMARY_PROFILE,
+      profile_id: profileId,
       profile_data: profile,
       updated_at: new Date(now).toISOString(),
     }, { onConflict: 'account_id,profile_id' })
@@ -129,13 +129,14 @@ async function ensurePrimaryProfile(
 export async function loadCloudWatchlist(
   client: SupabaseClient,
   accountId: string,
+  profileId = 'primary',
 ): Promise<CloudTitle[]> {
-  await ensurePrimaryProfile(client, accountId)
+  await ensurePrimaryProfile(client, accountId, profileId)
   const { data, error } = await client
     .from('nexvio_profile_state')
     .select('state_data')
     .eq('account_id', accountId)
-    .eq('profile_id', PRIMARY_PROFILE)
+    .eq('profile_id', profileId)
     .eq('state_key', WATCHLIST_KEY)
     .maybeSingle()
   if (error) throw error
@@ -146,13 +147,14 @@ export async function saveCloudWatchlist(
   client: SupabaseClient,
   accountId: string,
   items: CloudTitle[],
+  profileId = 'primary',
 ): Promise<void> {
-  await ensurePrimaryProfile(client, accountId)
+  await ensurePrimaryProfile(client, accountId, profileId)
   const { data, error } = await client
     .from('nexvio_profile_state')
     .select('state_data')
     .eq('account_id', accountId)
-    .eq('profile_id', PRIMARY_PROFILE)
+    .eq('profile_id', profileId)
     .eq('state_key', WATCHLIST_KEY)
     .maybeSingle()
   if (error) throw error
@@ -166,7 +168,7 @@ export async function saveCloudWatchlist(
     .from('nexvio_profile_state')
     .upsert({
       account_id: accountId,
-      profile_id: PRIMARY_PROFILE,
+      profile_id: profileId,
       state_key: WATCHLIST_KEY,
       state_data: stateData,
       updated_at: new Date().toISOString(),
