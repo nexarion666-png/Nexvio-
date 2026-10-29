@@ -34,7 +34,7 @@ The Supabase security advisor still reports leaked-password protection is disabl
 
 ## Android compatibility
 
-The proposed migration does not change the tables or the authenticated grants required for Android to read, upsert, or delete rows. Nevertheless, Android sync must be regression-tested after migration application. No Android source files were modified.
+The applied migration does not change the tables or remove the authenticated grants required for Android to read or upsert rows. Android sync should still be regression-tested against the live project. No Android source files were modified.
 
 ## Other findings and limits
 
