@@ -29,9 +29,9 @@ In Supabase Auth settings, add the Vercel production domain and preview domains 
 
 ## Stage 3 cloud sync status
 
-The live Supabase tables are compatible with the Android client schema. Both tables have RLS enabled with authenticated owner policies. The audit also found that the `anon` role has direct table-level privileges on both account tables; PR #109 proposes a narrowly scoped migration to remove those grants. **Do not enable web reads/writes to the shared cloud state until that migration is reviewed, applied, and re-verified.**
+The live Supabase tables match the Android client schema and both have authenticated owner RLS policies. The `anon` table grants have been revoked in the connected project and verified with live privilege checks; the migration is tracked in PR #109 for repository history. The Supabase security advisor still flags disabled leaked-password protection.
 
-The Stage 3 implementation branch is being prepared separately from the foundation PR. The first data feature will be the existing Android-compatible `watchlist` state key in `nexvio_profile_state`, followed by tested persistence and account-isolation checks. No new web-only watchlist table is planned.
+Stage 3 now connects My List to the existing `nexvio_profile_state` table using `profile_id = primary` and `state_key = watchlist`. It stores the Android-compatible `items` preference as a JSON string, including an explicit empty array when items are removed, and shows cloud load/save/error status. The build and schema/grant checks are being run on the Stage 3 PR. Refresh persistence and real two-account browser isolation still need end-to-end runtime verification; no new web-only watchlist table is planned.
 
 ## Not yet implemented
 
