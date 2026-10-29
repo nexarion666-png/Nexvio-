@@ -576,8 +576,10 @@ function StreamSearchPage({request,onBack}:{request:{item:Title;season:number;ep
  const [results,setResults]=useState<{addon:string;title:string;url:string;quality:string;audio:string}[]>([]),[busy,setBusy]=useState(true),[errors,setErrors]=useState<string[]>([])
  useEffect(()=>{let live=true;const run=async()=>{
   setBusy(true);setErrors([]);setResults([]);
-  const found:{addon:string;title:string;url:string}[]=[];const seen=new Set<string>();const problems:string[]=[];
-  const add=(addon:string,title:string,url:string)=>{if(/^https?:\/\//i.test(url)&&!seen.has(url)){seen.add(url);found.push({addon,title,url});if(live)setResults([...found])}};
+   const found:{addon:string;title:string;url:string;quality:string;audio:string}[]=[];const seen=new Set<string>();const problems:string[]=[];
+   const qualityFrom=(...values:any[])=>{const text=values.filter(v=>typeof v==='string').join(' ');return text.match(/(?:2160|1440|1080|720|576|480|360)p/i)?.[0]?.toUpperCase()||'Auto'};
+   const audioFrom=(...values:any[])=>{const text=values.filter(v=>typeof v==='string').join(' ');return text.match(/\b(English|Japanese|Spanish|French|Hindi|Korean|Arabic|Portuguese|German|Italian|Chinese|Tamil|Telugu|Original Audio|Dual Audio|Multi Audio)\b/i)?.[0]||'Default audio'};
+   const add=(addon:string,title:string,url:string,quality='Auto',audio='Default audio')=>{if(/^https?:\/\//i.test(url)&&!seen.has(url)){seen.add(url);found.push({addon,title,url,quality,audio});if(live)setResults([...found])}};
   // Built-in Vidlink provider from the Android APK. It is queried automatically and does not need installing.
   try{
    if(!TMDB_KEY)throw new Error('TMDB API key is not configured');
@@ -587,14 +589,14 @@ function StreamSearchPage({request,onBack}:{request:{item:Title;season:number;ep
    const vr=await fetch('/api/vidlink?'+params.toString(),{headers:{Accept:'application/json'},signal:AbortSignal.timeout(30000)});
    if(!vr.ok){const detail=await vr.json().catch(()=>({}));throw new Error(String(detail?.error||('Vidlink proxy returned HTTP '+vr.status)))}
    const data:any=await vr.json();const title=titleName(request.item)+(mediaType==='tv'?' · S'+String(request.season).padStart(2,'0')+'E'+String(request.episode).padStart(2,'0'):'');
-   const raw:string[]=[];
-   if(data?.stream?.playlist&&typeof data.stream.playlist==='string')raw.push(data.stream.playlist);
-   if(data?.stream?.qualities&&typeof data.stream.qualities==='object')for(const q of Object.values(data.stream.qualities) as any[])if(typeof q?.url==='string')raw.push(q.url);
-   if(typeof data?.url==='string')raw.push(data.url);
-   if(Array.isArray(data?.streams))for(const x of data.streams)if(typeof x?.url==='string')raw.push(x.url);
-   if(Array.isArray(data?.links))for(const x of data.links)if(typeof x?.url==='string')raw.push(x.url);
+   const raw:{url:string;quality:string;audio:string}[]=[];
+   if(data?.stream?.playlist&&typeof data.stream.playlist==='string')raw.push({url:data.stream.playlist,quality:'Auto',audio:audioFrom(data?.stream?.audio,data?.audio,data?.stream?.language)});
+   if(data?.stream?.qualities&&typeof data.stream.qualities==='object')for(const [quality,q] of Object.entries(data.stream.qualities) as [string,any][])if(typeof q?.url==='string')raw.push({url:q.url,quality:qualityFrom(quality),audio:audioFrom(q?.audio,q?.language,data?.stream?.audio,data?.audio)});
+   if(typeof data?.url==='string')raw.push({url:data.url,quality:qualityFrom(data?.quality,data?.resolution),audio:audioFrom(data?.audio,data?.language)});
+   if(Array.isArray(data?.streams))for(const x of data.streams)if(typeof x?.url==='string')raw.push({url:x.url,quality:qualityFrom(x?.quality,x?.resolution,x?.name),audio:audioFrom(x?.audio,x?.language,x?.name)});
+   if(Array.isArray(data?.links))for(const x of data.links)if(typeof x?.url==='string')raw.push({url:x.url,quality:qualityFrom(x?.quality,x?.resolution,x?.name),audio:audioFrom(x?.audio,x?.language,x?.name)});
    if(!raw.length)throw new Error('Vidlink returned no playable links for this title or episode');
-   raw.forEach((u,i)=>add('Vidlink (built-in)',raw.length>1?'Vidlink stream '+(i+1):title,u));
+   raw.forEach(x=>add('Vidlink (built-in)',title,x.url,x.quality,x.audio));
   }catch(e){problems.push('Vidlink (built-in): '+(e instanceof Error?e.message:'request failed')+'; the provider may block browser CORS.')}
   const installed=readList<WebAddon>(ADDONS_KEY).filter(a=>a.enabled);const wantedType=kindOf(request.item)==='tv'?'series':'movie';
   const normalize=(v:any)=>typeof v==='string'?v.toLowerCase():String(v?.name||v?.id||v?.type||'').toLowerCase();
