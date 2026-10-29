@@ -708,7 +708,8 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
       await ffmpeg.writeFile('subtitle.vtt', new TextEncoder().encode(subtitleText))
       await ffmpeg.exec(['-i', 'input.mp4', '-i', 'subtitle.vtt', '-map', '0', '-map', '1:0', '-c', 'copy', '-c:s', 'mov_text', '-metadata:s:s:0', 'language=' + (option.language || 'eng'), 'output.mp4'])
       const output = await ffmpeg.readFile('output.mp4')
-      const blob = new Blob([output], { type: 'video/mp4' })
+      const outputBytes = output instanceof Uint8Array ? output : new TextEncoder().encode(output)
+      const blob = new Blob([outputBytes], { type: 'video/mp4' })
       const objectUrl = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = objectUrl
