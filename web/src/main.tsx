@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client'
 import type { Session } from '@supabase/supabase-js'
 import {
   ArrowLeft, Bookmark, Check, ChevronDown, CircleUserRound, Clapperboard,
-  Compass, Film, Heart, Info, LoaderCircle, LogOut, Play, Search, ShieldCheck,
-  Sparkles, Tv, UserRound, X,
+  Film, Heart, Info, LoaderCircle, LogOut, Play, Search, ShieldCheck,
+  Sparkles, Tv, X,
 } from 'lucide-react'
 import { supabase, supabaseConfigMissing } from './lib/supabase'
 import './styles.css'
