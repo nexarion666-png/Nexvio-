@@ -578,9 +578,9 @@ function StreamSearchPage({request,onBack,onPlay}:{request:{item:Title;season:nu
  useEffect(()=>{let live=true;const run=async()=>{
   setBusy(true);setErrors([]);setResults([]);
    const found:{addon:string;title:string;url:string;quality:string;audio:string}[]=[];const seen=new Set<string>();const problems:string[]=[];
-   const qualityFrom=(...values:any[])=>{const text=values.filter(v=>typeof v==='string').join(' ');return text.match(/(?:2160|1440|1080|720|576|480|360)p/i)?.[0]?.toUpperCase()||'Auto'};
+   const qualityFrom=(...values:any[])=>{const text=values.filter(v=>typeof v==='string').join(' ');return text.match(/(?:2160|1440|1080|720|576|480|360)p/i)?.[0]?.toUpperCase()||'Not reported'};
    const audioFrom=(...values:any[])=>{const text=values.filter(v=>typeof v==='string').join(' ');return text.match(/\b(English|Japanese|Spanish|French|Hindi|Korean|Arabic|Portuguese|German|Italian|Chinese|Tamil|Telugu|Original Audio|Dual Audio|Multi Audio)\b/i)?.[0]||'Not reported'};
-   const add=(addon:string,title:string,url:string,quality='Auto',audio='Default audio')=>{if(/^https?:\/\//i.test(url)&&!seen.has(url)){seen.add(url);found.push({addon,title,url,quality,audio});if(live)setResults([...found])}};
+   const add=(addon:string,title:string,url:string,quality='Not reported',audio='Not reported')=>{if(/^https?:\/\//i.test(url)&&!seen.has(url)){seen.add(url);found.push({addon,title,url,quality,audio});if(live)setResults([...found])}};
   // Built-in Vidlink provider from the Android APK. It is queried automatically and does not need installing.
   try{
    if(!TMDB_KEY)throw new Error('TMDB API key is not configured');
