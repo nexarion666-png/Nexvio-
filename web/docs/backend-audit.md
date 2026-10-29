@@ -28,7 +28,7 @@ This is the expected row-ownership boundary for normal authenticated reads and w
 
 ## Security issue found and remediated — verified 2026-10-29
 
-The initial live audit found direct table privileges on both tables granted to `anon`. The SQL revoke migration tracked in [PR #109](https://github.com/nexarion666-png/Nexvio-/pull/109) has since been applied to the connected Supabase project and independently re-queried. Current checks confirm `anon` has no SELECT/INSERT/UPDATE privileges on either table; `authenticated` retains SELECT/INSERT/UPDATE needed by the clients. The existing RLS policies remain scoped to `authenticated` and enforce `auth.uid() = account_id` in both `USING` and `WITH CHECK`.
+The initial live audit found direct table privileges on both tables granted to `anon`. The SQL revoke migration tracked in [PR #109](https://github.com/nexarion666-png/Nexvio-/pull/109) has since been applied to the connected Supabase project and independently re-queried. Current ACL checks confirm `anon` has no table privileges on either table and `authenticated` has only SELECT/INSERT/UPDATE/DELETE. In particular, TRUNCATE was removed from `authenticated` because it bypasses RLS. The existing RLS policies remain scoped to `authenticated` and enforce `auth.uid() = account_id` in both `USING` and `WITH CHECK`. Both idempotent migrations are tracked in PR #109.
 
 The Supabase security advisor still reports leaked-password protection is disabled. Enable it in Supabase Auth settings as a separate account-security follow-up. A real two-user browser isolation test has not been run yet; the grant and policy metadata are verified, but that end-to-end test remains an explicit validation item.
 
