@@ -62,7 +62,6 @@ function App() {
   const [profileEditingId, setProfileEditingId] = useState<string | null>(null)
   const [profileError, setProfileError] = useState('')
   const [profileBusy, setProfileBusy] = useState(false)
-  const [searchKind, setSearchKind] = useState<'movie' | 'tv'>('movie')
   const [tvChannels, setTvChannels] = useState<TvChannel[]>([])
   const [tvError, setTvError] = useState('')
   const [tvFilter, setTvFilter] = useState('')
@@ -423,17 +422,34 @@ function App() {
       : [...current, item])
   }
 
-  const searchCatalogue = async (value: string, kind: 'movie' | 'tv' = searchKind) => {
+  const searchCatalogue = async (value: string) => {
     const cleaned = value.trim()
-    if (!cleaned) return
+    if (!cleaned) { setSearchText(''); setRows([]); return }
     setLoading(true); setCatalogueError(''); setSearchText(cleaned); setActiveTab('Search')
     try {
-      const result = await tmdb<{ results: Title[] }>(`/search/${kind}?language=en-US&include_adult=false&query=${encodeURIComponent(cleaned)}&page=1`)
-      setRows([{ title: `${kind === 'tv' ? 'Series' : 'Movies'} matching “${cleaned}”`, items: result.results.filter(item => item.poster_path).map(item => ({...item, media_type: kind})) }])
+      const result = await tmdb<{ results: Title[] }>(`/search/multi?language=en-US&include_adult=false&query=${encodeURIComponent(cleaned)}&page=1`)
+      const recommendations = result.results
+        .filter(item => item.poster_path && (item.media_type === 'movie' || item.media_type === 'tv'))
+        .map(item => ({ ...item, media_type: item.media_type as MediaKind }))
+      setRows([{ title: `Recommendations for “${cleaned}”`, items: recommendations }])
     } catch (error) { setCatalogueError(error instanceof Error ? error.message : 'Search failed.') } finally { setLoading(false) }
   }
 
-  const doSearch = async (event: React.FormEvent) => { event.preventDefault(); await searchCatalogue(query, searchKind) }
+  useEffect(() => {
+    if (activeTab !== 'Search') return
+    const cleaned = query.trim()
+    if (cleaned.length < 2) {
+      setSearchText('')
+      setRows([])
+      setCatalogueError('')
+      setLoading(false)
+      return
+    }
+    const timer = window.setTimeout(() => { void searchCatalogue(cleaned) }, 300)
+    return () => window.clearTimeout(timer)
+  }, [query, activeTab])
+
+  const doSearch = async (event: React.FormEvent) => { event.preventDefault(); await searchCatalogue(query) }
 
   const visibleRows = useMemo(() => {
     if (activeTab === 'Movies') return rows
@@ -474,11 +490,12 @@ function App() {
 
       {(activeTab === 'Home' || activeTab === 'Search' || activeTab === 'Movies' || activeTab === 'Series') && <section className="catalogue-section">
         <div className="section-heading"><div><span className="section-kicker">{activeTab === 'Search' ? 'FIND YOUR NEXT WATCH' : activeTab === 'Movies' ? 'MOVIE COLLECTION' : activeTab === 'Series' ? 'SERIES COLLECTION' : 'MOVIES · SERIES · DISCOVERY'}</span><h2>{activeTab === 'Search' ? 'Search catalogue' : activeTab === 'Movies' ? 'Movies' : activeTab === 'Series' ? 'Series' : 'Trending Movies'}</h2></div><button className="text-button" onClick={() => { if (activeTab === 'Home') setActiveTab('Movies'); else void loadCatalogue() }}>{activeTab === 'Home' ? 'See all' : 'Refresh catalogue'} <span>↗</span></button></div>
-        {activeTab === 'Search' && <div className="search-tools"><button className={searchKind === 'movie' ? 'chip active' : 'chip'} onClick={() => { setSearchKind('movie'); if (searchText) void searchCatalogue(searchText, 'movie') }}>Movies</button><button className={searchKind === 'tv' ? 'chip active' : 'chip'} onClick={() => { setSearchKind('tv'); if (searchText) void searchCatalogue(searchText, 'tv') }}>Series</button><form className="wide-search" onSubmit={doSearch}><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search movies and series" aria-label="Search movies and series"/><button className="primary-button" type="submit">Search</button></form></div>}
+        {activeTab === 'Search' && <div className="search-tools"><form className="wide-search" onSubmit={doSearch}><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search movies, series, actors…" aria-label="Search movies, series, and actors" autoComplete="off"/><button className="primary-button" type="submit">Search</button></form></div>}
         {watchlistError && <div className="notice error-notice" role="alert"><Info size={18}/><span>{watchlistError}</span></div>}
         {catalogueError && <div className="notice error-notice" role="alert"><Info size={18}/><span>{catalogueError}</span></div>}
         {loading && <div className="loading-line"><LoaderCircle className="spin" size={18} /> Loading titles…</div>}
-        {!loading && visibleRows.length === 0 && <div className="empty-state"><Search size={27}/><h3>{searchText ? 'No matching titles' : 'Catalogue unavailable'}</h3><p>{searchText ? 'Try another title or switch between Movies and Series.' : 'Check the TMDB API configuration and try refreshing.'}</p></div>}
+        {!loading && visibleRows.length === 0 && activeTab === 'Search' && <div className="empty-state"><Search size={27}/><h3>{searchText ? 'No matching titles' : 'What are you in the mood for?'}</h3><p>{searchText ? 'Try another title, actor, or series name.' : 'Start typing and Nexvio will recommend matching movies and series as you type.'}</p></div>}
+        {!loading && visibleRows.length === 0 && activeTab !== 'Search' && <div className="empty-state"><Search size={27}/><h3>Catalogue unavailable</h3><p>Check the TMDB API configuration and try refreshing.</p></div>}
         {visibleRows.map(row => <MediaRow key={row.title} title={row.title} items={row.items} onSelect={openTitle} />)}
       </section>}
 
