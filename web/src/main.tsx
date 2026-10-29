@@ -145,7 +145,7 @@ function App() {
     setLoading(true); setCatalogueError(''); setSearchText(value); setActiveTab('Search')
     try {
       const result = await tmdb<{ results: Title[] }>(`/search/multi?language=en-US&include_adult=false&query=${encodeURIComponent(value)}`)
-      setRows([{ title: `Results for “${value}”`, items: result.results.filter(item => item.media_type !== 'person' && item.poster_path) }])
+      setRows([{ title: `Results for “${value}”`, items: result.results.filter(item => (item.media_type as string | undefined) !== 'person' && item.poster_path) }])
     } catch (error) {
       setCatalogueError(error instanceof Error ? error.message : 'Search failed.')
     } finally { setLoading(false) }
