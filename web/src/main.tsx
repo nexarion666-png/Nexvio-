@@ -22,7 +22,7 @@ type Title = {
   media_type?: MediaKind
   genre_ids?: number[]
 }
-type AuthMode = 'signin' | 'signup' | 'reset'
+type AuthMode = 'signin' | 'signup' | 'reset' | 'update-password'
 
 const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY as string | undefined
 const TMDB = 'https://api.themoviedb.org/3'
@@ -61,11 +61,21 @@ function App() {
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setAuthReady(true)
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession)
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthMode('update-password')
+        setPassword('')
+        setAuthError('')
+        setAuthMessage('')
+      }
     })
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
+    supabase.auth.getSession().then(({ data: sessionData, error }) => {
+      if (error) throw error
+      setSession(sessionData.session)
+    }).catch((error: unknown) => {
+      setAuthError(error instanceof Error ? error.message : 'Could not restore your account session.')
+    }).finally(() => setAuthReady(true))
     return () => data.subscription.unsubscribe()
   }, [])
 
@@ -110,13 +120,26 @@ function App() {
     setAuthBusy(true); setAuthError(''); setAuthMessage('')
     try {
       if (authMode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password })
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        })
         if (error) throw error
         setAuthMessage(data.session ? 'Your Nexvio account is ready.' : 'Check your email to confirm your account, then sign in.')
       } else if (authMode === 'reset') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email.trim())
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: window.location.origin,
+        })
         if (error) throw error
         setAuthMessage('If an account exists for that email, a password-reset message has been sent.')
+      } else if (authMode === 'update-password') {
+        const { error } = await supabase.auth.updateUser({ password })
+        if (error) throw error
+        await supabase.auth.signOut()
+        setPassword('')
+        setAuthMode('signin')
+        setAuthMessage('Your password has been updated. Sign in with your new password.')
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
         if (error) throw error
@@ -159,7 +182,7 @@ function App() {
   }, [activeTab, rows, watchlist])
 
   if (!authReady) return <div className="boot-screen"><div className="brand-mark">N</div><LoaderCircle className="spin" size={22} /></div>
-  if (!session) return <AuthScreen
+  if (!session || authMode === 'update-password') return <AuthScreen
     mode={authMode} setMode={setAuthMode} email={email} setEmail={setEmail}
     password={password} setPassword={setPassword} busy={authBusy}
     error={authError} message={authMessage} onSubmit={doAuth}
@@ -208,13 +231,13 @@ function AuthScreen(props: {
     <div className="auth-backdrop" />
     <header className="auth-top"><div className="brand"><span className="brand-mark">N</span><span>NEXVIO</span></div><div className="secure-label"><ShieldCheck size={15} /> One account across your devices</div></header>
     <div className="auth-layout"><div className="auth-pitch"><div className="eyebrow"><Sparkles size={14} /> YOUR WORLD OF ENTERTAINMENT</div><h1>Everything you love.<br /><em>One place.</em></h1><p>Discover movies, explore series, and build your personal watchlist with Nexvio.</p><div className="feature-pills"><span><Film size={15} /> Movies</span><span><Tv size={15} /> Series</span><span><Heart size={15} /> Your list</span></div></div>
-      <form className="auth-card" onSubmit={onSubmit}><div className="auth-card-mark"><span className="brand-mark">N</span></div><h2>{mode === 'signup' ? 'Create your account' : mode === 'reset' ? 'Reset password' : 'Welcome back'}</h2><p className="auth-subtitle">{mode === 'signup' ? 'Start building your Nexvio experience.' : mode === 'reset' ? 'We’ll send you a password reset link.' : 'Sign in to continue to your Nexvio account.'}</p>
+      <form className="auth-card" onSubmit={onSubmit}><div className="auth-card-mark"><span className="brand-mark">N</span></div><h2>{mode === 'signup' ? 'Create your account' : mode === 'reset' ? 'Reset password' : mode === 'update-password' ? 'Choose a new password' : 'Welcome back'}</h2><p className="auth-subtitle">{mode === 'signup' ? 'Start building your Nexvio experience.' : mode === 'reset' ? 'We’ll send you a password reset link.' : mode === 'update-password' ? 'Choose a new password for your Nexvio account.' : 'Sign in to continue to your Nexvio account.'}</p>
         {supabaseConfigMissing && <div className="notice error-notice"><Info size={17} /><span>Supabase is not configured. Add the web environment variables before using account features.</span></div>}
         <label>Email address<input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" /></label>
-        {mode !== 'reset' && <label>Password<input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required minLength={6} value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 6 characters" /></label>}
+        {mode !== 'reset' && <label>{mode === 'update-password' ? 'New password' : 'Password'}<input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={6} value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 6 characters" /></label>}
         {error && <div className="form-message error">{error}</div>}{message && <div className="form-message success">{message}</div>}
-        <button className="primary-button auth-submit" type="submit" disabled={busy || supabaseConfigMissing}>{busy ? <LoaderCircle className="spin" size={18} /> : null}{mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}</button>
-        <div className="auth-links">{mode === 'signin' && <button type="button" onClick={() => setMode('reset')}>Forgot password?</button>}{mode !== 'signin' && <button type="button" onClick={() => setMode('signin')}>Back to sign in</button>}{mode === 'signin' && <span>New to Nexvio? <button type="button" onClick={() => setMode('signup')}>Create account</button></span>}</div>
+        <button className="primary-button auth-submit" type="submit" disabled={busy || supabaseConfigMissing}>{busy ? <LoaderCircle className="spin" size={18} /> : null}{mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send reset link' : mode === 'update-password' ? 'Update password' : 'Sign in'}</button>
+        <div className="auth-links">{mode === 'signin' && <button type="button" onClick={() => { setAuthMessage(''); setAuthError(''); setMode('reset') }}>Forgot password?</button>}{mode !== 'signin' && mode !== 'update-password' && <button type="button" onClick={() => { setAuthMessage(''); setAuthError(''); setMode('signin') }}>Back to sign in</button>}{mode === 'signin' && <span>New to Nexvio? <button type="button" onClick={() => setMode('signup')}>Create account</button></span>}</div>
         <div className="auth-foot"><ShieldCheck size={14} /> Secured by Supabase Authentication</div>
       </form></div>
   </div>
