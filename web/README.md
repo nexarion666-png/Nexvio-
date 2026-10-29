@@ -1,6 +1,6 @@
 # Nexvio Web
 
-This is the first web foundation for Nexvio, kept beside the existing Android app in the same repository. It uses React, TypeScript and Vite; it is not a rewrite of the Android project.
+This is the Nexvio web client, kept beside the existing Android app in the same repository. It uses React, TypeScript and Vite; it is not a rewrite of the Android project.
 
 ## Deploy on Vercel
 
@@ -25,7 +25,14 @@ In Supabase Auth settings, add the Vercel production domain and preview domains 
 - Supabase sign-up, sign-in, session persistence, sign-out, email-confirmation redirects, password-reset email, and password recovery completion using the same project as Android.
 - Live TMDB trending/popular catalogue, title search, detail cards and initial watchlist UI.
 - Vercel SPA routing configuration.
+- Stage 3 live schema/RLS/grant audit recorded in [docs/backend-audit.md](docs/backend-audit.md).
+
+## Stage 3 cloud sync status
+
+The live Supabase tables are compatible with the Android client schema. Both tables have RLS enabled with authenticated owner policies. The audit also found that the `anon` role has direct table-level privileges on both account tables; PR #109 proposes a narrowly scoped migration to remove those grants. **Do not enable web reads/writes to the shared cloud state until that migration is reviewed, applied, and re-verified.**
+
+The Stage 3 implementation branch is being prepared separately from the foundation PR. The first data feature will be the existing Android-compatible `watchlist` state key in `nexvio_profile_state`, followed by tested persistence and account-isolation checks. No new web-only watchlist table is planned.
 
 ## Not yet implemented
 
-This foundation does **not** claim full feature parity yet. Browser provider execution and real stream playback, profile-scoped cloud sync, shared watchlist/history/preferences, add-on management, downloads, and release/update parity still need dedicated implementation and testing. The Android app's existing cloud sync currently uses `nexvio_profiles` and `nexvio_profile_state` for profile metadata and profile-scoped state. The repository-level expectations and required live schema/RLS checks are documented in [`docs/backend-audit.md`](docs/backend-audit.md). The deployed Supabase schema and policies have not been independently inspected, so web writes to those tables remain blocked until the live audit is complete. Browser storage is not being presented as cloud sync.
+This foundation does not claim full feature parity yet. Browser provider execution and real stream playback, verified profile-scoped cloud sync, shared history/preferences, add-on management, downloads, and release/update parity still need dedicated implementation and testing.
