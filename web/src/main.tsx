@@ -711,14 +711,17 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
       setMuxStatus('Embedding subtitles into the video. Keep this page open…')
       await ffmpeg.writeFile('input.mp4', new Uint8Array(await videoBlob.arrayBuffer()))
       await ffmpeg.writeFile('subtitle.vtt', new TextEncoder().encode(subtitleText))
-      await ffmpeg.exec(['-i', 'input.mp4', '-i', 'subtitle.vtt', '-map', '0', '-map', '1:0', '-c', 'copy', '-c:s', 'mov_text', '-metadata:s:s:0', 'language=' + (option.language || 'eng'), 'output.mp4'])
+      await ffmpeg.exec(['-i', 'input.mp4', '-i', 'subtitle.vtt', '-map', '0:v?', '-map', '0:a?', '-map', '1:0', '-c', 'copy', '-c:s', 'mov_text', '-metadata:s:s:0', 'language=' + (/^[a-z]{3}$/i.test(option.language || '') ? option.language : 'eng'), '-movflags', '+faststart', 'output.mp4'])
       const output = await ffmpeg.readFile('output.mp4')
       const outputBytes = output instanceof Uint8Array ? output : new TextEncoder().encode(output)
+      if (!outputBytes.length) throw new Error('The video processor returned an empty file. Try a different direct MP4 source.')
       const blob = new Blob([outputBytes], { type: 'video/mp4' })
       const objectUrl = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = objectUrl
-      anchor.download = (channel.name || 'nexvio-video').replace(/[^a-z0-9 _.-]/gi, '').trim().slice(0, 100) + '.mp4'
+      const context = subtitleContext
+      const baseName = context ? titleName(context.item) + (kindOf(context.item) === 'tv' ? ' - S' + String(context.season).padStart(2, '0') + 'E' + String(context.episode).padStart(2, '0') : '') : (channel.name || 'Nexvio video')
+      anchor.download = baseName.replace(/[\\/:*?\"<>|]/g, '').replace(/[^a-z0-9 _.-]/gi, '').trim().slice(0, 120) + '.mp4'
       document.body.appendChild(anchor); anchor.click(); anchor.remove()
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
       setMuxStatus('Ready. The downloaded MP4 contains a selectable subtitle track.')
