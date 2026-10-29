@@ -1,6 +1,6 @@
 # Nexvio Web
 
-This is the first web foundation for Nexvio, kept beside the existing Android app in the same repository. It uses React, TypeScript and Vite; it is not a rewrite of the Android project.
+This is the Nexvio web client, kept beside the existing Android app in the same repository. It uses React, TypeScript and Vite; it is not a rewrite of the Android project.
 
 ## Deploy on Vercel
 
@@ -25,7 +25,18 @@ In Supabase Auth settings, add the Vercel production domain and preview domains 
 - Supabase sign-up, sign-in, session persistence, sign-out, email-confirmation redirects, password-reset email, and password recovery completion using the same project as Android.
 - Live TMDB trending/popular catalogue, title search, detail cards and initial watchlist UI.
 - Vercel SPA routing configuration.
+- Stage 3 live schema/RLS/grant audit recorded in [docs/backend-audit.md](docs/backend-audit.md).
+
+## Stage 3 cloud sync status
+
+The live Supabase tables match the Android client schema and both have authenticated owner RLS policies. The `anon` table grants have been revoked in the connected project and verified with live privilege checks; the migration is tracked in PR #109 for repository history. The Supabase security advisor still flags disabled leaked-password protection.
+
+Stage 3 now connects My List to the existing `nexvio_profile_state` table using `profile_id = primary` and `state_key = watchlist`. It stores the Android-compatible `items` preference as a JSON string, including an explicit empty array when items are removed, and shows cloud load/save/error status. The build and schema/grant checks are being run on the Stage 3 PR. Refresh persistence and real two-account browser isolation still need end-to-end runtime verification; no new web-only watchlist table is planned.
 
 ## Not yet implemented
 
-This foundation does **not** claim full feature parity yet. Browser provider execution and real stream playback, profile-scoped cloud sync, shared watchlist/history/preferences, add-on management, downloads, and release/update parity still need dedicated implementation and testing. The Android app's existing cloud sync currently uses `nexvio_profiles` and `nexvio_profile_state` for profile metadata and profile-scoped state. The repository-level expectations and required live schema/RLS checks are documented in [`docs/backend-audit.md`](docs/backend-audit.md). The deployed Supabase schema and policies have not been independently inspected, so web writes to those tables remain blocked until the live audit is complete. Browser storage is not being presented as cloud sync.
+This foundation does not claim full feature parity yet. Browser provider execution and real stream playback, verified profile-scoped cloud sync, shared history/preferences, add-on management, downloads, and release/update parity still need dedicated implementation and testing.
+
+## Stage 4 — cloud-synced preferences
+
+The Stage 4 branch adds a Preferences screen backed by the existing `nexvio_profile_state` row (`profile_id=primary`, `state_key=settings`). It stores web-owned keys (`web_autoplay_previews`, `web_remember_progress`) while preserving other keys in the state object, with account-session checks and visible sync/error status. Autoplay and playback-progress behavior are preference placeholders until browser playback is implemented; they do not claim to control a player yet. This feature is additive and does not modify Android source or create a new table.
