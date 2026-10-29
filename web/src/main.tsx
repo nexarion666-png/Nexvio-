@@ -647,6 +647,8 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
   const [subtitleOptions, setSubtitleOptions] = useState<{ id: string; language: string; label: string; fileId: number; release?: string }[]>([])
   const [subtitleStatus, setSubtitleStatus] = useState('')
   const [subtitleChoice, setSubtitleChoice] = useState('')
+  const [muxBusy, setMuxBusy] = useState(false)
+  const [muxStatus, setMuxStatus] = useState('')
   useEffect(() => {
     let live = true
     setSubtitleOptions([]); setSubtitleChoice(''); setSubtitleStatus('')
@@ -670,6 +672,57 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
     void run()
     return () => { live = false }
   }, [channel.url, isStream, subtitleContext?.item.id, subtitleContext?.season, subtitleContext?.episode, subtitleLanguage])
+  const downloadWithEmbeddedSubtitle = async () => {
+    if (!subtitleChoice || muxBusy) return
+    const option = subtitleOptions.find(item => item.id === subtitleChoice)
+    if (!option) return
+    setMuxBusy(true); setMuxStatus('Preparing video and subtitle…')
+    let ffmpeg: any = null
+    try {
+      if (/\\.m3u8(?:$|[?#])/i.test(channel.url)) throw new Error('This source is an HLS playlist. Embedding subtitles needs a complete downloadable video file; this source cannot be muxed directly.')
+      const videoResponse = await fetch(channel.url)
+      if (!videoResponse.ok) throw new Error('The video source could not be downloaded.')
+      const size = Number(videoResponse.headers.get('content-length') || 0)
+      if (size > 250 * 1024 * 1024) throw new Error('This file is larger than the 250 MB browser-processing limit. A server-side video processor is needed for larger movies.')
+      const videoBlob = await videoResponse.blob()
+      if (videoBlob.size > 250 * 1024 * 1024) throw new Error('This file is larger than the 250 MB browser-processing limit.')
+      if (!videoBlob.type.includes('video') && !/\\.mp4(?:$|[?#])/i.test(channel.url)) throw new Error('This source did not return a direct video file. Try another direct MP4 source.')
+      setMuxStatus('Loading the video processing engine (first use may download about 30 MB)…')
+      const { FFmpeg } = await import('@ffmpeg/ffmpeg')
+      ffmpeg = new FFmpeg()
+      const toBlobURL = async (url: string, type: string) => {
+        const response = await fetch(url)
+        if (!response.ok) throw new Error('Could not load the video processing engine.')
+        return URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }))
+      }
+      const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd'
+      const coreURL = await toBlobURL(base + '/ffmpeg-core.js', 'text/javascript')
+      const wasmURL = await toBlobURL(base + '/ffmpeg-core.wasm', 'application/wasm')
+      await ffmpeg.load({ coreURL, wasmURL })
+      setMuxStatus('Fetching the selected subtitle…')
+      const subResponse = await fetch('/api/subtitles?action=file&fileId=' + encodeURIComponent(String(option.fileId)))
+      if (!subResponse.ok) throw new Error('The selected subtitle could not be downloaded.')
+      const subtitleText = await subResponse.text()
+      setMuxStatus('Embedding subtitles into the video. Keep this page open…')
+      await ffmpeg.writeFile('input.mp4', new Uint8Array(await videoBlob.arrayBuffer()))
+      await ffmpeg.writeFile('subtitle.vtt', new TextEncoder().encode(subtitleText))
+      await ffmpeg.exec(['-i', 'input.mp4', '-i', 'subtitle.vtt', '-map', '0', '-map', '1:0', '-c', 'copy', '-c:s', 'mov_text', '-metadata:s:s:0', 'language=' + (option.language || 'eng'), 'output.mp4'])
+      const output = await ffmpeg.readFile('output.mp4')
+      const blob = new Blob([output], { type: 'video/mp4' })
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = (channel.name || 'nexvio-video').replace(/[^a-z0-9 _.-]/gi, '').trim().slice(0, 100) + '.mp4'
+      document.body.appendChild(anchor); anchor.click(); anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
+      setMuxStatus('Ready. The downloaded MP4 contains a selectable subtitle track.')
+    } catch (error) {
+      setMuxStatus(error instanceof Error ? error.message : 'Could not embed subtitles in this video.')
+    } finally {
+      try { await ffmpeg?.terminate() } catch {}
+      setMuxBusy(false)
+    }
+  }
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -722,7 +775,7 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
     hls.attachMedia(video)
     return () => { video.pause(); hls?.destroy(); video.removeAttribute('src'); video.load() }
   }, [channel.url, setError])
-  return <div className="player-scrim" role="dialog" aria-modal="true" aria-label={`Player: ${channel.name}`}><section className="browser-player"><header><div><strong>{channel.name}</strong><small>{isStream ? "Nexvio Player · " + (channel.group || "Stream") : "Live TV · user-supplied source"}</small></div><button className="modal-close" onClick={onClose} aria-label="Close player"><X size={20}/></button></header><video ref={videoRef} controls playsInline autoPlay={autoplay} style={{ objectFit: videoSizing === 'Fill' ? 'fill' : videoSizing === 'Zoom' ? 'cover' : 'contain', '--subtitle-size': subtitleSize + 'px' } as React.CSSProperties} onError={(event) => { const video = event.currentTarget; const mediaError = video.error; const code = mediaError?.code; const detail = code === 1 ? 'Playback was cancelled.' : code === 2 ? 'A network error interrupted the stream. The source may be offline, blocked by CORS, or rejecting this browser request.' : code === 3 ? 'The browser received media but could not decode it. The codec or container may be unsupported.' : code === 4 ? 'The browser cannot play this source URL or media format. It may be a magnet link, an unsupported playlist, or a provider-restricted URL.' : 'The browser could not start this stream. The source may be offline or restricted.'; setError(detail + (code ? ' (Media error ' + code + ')' : '') + (video.currentSrc ? ' Source: ' + new URL(video.currentSrc, window.location.href).hostname : '')); }} onCanPlay={() => setError('')}/>{error && <div className="notice error-notice" role="status"><Info size={18}/><span>{error}</span></div>}{isStream && subtitleContext && <div className="subtitle-controls"><label htmlFor="nexvio-subtitle-select">Subtitles</label><select id="nexvio-subtitle-select" value={subtitleChoice} onChange={event => setSubtitleChoice(event.target.value)}><option value="">Off</option>{subtitleOptions.map(option => <option key={option.id} value={option.id}>{option.label}{option.release ? ' · ' + option.release : ''}</option>)}</select><small>{subtitleStatus || 'Subtitle search ready.'}</small></div>}<p>Browser playback is limited by codec support, CORS, DRM, and provider authorization. Nexvio does not bypass those restrictions.</p></section></div>
+  return <div className="player-scrim" role="dialog" aria-modal="true" aria-label={`Player: ${channel.name}`}><section className="browser-player"><header><div><strong>{channel.name}</strong><small>{isStream ? "Nexvio Player · " + (channel.group || "Stream") : "Live TV · user-supplied source"}</small></div><button className="modal-close" onClick={onClose} aria-label="Close player"><X size={20}/></button></header><video ref={videoRef} controls playsInline autoPlay={autoplay} style={{ objectFit: videoSizing === 'Fill' ? 'fill' : videoSizing === 'Zoom' ? 'cover' : 'contain', '--subtitle-size': subtitleSize + 'px' } as React.CSSProperties} onError={(event) => { const video = event.currentTarget; const mediaError = video.error; const code = mediaError?.code; const detail = code === 1 ? 'Playback was cancelled.' : code === 2 ? 'A network error interrupted the stream. The source may be offline, blocked by CORS, or rejecting this browser request.' : code === 3 ? 'The browser received media but could not decode it. The codec or container may be unsupported.' : code === 4 ? 'The browser cannot play this source URL or media format. It may be a magnet link, an unsupported playlist, or a provider-restricted URL.' : 'The browser could not start this stream. The source may be offline or restricted.'; setError(detail + (code ? ' (Media error ' + code + ')' : '') + (video.currentSrc ? ' Source: ' + new URL(video.currentSrc, window.location.href).hostname : '')); }} onCanPlay={() => setError('')}/>{error && <div className="notice error-notice" role="status"><Info size={18}/><span>{error}</span></div>}{isStream && subtitleContext && <div className="subtitle-controls"><label htmlFor="nexvio-subtitle-select">Subtitles</label><select id="nexvio-subtitle-select" value={subtitleChoice} onChange={event => setSubtitleChoice(event.target.value)}><option value="">Off</option>{subtitleOptions.map(option => <option key={option.id} value={option.id}>{option.label}{option.release ? ' · ' + option.release : ''}</option>)}</select><small>{subtitleStatus || 'Subtitle search ready.'}</small>{subtitleChoice && <button className="secondary-button subtitle-download" type="button" onClick={() => void downloadWithEmbeddedSubtitle()} disabled={muxBusy}>{muxBusy ? <LoaderCircle size={15} className="spin"/> : <Download size={15}/>} {muxBusy ? 'Preparing…' : 'Download with embedded subtitles'}</button>}{muxStatus && <small className="subtitle-mux-status" role="status">{muxStatus}</small>}</div>}<p>Browser playback is limited by codec support, CORS, DRM, and provider authorization. Nexvio does not bypass those restrictions.</p></section></div>
 }
 function MobileNav({ active, onSelect }: { active: string; onSelect: (tab: string) => void }) {
   const items = [{name:'Home', icon:Clapperboard},{name:'Search',icon:Search},{name:'Live TV',icon:Radio},{name:'Library',icon:Library},{name:'Profile',icon:UserRound}]
