@@ -7,6 +7,7 @@ import {
   Sparkles, Tv, X,
 } from 'lucide-react'
 import { supabase, supabaseConfigMissing } from './lib/supabase'
+import { loadCloudWatchlist, saveCloudWatchlist } from './lib/watchlistSync'
 import './styles.css'
 
 type MediaKind = 'movie' | 'tv'
@@ -57,6 +58,9 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [catalogueError, setCatalogueError] = useState('')
   const [watchlist, setWatchlist] = useState<Title[]>([])
+  const [watchlistReadyFor, setWatchlistReadyFor] = useState<string | null>(null)
+  const [watchlistStatus, setWatchlistStatus] = useState('')
+  const [watchlistError, setWatchlistError] = useState('')
   const [showAccount, setShowAccount] = useState(false)
 
   useEffect(() => {
@@ -108,11 +112,53 @@ function App() {
   useEffect(() => { void loadCatalogue() }, [loadCatalogue])
 
   useEffect(() => {
-    if (!session?.user.id) { setWatchlist([]); return }
-    // The existing Android cloud-sync tables have not yet been verified for watchlist rows.
-    // Do not write to an assumed schema or silently create a second account data store.
+    const accountId = session?.user.id
+    let cancelled = false
     setWatchlist([])
+    setWatchlistReadyFor(null)
+    setWatchlistError('')
+    if (!accountId || !supabase) {
+      setWatchlistStatus('Sign in to sync My List.')
+      return () => { cancelled = true }
+    }
+    setWatchlistStatus('Loading cloud list…')
+    void loadCloudWatchlist(supabase, accountId).then(items => {
+      if (cancelled) return
+      setWatchlist(items as Title[])
+      setWatchlistReadyFor(accountId)
+      setWatchlistStatus('Cloud list synced')
+    }).catch((error: unknown) => {
+      if (cancelled) return
+      setWatchlistError(error instanceof Error ? error.message : 'Could not load your cloud list.')
+      setWatchlistStatus('Cloud sync failed')
+    })
+    return () => { cancelled = true }
   }, [session?.user.id])
+
+  useEffect(() => {
+    const accountId = session?.user.id
+    if (!accountId || !supabase || watchlistReadyFor !== accountId) return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { data: current } = await supabase!.auth.getSession()
+          if (cancelled || current.session?.user.id !== accountId) return
+          setWatchlistStatus('Saving cloud list…')
+          setWatchlistError('')
+          await saveCloudWatchlist(supabase!, accountId, watchlist)
+          const { data: afterSave } = await supabase!.auth.getSession()
+          if (cancelled || afterSave.session?.user.id !== accountId) return
+          setWatchlistStatus('Cloud list synced')
+        } catch (error) {
+          if (cancelled) return
+          setWatchlistError(error instanceof Error ? error.message : 'Could not save your cloud list.')
+          setWatchlistStatus('Cloud sync failed')
+        }
+      })()
+    }, 450)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [watchlist, session?.user.id, watchlistReadyFor])
 
   const doAuth = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -209,6 +255,7 @@ function App() {
 
       <section className="catalogue-section">
         <div className="section-heading"><div><span className="section-kicker">{activeTab === 'My List' ? 'SAVED FOR LATER' : activeTab === 'Search' ? 'FIND YOUR NEXT WATCH' : 'HANDPICKED FOR YOU'}</span><h2>{activeTab === 'Search' ? 'Search' : activeTab === 'My List' ? 'My List' : activeTab === 'Movies' ? 'Movies' : activeTab === 'Series' ? 'Series' : 'Explore Nexvio'}</h2></div><button className="text-button" onClick={() => { setActiveTab('Home'); setSearchText(''); void loadCatalogue() }}>Refresh catalogue <span>↗</span></button></div>
+        {session && <div className={watchlistError ? 'notice error-notice' : 'sync-status'} role="status"><ShieldCheck size={15} /><span>{watchlistError || watchlistStatus}</span></div>}
         {catalogueError && <div className="notice error-notice"><Info size={18} /><span>{catalogueError}</span></div>}
         {loading && <div className="loading-line"><LoaderCircle className="spin" size={18} /> Loading titles…</div>}
         {!loading && visibleRows.length === 0 && <div className="empty-state"><Bookmark size={27} /><h3>{activeTab === 'My List' ? 'Your list is empty' : 'No titles found'}</h3><p>{activeTab === 'My List' ? 'Save movies and series to keep them close.' : 'Try a different search or refresh the catalogue.'}</p></div>}
