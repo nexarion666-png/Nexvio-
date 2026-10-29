@@ -206,3 +206,8 @@ body{padding-bottom:112px;background:#000}
 .stream-result-meta small{font-size:10px;letter-spacing:.12em;color:#9ca49e}
 .stream-result-meta strong{font-size:13px;font-weight:650;color:#dce5dc}
 .stream-result-card .stream-open{display:flex;align-items:center;justify-content:center;text-decoration:none;margin:0;width:100%;min-height:42px}
+
+
+.stream-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stream-card-actions .stream-open,.stream-card-actions .stream-download{display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;margin:0;width:100%;min-height:42px;box-sizing:border-box}
+@media(max-width:420px){.stream-card-actions{grid-template-columns:1fr}}
