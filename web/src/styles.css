@@ -211,3 +211,10 @@ body{padding-bottom:112px;background:#000}
 .stream-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .stream-card-actions .stream-open,.stream-card-actions .stream-download{display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;margin:0;width:100%;min-height:42px;box-sizing:border-box}
 @media(max-width:420px){.stream-card-actions{grid-template-columns:1fr}}
+
+.subtitle-controls{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px 12px;margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(20,25,22,.88)}
+.subtitle-controls label{font-weight:700;font-size:13px;color:#e8eee9}
+.subtitle-controls select{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#111713;color:#f4f7f4;font:inherit}
+.subtitle-controls small{grid-column:1/-1;color:#aeb9b1;font-size:12px;line-height:1.45}
+.browser-player video::cue{font-size:var(--subtitle-size,18px)}
+@media(max-width:420px){.subtitle-controls{grid-template-columns:1fr}.subtitle-controls small{grid-column:1}}
