@@ -218,3 +218,7 @@ body{padding-bottom:112px;background:#000}
 .subtitle-controls small{grid-column:1/-1;color:#aeb9b1;font-size:12px;line-height:1.45}
 .browser-player video::cue{font-size:var(--subtitle-size,18px)}
 @media(max-width:420px){.subtitle-controls{grid-template-columns:1fr}.subtitle-controls small{grid-column:1}}
+
+.subtitle-download{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:42px}
+.subtitle-download:disabled{opacity:.65;cursor:wait}
+.subtitle-mux-status{grid-column:1/-1;overflow-wrap:anywhere}
