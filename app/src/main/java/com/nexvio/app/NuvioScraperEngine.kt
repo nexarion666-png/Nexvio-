@@ -157,7 +157,17 @@ internal object NuvioScraperEngine {
                     concurrency.withPermit {
                         onStatus(providerName + ": waiting for search slot")
                         onStatus(providerName + ": downloading script")
-                        val script = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": network/download error — " + (e.message ?: "network error")); return@withPermit }
+                        val downloadedScript = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": network/download error — " + (e.message ?: "network error")); return@withPermit }
+                        // The upstream Vidlink provider catches API/runtime errors and returns an empty
+                        // list, which hides the actual failure as "no streams". Preserve its normal
+                        // empty-result behavior, but let genuine getStreams exceptions reach Nexvio's
+                        // existing provider error status and diagnostics.
+                        val script = if (providerName.equals("Vidlink", ignoreCase = true)) {
+                            downloadedScript.replace(
+                                "console.error(`[Vidlink] Error in getStreams: ${error.message}`);\n      return [];",
+                                "console.error(`[Vidlink] Error in getStreams: ${error.message}`);\n      throw error;"
+                            )
+                        } else downloadedScript
                         var failed = false
                         val found = try {
                             onStatus(providerName + ": script downloaded; searching")
