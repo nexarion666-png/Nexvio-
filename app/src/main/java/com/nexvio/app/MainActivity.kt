@@ -881,10 +881,10 @@ private fun formatPlayerTime(milliseconds: Long): String {
         Log.i(PLAYBACK_TAG, "Preparing channel name=${channel.name} host=${Uri.parse(channel.streamUrl).host ?: "unknown"}")
         var createdPlayer: ExoPlayer? = null
         try {
-            // The Vidlink CDN has returned HTTP 429 for requests carrying Vidlink's
-            // browser-style Referer/Origin/Connection headers, while the same media URL
-            // succeeds through Android's DownloadManager. For this CDN only, start with
-            // plain player headers; keep provider-specific headers for every other host.
+            // The same media URL reportedly downloads through Android's DownloadManager
+            // but fails during online playback with HTTP 429. Test whether the CDN rejects
+            // Vidlink's browser-style Referer/Origin/Connection headers by omitting custom
+            // headers for this CDN only; preserve provider-specific headers for other hosts.
             val streamHost = Uri.parse(channel.streamUrl).host.orEmpty().lowercase()
             val isHakunamatataCdn = streamHost == "hakunaymatata.com" ||
                 streamHost.endsWith(".hakunaymatata.com")
