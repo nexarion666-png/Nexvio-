@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     if (action === "search") {
       const title = clean(q.title), type = clean(q.type, 8), year = clean(q.year, 4), language = lang(clean(q.language, 3));
       if (!title || !["movie", "tv"].includes(type)) return json(res, 400, { error: "A title and media type are required." });
-      const params = new URLSearchParams({ query: title, languages: language, type });
+      const params = new URLSearchParams({ query: title, languages: language, type: type === "tv" ? "episode" : "movie" });
       if (/^\d{4}$/.test(year)) params.set("year", year);
       if (type === "tv") {
         const season = Number(q.season), episode = Number(q.episode);
