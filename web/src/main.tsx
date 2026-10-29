@@ -582,12 +582,10 @@ function StreamSearchPage({request,onBack}:{request:{item:Title;season:number;ep
   try{
    if(!TMDB_KEY)throw new Error('TMDB API key is not configured');
    const mediaType=kindOf(request.item)==='tv'?'tv':'movie';
-   const enc=await fetch('https://enc-dec.app/api/enc-vidlink?text='+encodeURIComponent(String(request.item.id)),{signal:AbortSignal.timeout(12000)});
-   if(!enc.ok)throw new Error('ID encryption service returned HTTP '+enc.status);
-   const encJson:any=await enc.json();if(!encJson?.result)throw new Error('ID encryption service returned an invalid response');
-   const endpoint='https://vidlink.pro/api/b/'+(mediaType==='tv'?'tv/'+encodeURIComponent(String(encJson.result))+'/'+request.season+'/'+request.episode:'movie/'+encodeURIComponent(String(encJson.result)));
-   const vr=await fetch(endpoint,{headers:{Accept:'application/json',Origin:'https://vidlink.pro',Referer:'https://vidlink.pro/'},signal:AbortSignal.timeout(18000)});
-   if(!vr.ok)throw new Error('Vidlink returned HTTP '+vr.status);
+   const params=new URLSearchParams({tmdbId:String(request.item.id),mediaType});
+   if(mediaType==='tv'){params.set('season',String(request.season));params.set('episode',String(request.episode))}
+   const vr=await fetch('/api/vidlink?'+params.toString(),{headers:{Accept:'application/json'},signal:AbortSignal.timeout(30000)});
+   if(!vr.ok){const detail=await vr.json().catch(()=>({}));throw new Error(String(detail?.error||('Vidlink proxy returned HTTP '+vr.status)))}
    const data:any=await vr.json();const title=titleName(request.item)+(mediaType==='tv'?' · S'+String(request.season).padStart(2,'0')+'E'+String(request.episode).padStart(2,'0'):'');
    const raw:string[]=[];
    if(data?.stream?.playlist&&typeof data.stream.playlist==='string')raw.push(data.stream.playlist);
