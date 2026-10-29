@@ -591,7 +591,32 @@ function StreamSearchPage({request,onBack,onPlay}:{request:{item:Title;season:nu
    if(!vr.ok){const detail=await vr.json().catch(()=>({}));throw new Error(String(detail?.error||('Vidlink proxy returned HTTP '+vr.status)))}
    const data:any=await vr.json();const title=titleName(request.item)+(mediaType==='tv'?' · S'+String(request.season).padStart(2,'0')+'E'+String(request.episode).padStart(2,'0'):'');
    const raw:{url:string;quality:string;audio:string}[]=[];
-   if(data?.stream?.playlist&&typeof data.stream.playlist==='string')raw.push({url:data.stream.playlist,quality:'Adaptive',audio:audioFrom(data?.stream?.audio,data?.audio,data?.stream?.language)});
+   if(data?.stream?.playlist&&typeof data.stream.playlist==='string'){
+    const playlistUrl=data.stream.playlist;
+    const audio=audioFrom(data?.stream?.audio,data?.audio,data?.stream?.language);
+    try{
+     const playlistResponse=await fetch('/api/stream?url='+encodeURIComponent(playlistUrl),{headers:{Accept:'application/vnd.apple.mpegurl, application/x-mpegURL, text/plain, */*'},signal:AbortSignal.timeout(12000)});
+     if(playlistResponse.ok){
+      const playlistText=await playlistResponse.text();
+      const lines=playlistText.split(/\\r?\\n/).map((line:string)=>line.trim()).filter(Boolean);
+      const variants:{url:string;quality:string;bandwidth:number}[]=[];
+      for(let i=0;i<lines.length;i++){
+       if(!lines[i].startsWith('#EXT-X-STREAM-INF:'))continue;
+       const resolution=lines[i].match(/RESOLUTION=\\d+x(\\d+)/i)?.[1];
+       const bandwidth=Number(lines[i].match(/BANDWIDTH=(\\d+)/i)?.[1]||0);
+       const nextLine=lines.slice(i+1).find((line:string)=>line&&!line.startsWith('#'));
+       if(!nextLine)continue;
+       let quality=resolution?qualityFrom(resolution+'p'):'';
+       if(!quality||quality==='Not reported')quality=bandwidth>=15000000?'4K':bandwidth>=7000000?'1080p':bandwidth>=3500000?'720p':bandwidth>=1500000?'480p':'Adaptive';
+       variants.push({url:new URL(nextLine,playlistUrl).toString(),quality,bandwidth});
+      }
+      if(variants.length){
+       variants.sort((a,b)=>b.bandwidth-a.bandwidth);
+       for(const variant of variants)raw.push({url:variant.url,quality:variant.quality,audio});
+      }else raw.push({url:playlistUrl,quality:'Adaptive',audio});
+     }else raw.push({url:playlistUrl,quality:'Adaptive',audio});
+    }catch{raw.push({url:playlistUrl,quality:'Adaptive',audio})}
+   }
    if(data?.stream?.qualities&&typeof data.stream.qualities==='object')for(const [quality,q] of Object.entries(data.stream.qualities) as [string,any][])if(typeof q?.url==='string')raw.push({url:q.url,quality:qualityFrom(quality),audio:audioFrom(q?.audio,q?.language,data?.stream?.audio,data?.audio)});
    if(typeof data?.url==='string')raw.push({url:data.url,quality:qualityFrom(data?.quality,data?.resolution),audio:audioFrom(data?.audio,data?.language)});
    if(Array.isArray(data?.streams))for(const x of data.streams)if(typeof x?.url==='string')raw.push({url:x.url,quality:qualityFrom(x?.quality,x?.resolution,x?.name),audio:audioFrom(x?.audio,x?.language,x?.name)});
