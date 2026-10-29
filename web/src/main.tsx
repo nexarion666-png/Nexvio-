@@ -392,8 +392,12 @@ function App() {
   const doSearch = async (event: React.FormEvent) => { event.preventDefault(); await searchCatalogue(query, searchKind) }
 
   const visibleRows = useMemo(() => {
-    if (activeTab === 'Movies') return rows.filter(row => row.title.includes('Movies') || row.title.includes('Trending'))
-    if (activeTab === 'Series') return rows.filter(row => row.title.includes('Series') || row.title.includes('Trending'))
+    if (activeTab === 'Movies') return rows
+      .map(row => ({ ...row, items: row.items.filter(item => kindOf(item) === 'movie') }))
+      .filter(row => row.items.length > 0)
+    if (activeTab === 'Series') return rows
+      .map(row => ({ ...row, items: row.items.filter(item => kindOf(item) === 'tv') }))
+      .filter(row => row.items.length > 0)
     if (activeTab === 'My List') return [{ title: 'My List', items: watchlist }]
     return rows
   }, [activeTab, rows, watchlist])
@@ -409,7 +413,7 @@ function App() {
     <header className="topbar">
       <button className="brand" onClick={() => { setActiveTab('Home'); setSearchText('') }} aria-label="Nexvio home"><span className="brand-mark">N</span><span>NEXVIO</span></button>
       <nav className="desktop-nav" aria-label="Main navigation">
-        {[{tab:'Home', icon:Clapperboard}, {tab:'Search', icon:Search}, {tab:'Live TV', icon:Radio}, {tab:'Library', icon:Library}, {tab:'Profile', icon:UserRound}].map(({tab, icon: NavIcon}) => <button key={tab} className={activeTab === tab ? 'nav-item active' : 'nav-item'} onClick={() => { setActiveTab(tab); setSearchText(''); setSelected(null) }}><NavIcon size={15} />{tab}</button>)}
+        {[{tab:'Home', icon:Clapperboard}, {tab:'Movies', icon:Film}, {tab:'Series', icon:Tv}, {tab:'Search', icon:Search}, {tab:'Live TV', icon:Radio}, {tab:'Library', icon:Library}, {tab:'Profile', icon:UserRound}].map(({tab, icon: NavIcon}) => <button key={tab} className={activeTab === tab ? 'nav-item active' : 'nav-item'} onClick={() => { setActiveTab(tab); setSearchText(''); setSelected(null) }}><NavIcon size={15} />{tab}</button>)}
       </nav>
       <form className="search-box" onSubmit={doSearch}><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search titles" aria-label="Search titles" onFocus={() => { if (activeTab !== 'Search') setActiveTab('Search') }} /><button type="submit" aria-label="Submit search"><ArrowLeft className="search-enter" size={16} /></button></form>
       <div className="account-wrap">
@@ -424,8 +428,8 @@ function App() {
         <div className="hero-caption">FEATURED CONTENT <span>•</span> {yearOf(featured) || 'DISCOVER'}</div>
       </section>}
 
-      {(activeTab === 'Home' || activeTab === 'Search') && <section className="catalogue-section">
-        <div className="section-heading"><div><span className="section-kicker">{activeTab === 'Search' ? 'FIND YOUR NEXT WATCH' : 'MOVIES · SERIES · DISCOVERY'}</span><h2>{activeTab === 'Search' ? 'Search catalogue' : 'Explore Nexvio'}</h2></div><button className="text-button" onClick={() => void loadCatalogue()}>Refresh catalogue <span>↗</span></button></div>
+      {(activeTab === 'Home' || activeTab === 'Search' || activeTab === 'Movies' || activeTab === 'Series') && <section className="catalogue-section">
+        <div className="section-heading"><div><span className="section-kicker">{activeTab === 'Search' ? 'FIND YOUR NEXT WATCH' : activeTab === 'Movies' ? 'MOVIE COLLECTION' : activeTab === 'Series' ? 'SERIES COLLECTION' : 'MOVIES · SERIES · DISCOVERY'}</span><h2>{activeTab === 'Search' ? 'Search catalogue' : activeTab === 'Movies' ? 'Movies' : activeTab === 'Series' ? 'Series' : 'Explore Nexvio'}</h2></div><button className="text-button" onClick={() => void loadCatalogue()}>Refresh catalogue <span>↗</span></button></div>
         {activeTab === 'Search' && <div className="search-tools"><button className={searchKind === 'movie' ? 'chip active' : 'chip'} onClick={() => { setSearchKind('movie'); if (searchText) void searchCatalogue(searchText, 'movie') }}>Movies</button><button className={searchKind === 'tv' ? 'chip active' : 'chip'} onClick={() => { setSearchKind('tv'); if (searchText) void searchCatalogue(searchText, 'tv') }}>Series</button><form className="wide-search" onSubmit={doSearch}><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search movies and series" aria-label="Search movies and series"/><button className="primary-button" type="submit">Search</button></form></div>}
         {watchlistError && <div className="notice error-notice" role="alert"><Info size={18}/><span>{watchlistError}</span></div>}
         {catalogueError && <div className="notice error-notice" role="alert"><Info size={18}/><span>{catalogueError}</span></div>}
@@ -505,8 +509,8 @@ function BrowserPlayer({ channel, error, setError, onClose }: { channel: TvChann
 }
 
 function MobileNav({ active, onSelect }: { active: string; onSelect: (tab: string) => void }) {
-  const items = [{name:'Home', icon:Clapperboard},{name:'Search',icon:Search},{name:'Live TV',icon:Radio},{name:'Library',icon:Library},{name:'Profile',icon:UserRound}]
-  return <nav className="mobile-nav" aria-label="Main navigation">{items.map(item => <button key={item.name} className={active === item.name ? 'active' : ''} onClick={() => onSelect(item.name)} aria-current={active === item.name ? 'page' : undefined}><item.icon size={19}/><span>{item.name}</span></button>)}</nav>
+  const items = [{name:'Home', icon:Clapperboard},{name:'Movies',icon:Film},{name:'Series',icon:Tv},{name:'Search',icon:Search},{name:'Live TV',icon:Radio},{name:'Library',icon:Library},{name:'Profile',icon:UserRound}]
+  return <nav className="mobile-nav" aria-label="Main navigation">{items.map(item => <button key={item.name} className={active === item.name ? 'active' : ''} onClick={() => onSelect(item.name)} aria-current={active === item.name ? 'page' : undefined}><item.icon size={17}/><span>{item.name}</span></button>)}</nav>
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)
