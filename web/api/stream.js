@@ -70,10 +70,9 @@ export default async function handler(req, res) {
     if (download) {
       const extension = contentType.includes("mp4") ? "mp4" : contentType.includes("webm") ? "webm" : contentType.includes("matroska") ? "mkv" : "video";
       const requestedName = typeof req.query?.name === "string" ? req.query.name : "Nexvio video";
-      const safeName = requestedName.normalize("NFKC").replace(/[\\/\\:*?"<>|\\u0000-\\u001f\\u007f]/g, "").replace(/\\s+/g, " ").trim().replace(/[. ]+$/g, "").slice(0, 120) || "Nexvio video";
+      const safeName = requestedName.normalize("NFKC").replace(/[^a-zA-Z0-9 _.-]/g, "").replace(/\s+/g, " ").trim().replace(/[. ]+$/g, "").slice(0, 120) || "Nexvio video";
       const filename = safeName + "." + extension;
-      const asciiFallback = filename.replace(/[^\\x20-\\x7E]/g, "_").replace(/["\\\\]/g, "_");
-      res.setHeader("Content-Disposition", 'attachment; filename="' + asciiFallback + '"; filename*=UTF-8'' + encodeURIComponent(filename));
+      res.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
     }
 
     if (req.method === "HEAD" || !upstream.body) return res.end();
