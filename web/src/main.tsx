@@ -485,7 +485,7 @@ function App() {
       <form className="search-box" onSubmit={doSearch}><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search titles" aria-label="Search titles" onFocus={() => { if (activeTab !== 'Search') setActiveTab('Search') }} /><button type="submit" aria-label="Submit search"><ArrowLeft className="search-enter" size={16} /></button></form>
       <div className="account-wrap">
         <button className="account-button" onClick={() => setShowAccount(value => !value)} aria-label="Account menu"><CircleUserRound size={21} /><ChevronDown size={14} /></button>
-        {showAccount && <div className="account-menu"><div className="account-email">{session.user.email}</div><div className="account-note"><ShieldCheck size={14} /> Same Nexvio Supabase account</div><button onClick={() => { setActiveTab('Profile'); setShowAccount(false) }}><ShieldCheck size={15} /> Preferences</button><button onClick={signOut}><LogOut size={15} /> Sign out</button></div>}
+        {showAccount && <div className="account-menu"><div className="account-email">{session?.user.email || 'Guest mode'}</div><div className="account-note"><ShieldCheck size={14} /> Same Nexvio Supabase account</div><button onClick={() => { setActiveTab('Profile'); setShowAccount(false) }}><ShieldCheck size={15} /> Preferences</button>{session && <button onClick={signOut}><LogOut size={15} /> Sign out</button>}{isGuest && <button onClick={() => { setIsGuest(false); setShowAccount(false) }}><LogOut size={15} /> Exit guest mode</button>}</div>}
       </div>
     </header>
 
