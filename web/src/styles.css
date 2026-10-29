@@ -53,6 +53,7 @@ body,.app-shell{background-color:var(--bg)}
 .favorite-channel.active{color:var(--lime)}
 .profile-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:12px;margin-bottom:26px}
 .profile-card{display:flex;align-items:center;gap:12px;text-align:left;padding:15px;background:#17191d;border:1px solid var(--line);border-radius:13px;color:#fff}
+.profile-card{gap:8px}.profile-select{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-align:left;border:0;background:transparent;color:inherit;padding:0;cursor:pointer}.profile-select>span:nth-child(2){display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}.profile-select strong{font-size:13px}.profile-select small{font-size:10px;color:#9ca49e}.profile-edit-button{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#202329;color:var(--muted);cursor:pointer}.profile-edit-button:hover{color:var(--lime);border-color:var(--lime)}.profile-card .profile-avatar{font-size:23px;line-height:1}.create-profile-form>div{align-items:center}.create-profile-form .settings-select{max-width:170px;min-width:130px}
 .profile-card.active{border-color:var(--lime);background:#38c77a12}
 .profile-card>span:nth-child(2){display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
 .profile-card strong{font-size:13px}.profile-card small{font-size:10px;color:#9ca49e}
