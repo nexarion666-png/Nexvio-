@@ -21,7 +21,6 @@ export type CloudTitle = {
   genreIds?: number[]
 }
 
-type ProfileRow = { profile_id: string; profile_data: Record<string, unknown> | null }
 type StateRow = { state_data: Record<string, unknown> | null }
 
 const PRIMARY_PROFILE = 'primary'
