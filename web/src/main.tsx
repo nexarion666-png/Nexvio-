@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase, supabaseConfigMissing } from './lib/supabase'
 import { loadCloudWatchlist, saveCloudWatchlist } from './lib/watchlistSync'
+import { loadCloudSettings, saveCloudSettings } from './lib/settingsSync'
 import './styles.css'
 
 type MediaKind = 'movie' | 'tv'
@@ -62,6 +63,10 @@ function App() {
   const [watchlistStatus, setWatchlistStatus] = useState('')
   const [watchlistError, setWatchlistError] = useState('')
   const [showAccount, setShowAccount] = useState(false)
+  const [settingsReadyFor, setSettingsReadyFor] = useState<string | null>(null)
+  const [settingsStatus, setSettingsStatus] = useState('')
+  const [settingsError, setSettingsError] = useState('')
+  const [webSettings, setWebSettings] = useState({ autoplayPreviews: false, rememberProgress: true })
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return }
@@ -160,6 +165,57 @@ function App() {
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [watchlist, session?.user.id, watchlistReadyFor])
 
+  useEffect(() => {
+    const accountId = session?.user.id
+    let cancelled = false
+    setSettingsReadyFor(null)
+    setSettingsError('')
+    if (!accountId || !supabase) return () => { cancelled = true }
+    setSettingsStatus('Loading preferences…')
+    void loadCloudSettings(supabase, accountId).then(remote => {
+      if (cancelled) return
+      setWebSettings({
+        autoplayPreviews: remote.web_autoplay_previews === true,
+        rememberProgress: remote.web_remember_progress !== false,
+      })
+      setSettingsReadyFor(accountId)
+      setSettingsStatus('Preferences synced')
+    }).catch((error: unknown) => {
+      if (cancelled) return
+      setSettingsError(error instanceof Error ? error.message : 'Could not load preferences.')
+      setSettingsStatus('Preferences sync failed')
+    })
+    return () => { cancelled = true }
+  }, [session?.user.id])
+
+  useEffect(() => {
+    const accountId = session?.user.id
+    if (!accountId || !supabase || settingsReadyFor !== accountId) return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { data: before } = await supabase!.auth.getSession()
+          if (cancelled || before.session?.user.id !== accountId) return
+          setSettingsStatus('Saving preferences…')
+          setSettingsError('')
+          await saveCloudSettings(supabase!, accountId, {
+            web_autoplay_previews: webSettings.autoplayPreviews,
+            web_remember_progress: webSettings.rememberProgress,
+          })
+          const { data: after } = await supabase!.auth.getSession()
+          if (cancelled || after.session?.user.id !== accountId) return
+          setSettingsStatus('Preferences synced')
+        } catch (error) {
+          if (cancelled) return
+          setSettingsError(error instanceof Error ? error.message : 'Could not save preferences.')
+          setSettingsStatus('Preferences sync failed')
+        }
+      })()
+    }, 400)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [webSettings, session?.user.id, settingsReadyFor])
+
   const doAuth = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!supabase) return
@@ -238,12 +294,12 @@ function App() {
     <header className="topbar">
       <button className="brand" onClick={() => { setActiveTab('Home'); setSearchText('') }} aria-label="Nexvio home"><span className="brand-mark">N</span><span>NEXVIO</span></button>
       <nav className="desktop-nav" aria-label="Main navigation">
-        {['Home', 'Movies', 'Series', 'My List'].map(tab => <button key={tab} className={activeTab === tab ? 'nav-item active' : 'nav-item'} onClick={() => { setActiveTab(tab); setSearchText('') }}>{tab}</button>)}
+        {['Home', 'Movies', 'Series', 'My List', 'Settings'].map(tab => <button key={tab} className={activeTab === tab ? 'nav-item active' : 'nav-item'} onClick={() => { setActiveTab(tab); setSearchText('') }}>{tab}</button>)}
       </nav>
       <form className="search-box" onSubmit={doSearch}><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Titles, genres" aria-label="Search titles" /><button type="submit" aria-label="Submit search"><ArrowLeft className="search-enter" size={16} /></button></form>
       <div className="account-wrap">
         <button className="account-button" onClick={() => setShowAccount(value => !value)} aria-label="Account menu"><CircleUserRound size={21} /><ChevronDown size={14} /></button>
-        {showAccount && <div className="account-menu"><div className="account-email">{session.user.email}</div><div className="account-note"><ShieldCheck size={14} /> Same Nexvio Supabase account</div><button onClick={signOut}><LogOut size={15} /> Sign out</button></div>}
+        {showAccount && <div className="account-menu"><div className="account-email">{session.user.email}</div><div className="account-note"><ShieldCheck size={14} /> Same Nexvio Supabase account</div><button onClick={() => { setActiveTab('Settings'); setShowAccount(false) }}><ShieldCheck size={15} /> Preferences</button><button onClick={signOut}><LogOut size={15} /> Sign out</button></div>}
       </div>
     </header>
 
@@ -253,14 +309,15 @@ function App() {
         <div className="hero-caption">FEATURED TONIGHT <span>•</span> {yearOf(featured) || 'NOW SHOWING'}</div>
       </section>}
 
-      <section className="catalogue-section">
+      {activeTab !== 'Settings' && <section className="catalogue-section">
         <div className="section-heading"><div><span className="section-kicker">{activeTab === 'My List' ? 'SAVED FOR LATER' : activeTab === 'Search' ? 'FIND YOUR NEXT WATCH' : 'HANDPICKED FOR YOU'}</span><h2>{activeTab === 'Search' ? 'Search' : activeTab === 'My List' ? 'My List' : activeTab === 'Movies' ? 'Movies' : activeTab === 'Series' ? 'Series' : 'Explore Nexvio'}</h2></div><button className="text-button" onClick={() => { setActiveTab('Home'); setSearchText(''); void loadCatalogue() }}>Refresh catalogue <span>↗</span></button></div>
         {session && <div className={watchlistError ? 'notice error-notice' : 'sync-status'} role="status"><ShieldCheck size={15} /><span>{watchlistError || watchlistStatus}</span></div>}
         {catalogueError && <div className="notice error-notice"><Info size={18} /><span>{catalogueError}</span></div>}
         {loading && <div className="loading-line"><LoaderCircle className="spin" size={18} /> Loading titles…</div>}
         {!loading && visibleRows.length === 0 && <div className="empty-state"><Bookmark size={27} /><h3>{activeTab === 'My List' ? 'Your list is empty' : 'No titles found'}</h3><p>{activeTab === 'My List' ? 'Save movies and series to keep them close.' : 'Try a different search or refresh the catalogue.'}</p></div>}
         {visibleRows.map(row => <MediaRow key={row.title} title={row.title} items={row.items} onSelect={setSelected} />)}
-      </section>
+      </section>}
+      {activeTab === 'Settings' && <section className="settings-page"><div className="section-heading"><div><span className="section-kicker">YOUR NEXVIO ACCOUNT</span><h2>Preferences</h2></div></div><div className={settingsError ? 'notice error-notice' : 'sync-status'} role="status"><ShieldCheck size={15} /><span>{settingsError || settingsStatus}</span></div><div className="settings-card"><div><strong>Autoplay previews</strong><p>Automatically start previews when preview playback becomes available.</p></div><button className={webSettings.autoplayPreviews ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-checked={webSettings.autoplayPreviews} onClick={() => setWebSettings(value => ({ ...value, autoplayPreviews: !value.autoplayPreviews }))}><span /></button></div><div className="settings-card"><div><strong>Remember playback progress</strong><p>Keep playback position across sessions when video playback is connected.</p></div><button className={webSettings.rememberProgress ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-checked={webSettings.rememberProgress} onClick={() => setWebSettings(value => ({ ...value, rememberProgress: !value.rememberProgress }))}><span /></button></div><p className="settings-footnote">These preferences sync to your Nexvio account. Playback behavior takes effect when browser playback is implemented.</p></section>}
     </main>
     <footer className="footer"><span>© {new Date().getFullYear()} Nexvio</span><span>Movies · Series · Your watchlist</span><span>Playback and cloud data parity are being built in stages.</span></footer>
 

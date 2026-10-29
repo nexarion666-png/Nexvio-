@@ -36,3 +36,7 @@ Stage 3 now connects My List to the existing `nexvio_profile_state` table using 
 ## Not yet implemented
 
 This foundation does not claim full feature parity yet. Browser provider execution and real stream playback, verified profile-scoped cloud sync, shared history/preferences, add-on management, downloads, and release/update parity still need dedicated implementation and testing.
+
+## Stage 4 — cloud-synced preferences
+
+The Stage 4 branch adds a Preferences screen backed by the existing `nexvio_profile_state` row (`profile_id=primary`, `state_key=settings`). It stores web-owned keys (`web_autoplay_previews`, `web_remember_progress`) while preserving other keys in the state object, with account-session checks and visible sync/error status. Autoplay and playback-progress behavior are preference placeholders until browser playback is implemented; they do not claim to control a player yet. This feature is additive and does not modify Android source or create a new table.
