@@ -881,9 +881,17 @@ private fun formatPlayerTime(milliseconds: Long): String {
         Log.i(PLAYBACK_TAG, "Preparing channel name=${channel.name} host=${Uri.parse(channel.streamUrl).host ?: "unknown"}")
         var createdPlayer: ExoPlayer? = null
         try {
+            // The Vidlink CDN has returned HTTP 429 for requests carrying Vidlink's
+            // browser-style Referer/Origin/Connection headers, while the same media URL
+            // succeeds through Android's DownloadManager. For this CDN only, start with
+            // plain player headers; keep provider-specific headers for every other host.
+            val streamHost = Uri.parse(channel.streamUrl).host.orEmpty().lowercase()
+            val isHakunamatataCdn = streamHost == "hakunaymatata.com" ||
+                streamHost.endsWith(".hakunaymatata.com")
+            val playbackHeaders = if (isHakunamatataCdn) emptyMap() else channel.requestHeaders
             val httpFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent(channel.requestHeaders["User-Agent"] ?: "Nexvio/1.0 (Android)")
-                .setDefaultRequestProperties(channel.requestHeaders.filterKeys { !it.equals("User-Agent", true) })
+                .setUserAgent(playbackHeaders.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: "Nexvio/1.0 (Android)")
+                .setDefaultRequestProperties(playbackHeaders.filterKeys { !it.equals("User-Agent", true) })
                 .setAllowCrossProtocolRedirects(true)
             val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpFactory)
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
