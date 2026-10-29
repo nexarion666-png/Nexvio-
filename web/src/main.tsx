@@ -57,6 +57,8 @@ function App() {
   const [profiles, setProfiles] = useState<NexvioProfile[]>([])
   const [activeProfileId, setActiveProfileId] = useState('primary')
   const [profileName, setProfileName] = useState('')
+  const [profileAvatar, setProfileAvatar] = useState('fox')
+  const [profileEditingId, setProfileEditingId] = useState<string | null>(null)
   const [profileError, setProfileError] = useState('')
   const [profileBusy, setProfileBusy] = useState(false)
   const [searchKind, setSearchKind] = useState<'movie' | 'tv'>('movie')
@@ -300,23 +302,43 @@ function App() {
     window.localStorage.setItem(key, JSON.stringify(tvChannels))
   }, [tvChannels, session?.user.id, activeProfileId])
 
-  const createProfile = async (event: React.FormEvent) => {
+  const saveProfile = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!supabase || !session || !profileName.trim()) return
-    if (profiles.some(profile => profile.name.trim().toLowerCase() === profileName.trim().toLowerCase())) { setProfileError('A profile with that name already exists.'); return }
+    if (profiles.some(profile => profile.id !== profileEditingId && profile.name.trim().toLowerCase() === profileName.trim().toLowerCase())) { setProfileError('A profile with that name already exists.'); return }
     setProfileBusy(true); setProfileError('')
     try {
-      const id = crypto.randomUUID()
       const now = Date.now()
-      const profile = { id, name: profileName.trim(), avatar: 'fox', customAvatar: '', primary: false, primaryAddons: true, createdAt: now, updatedAt: now }
-      const { error } = await supabase.from('nexvio_profiles').insert({ account_id: session.user.id, profile_id: id, profile_data: profile, updated_at: new Date(now).toISOString() })
-      if (error) throw error
-      setProfiles(current => [...current, { id, name: profile.name, avatar: 'fox' }])
+      if (profileEditingId) {
+        const { data, error: readError } = await supabase.from('nexvio_profiles').select('profile_data').eq('account_id', session.user.id).eq('profile_id', profileEditingId).single()
+        if (readError) throw readError
+        const oldProfile = data?.profile_data && typeof data.profile_data === 'object' ? data.profile_data as Record<string, unknown> : {}
+        const updated = { ...oldProfile, id: profileEditingId, name: profileName.trim(), avatar: profileAvatar, updatedAt: now }
+        const { error } = await supabase.from('nexvio_profiles').update({ profile_data: updated, updated_at: new Date(now).toISOString() }).eq('account_id', session.user.id).eq('profile_id', profileEditingId)
+        if (error) throw error
+        setProfiles(current => current.map(profile => profile.id === profileEditingId ? { ...profile, name: profileName.trim(), avatar: profileAvatar } : profile))
+      } else {
+        const id = crypto.randomUUID()
+        const profile = { id, name: profileName.trim(), avatar: profileAvatar, customAvatar: '', primary: false, primaryAddons: true, createdAt: now, updatedAt: now }
+        const { error } = await supabase.from('nexvio_profiles').insert({ account_id: session.user.id, profile_id: id, profile_data: profile, updated_at: new Date(now).toISOString() })
+        if (error) throw error
+        setProfiles(current => [...current, { id, name: profile.name, avatar: profileAvatar }])
+        setActiveProfileId(id)
+        window.localStorage.setItem(`nexvio_active_profile_${session.user.id}`, id)
+      }
       setProfileName('')
-      setActiveProfileId(id)
-      window.localStorage.setItem(`nexvio_active_profile_${session.user.id}`, id)
-    } catch (error) { setProfileError(error instanceof Error ? error.message : 'Could not create profile.') }
+      setProfileAvatar('fox')
+      setProfileEditingId(null)
+    } catch (error) { setProfileError(error instanceof Error ? error.message : 'Could not save profile.') }
     finally { setProfileBusy(false) }
+  }
+
+  const editProfile = (profile: NexvioProfile) => {
+    setProfileEditingId(profile.id)
+    setProfileName(profile.name)
+    setProfileAvatar(profile.avatar || 'fox')
+    setProfileError('')
+    document.getElementById('profile-name')?.focus()
   }
 
   const selectProfile = (id: string) => {
@@ -469,7 +491,7 @@ function App() {
 
       {activeTab === 'Library' && <section className="workspace-page"><div className="section-heading"><div><span className="section-kicker">PROFILE: {profiles.find(profile => profile.id === activeProfileId)?.name || 'Main Profile'}</span><h2>Your Library</h2><p>Saved titles for this profile. TMDB supplies metadata only; it does not provide playable streams.</p></div></div><div className="sync-status" role="status"><ShieldCheck size={15}/><span>{watchlistError || watchlistStatus}</span></div><div className="library-tabs"><button className="chip active">Watchlist ({watchlist.length})</button><button className="chip" disabled title="Playback history will appear after browser playback is connected">History (not connected)</button></div>{watchlist.length ? <MediaRow title="Saved titles" items={watchlist} onSelect={openTitle}/> : <div className="empty-state"><Bookmark size={28}/><h3>Your library is waiting</h3><p>Add movies or series from their detail pages to keep them here.</p><button className="secondary-button" onClick={() => setActiveTab('Search')}>Discover titles</button></div>}</section>}
 
-      {activeTab === 'Profile' && <section className="workspace-page profile-page"><div className="section-heading"><div><span className="section-kicker">YOUR NEXVIO SPACE</span><h2>Profiles & settings</h2><p>Profiles separate watchlists and preferences within your signed-in account.</p></div></div><div className="profile-list">{profiles.map(profile => <button key={profile.id} className={profile.id === activeProfileId ? 'profile-card active' : 'profile-card'} onClick={() => selectProfile(profile.id)}><span className="profile-avatar"><UserRound size={23}/></span><span><strong>{profile.name}</strong><small>{profile.primary ? 'Primary profile' : 'Profile'}{profile.id === activeProfileId ? ' · Active' : ''}</small></span>{profile.id === activeProfileId && <Check size={18}/>}</button>)}</div><form className="create-profile-form" onSubmit={createProfile}><h3>Create a profile</h3><label htmlFor="profile-name">Profile name</label><div><input id="profile-name" value={profileName} onChange={event => setProfileName(event.target.value)} maxLength={40} required placeholder="e.g. Family"/><button className="primary-button" disabled={profileBusy}>{profileBusy ? 'Creating…' : 'Create profile'}</button></div></form>{profileError && <div className="notice error-notice" role="alert">{profileError}</div>}
+      {activeTab === 'Profile' && <section className="workspace-page profile-page"><div className="section-heading"><div><span className="section-kicker">YOUR NEXVIO SPACE</span><h2>Profiles & settings</h2><p>Profiles separate watchlists and preferences within your signed-in account.</p></div></div><div className="profile-list">{profiles.map(profile => <div key={profile.id} className={profile.id === activeProfileId ? 'profile-card active' : 'profile-card'}><button className="profile-select" onClick={() => selectProfile(profile.id)}><span className="profile-avatar">{({'fox':'🦊','bear':'🐻','cat':'🐱','owl':'🦉','tiger':'🐯','panda':'🐼','rabbit':'🐰','frog':'🐸','lion':'🦁','koala':'🐨','pig':'🐷','cow':'🐮','unicorn':'🦄','dragon':'🐲','penguin':'🐧','monkey':'🐵','dog':'🐶','deer':'🦌','butterfly':'🦋','star':'⭐','robot':'🤖','alien':'👽','astronaut':'🧑‍🚀','artist':'🎨'} as Record<string,string>)[profile.avatar || 'fox'] || '🦊'}</span><span><strong>{profile.name}</strong><small>{profile.primary ? 'Primary profile' : 'Profile'}{profile.id === activeProfileId ? ' · Active' : ''}</small></span>{profile.id === activeProfileId && <Check size={18}/>}</button><button className="profile-edit-button" onClick={() => editProfile(profile)} aria-label={`Edit ${profile.name}`}><Settings size={15}/></button></div>)}</div><form className="create-profile-form" onSubmit={saveProfile}><h3>{profileEditingId ? 'Edit profile' : 'Create a profile'}</h3><label htmlFor="profile-name">Profile name</label><div><input id="profile-name" value={profileName} onChange={event => setProfileName(event.target.value)} maxLength={40} required placeholder="e.g. Family"/><select className="settings-select" aria-label="Profile avatar" value={profileAvatar} onChange={event => setProfileAvatar(event.target.value)}>{[['fox','🦊 Fox'],['bear','🐻 Bear'],['cat','🐱 Cat'],['owl','🦉 Owl'],['tiger','🐯 Tiger'],['panda','🐼 Panda'],['rabbit','🐰 Rabbit'],['frog','🐸 Frog'],['lion','🦁 Lion'],['koala','🐨 Koala'],['pig','🐷 Pig'],['cow','🐮 Cow'],['unicorn','🦄 Unicorn'],['dragon','🐲 Dragon'],['penguin','🐧 Penguin'],['monkey','🐵 Monkey'],['dog','🐶 Dog'],['deer','🦌 Deer'],['butterfly','🦋 Butterfly'],['star','⭐ Star'],['robot','🤖 Robot'],['alien','👽 Alien'],['astronaut','🧑‍🚀 Astronaut'],['artist','🎨 Artist']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select><button className="primary-button" disabled={profileBusy}>{profileBusy ? 'Saving…' : profileEditingId ? 'Save changes' : 'Create profile'}</button>{profileEditingId && <button type="button" className="secondary-button" onClick={() => { setProfileEditingId(null); setProfileName(''); setProfileAvatar('fox'); setProfileError('') }}>Cancel</button>}</div></form>{profileError && <div className="notice error-notice" role="alert">{profileError}</div>}
         <div className="settings-subheading"><Settings size={18}/><h3>Preferences</h3><span className="sync-status">{settingsError || settingsStatus}</span></div><div className="settings-card"><div><strong>Accent theme</strong><p>Choose the accent colour used across Nexvio. This preference syncs with your profile.</p></div><select className="settings-select" aria-label="Accent theme" value={webSettings.theme} onChange={event => setWebSettings(value => ({ ...value, theme: event.target.value }))}>{['Emerald', 'White', 'Crimson', 'Ocean', 'Violet', 'Amber', 'Rose'].map(theme => <option key={theme} value={theme}>{theme}</option>)}</select></div><div className="settings-card"><div><strong>AMOLED black</strong><p>Use a true black app background on OLED displays.</p></div><button className={webSettings.amoledBlack ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-label="AMOLED black" aria-checked={webSettings.amoledBlack} onClick={() => setWebSettings(value => ({ ...value, amoledBlack: !value.amoledBlack }))}><span /></button></div><div className="settings-card"><div><strong>Autoplay streams</strong><p>Start compatible imported Live TV streams automatically when the player opens.</p></div><button className={webSettings.playbackAutoplay ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-label="Autoplay streams" aria-checked={webSettings.playbackAutoplay} onClick={() => setWebSettings(value => ({ ...value, playbackAutoplay: !value.playbackAutoplay }))}><span /></button></div><div className="settings-card"><div><strong>Video sizing</strong><p>Controls how the video fits inside the browser player.</p></div><select className="settings-select" aria-label="Video sizing" value={webSettings.videoSizing} onChange={event => setWebSettings(value => ({ ...value, videoSizing: event.target.value }))}>{['Fit', 'Fill', 'Zoom'].map(value => <option key={value}>{value}</option>)}</select></div><div className="settings-card"><div><strong>Preferred audio language</strong><p>Saved as a preference; browser support for selecting audio tracks varies by stream and browser.</p></div><select className="settings-select" aria-label="Preferred audio language" value={webSettings.audioLanguage} onChange={event => setWebSettings(value => ({ ...value, audioLanguage: event.target.value }))}>{['Device language', 'No preference', 'English', 'Japanese', 'Spanish', 'French'].map(value => <option key={value}>{value}</option>)}</select></div><div className="settings-card"><div><strong>Preferred subtitle language</strong><p>Saved as a preference; automatic track selection is not yet connected.</p></div><select className="settings-select" aria-label="Preferred subtitle language" value={webSettings.subtitleLanguage} onChange={event => setWebSettings(value => ({ ...value, subtitleLanguage: event.target.value }))}>{['Device language', 'No subtitles', 'English', 'Japanese', 'Spanish', 'French'].map(value => <option key={value}>{value}</option>)}</select></div><div className="settings-card"><div><strong>Subtitle size</strong><p>Preferred subtitle text size for a compatible player.</p><input className="settings-range" aria-label="Subtitle size" type="range" min="12" max="36" value={webSettings.subtitleSize} onChange={event => setWebSettings(value => ({ ...value, subtitleSize: Number(event.target.value) }))}/><span className="settings-value">{webSettings.subtitleSize}px</span></div></div><div className="settings-card"><div><strong>Reduce motion</strong><p>Disable non-essential interface transitions and animations in this browser.</p></div><button className={webSettings.reduceMotion ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-label="Reduce motion" aria-checked={webSettings.reduceMotion} onClick={() => setWebSettings(value => ({ ...value, reduceMotion: !value.reduceMotion }))}><span /></button></div><button className="secondary-button signout-button" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
     </main>
     <footer className="footer"><span>© {new Date().getFullYear()} Nexvio</span><span>Movies · Series · Your watchlist</span><span>Playback and cloud data parity are being built in stages.</span></footer>
