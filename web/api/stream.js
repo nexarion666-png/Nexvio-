@@ -20,6 +20,12 @@ export default async function handler(req, res) {
   }
 
   const rawUrl = typeof req.query?.url === "string" ? req.query.url : "";
+  const download = req.query?.download === "1";
+  if (download && /\\.m3u8(?:$|[?#])/i.test(rawUrl)) {
+    res.statusCode = 415;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.end("This source is an HLS playlist, not a complete video file. Downloading the playlist alone will not save the movie.");
+  }
   let target;
   try {
     target = new URL(rawUrl);
@@ -43,12 +49,28 @@ export default async function handler(req, res) {
       signal: AbortSignal.timeout(30000),
     });
 
+    const contentType = (upstream.headers.get("content-type") || "").toLowerCase();
+    if (download && (contentType.includes("mpegurl") || contentType.includes("x-mpegurl") || contentType.includes("application/vnd.apple"))) {
+      res.statusCode = 415;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.end("Vidlink returned a streaming playlist rather than a single video file. This website cannot save the full movie from this source as one file yet.");
+    }
+    if (download && !contentType.startsWith("video/") && !contentType.includes("application/octet-stream")) {
+      res.statusCode = 415;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.end("This source did not return a downloadable video file. Try streaming it instead.");
+    }
+
     res.statusCode = upstream.status;
     for (const name of ["accept-ranges", "content-length", "content-range", "content-type", "last-modified", "etag"]) {
       const value = upstream.headers.get(name);
       if (value) res.setHeader(name, value);
     }
     res.setHeader("X-Content-Type-Options", "nosniff");
+    if (download) {
+      const extension = contentType.includes("mp4") ? "mp4" : contentType.includes("webm") ? "webm" : contentType.includes("matroska") ? "mkv" : "video";
+      res.setHeader("Content-Disposition", `attachment; filename="nexvio-download.${extension}"`);
+    }
 
     if (req.method === "HEAD" || !upstream.body) return res.end();
     Readable.fromWeb(upstream.body).on("error", () => {
