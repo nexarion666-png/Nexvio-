@@ -771,8 +771,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 addonNames.forEach { name ->
                     val status = providerStatuses[name] ?: "Waiting"
-                    val isGood = status.startsWith("Completed") && !status.contains("no streams")
-                    val isBad = status.startsWith("Failed")
+                    val isGood = status.startsWith("Completed", ignoreCase = true) && !status.contains("no streams", ignoreCase = true)
+                    val isBad = status.startsWith("Failed", ignoreCase = true) || status.contains("network/download error", ignoreCase = true) || status.contains("runtime error", ignoreCase = true)
                     Column(Modifier.background(if (isGood) Color(0xFF183323) else CataloguePanel, RoundedCornerShape(22.dp)).padding(horizontal = 14.dp, vertical = 10.dp)) {
                         Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Text(status, color = when { isGood -> Color(0xFF7FE0A0); isBad -> Color(0xFFFF8A8A); else -> CatalogueMuted }, fontSize = 10.sp, maxLines = 1)
