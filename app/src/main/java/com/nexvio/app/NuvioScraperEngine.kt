@@ -114,14 +114,35 @@ internal object NuvioScraperEngine {
     suspend fun discover(context: Context, item: TmdbTitle, season: Int, episode: Int, onStreams: suspend (List<NuvioDiscoveredStream>) -> Unit = {}, onStatus: suspend (String) -> Unit = {}, providerFilter: String? = null, disabledProviders: Set<String> = emptySet()): List<NuvioDiscoveredStream> {
         // Run a small number of providers concurrently so one slow scraper does not
         // block faster providers from publishing their results.
-        val providers = PluginRepositoryStore(context).all().filter { it.enabled }
+        val repositories = PluginRepositoryStore(context).all()
+        val providers = repositories.filter { it.enabled }
             .flatMap { repository ->
                 repository.providers.filter {
                     it.enabled &&
                         (providerFilter == null || it.name.equals(providerFilter, true)) &&
                         it.name !in disabledProviders
                 }.map { provider -> listOf(repository.name, provider.name, provider.fileUrl, provider.hasSettings) }
-            }
+            }.toMutableList()
+
+        // Vidlink is available by default so it appears alongside installed Stremio add-ons
+        // on Find Streams, without requiring users to install the entire external provider repo.
+        // If a repository already defines Vidlink, respect that provider's enabled/disabled setting.
+        val vidlinkConfigured = repositories.any { repository ->
+            repository.providers.any { it.name.equals("Vidlink", ignoreCase = true) }
+        }
+        if (!vidlinkConfigured &&
+            (providerFilter == null || "Vidlink".equals(providerFilter, ignoreCase = true)) &&
+            disabledProviders.none { it.equals("Vidlink", ignoreCase = true) }
+        ) {
+            providers.add(
+                listOf(
+                    "Yoru's Nuvio Providers",
+                    "Vidlink",
+                    "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/providers/vidlink.js",
+                    false
+                )
+            )
+        }
         val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
         val publishLock = kotlinx.coroutines.sync.Mutex()
         val concurrency = kotlinx.coroutines.sync.Semaphore(6)
