@@ -67,6 +67,7 @@ function App() {
   const [tvFilter, setTvFilter] = useState('')
   const [playingChannel, setPlayingChannel] = useState<TvChannel | null>(null)
   const [playingMovieStream, setPlayingMovieStream] = useState(false)
+  const [playingSubtitleContext, setPlayingSubtitleContext] = useState<{ item: Title; season: number; episode: number } | null>(null)
   const [playerError, setPlayerError] = useState('')
   const [query, setQuery] = useState('')
   const [searchText, setSearchText] = useState('')
@@ -518,9 +519,9 @@ function App() {
     <footer className="footer"><span>© {new Date().getFullYear()} Nexvio</span><span>Movies · Series · Your watchlist</span><span>Playback and cloud data parity are being built in stages.</span></footer>
 
     {selected && <TitleDetailPage item={selected} saved={watchlist.some(item => item.id === selected.id && kindOf(item) === kindOf(selected))} onSave={() => toggleWatchlist(selected)} onClose={closeTitle} onSearchStreams={(item, season, episode) => setStreamRequest({ item, season, episode })} />}
-    {streamRequest && <StreamSearchPage request={streamRequest} onBack={() => setStreamRequest(null)} onPlay={result => { setPlayerError(""); setPlayingMovieStream(true); setPlayingChannel({ id: "stream-" + Date.now(), name: result.title, url: (() => { try { const parsed = new URL(result.url); return /(^|\.)hakunaymatata\.com$/i.test(parsed.hostname) ? "/api/stream?url=" + encodeURIComponent(result.url) : result.url } catch { return result.url } })(), group: result.quality + " · " + result.audio, favorite: false }); setStreamRequest(null) }} />}
+    {streamRequest && <StreamSearchPage request={streamRequest} onBack={() => setStreamRequest(null)} onPlay={result => { setPlayerError(""); setPlayingMovieStream(true); setPlayingSubtitleContext(streamRequest); setPlayingChannel({ id: "stream-" + Date.now(), name: result.title, url: (() => { try { const parsed = new URL(result.url); return /(^|\.)hakunaymatata\.com$/i.test(parsed.hostname) ? "/api/stream?url=" + encodeURIComponent(result.url) : result.url } catch { return result.url } })(), group: result.quality + " · " + result.audio, favorite: false }); setStreamRequest(null) }} />}
     {providerPage && <ContentProvidersPage page={providerPage} onNavigate={setProviderPage} onBack={() => setProviderPage(null)} />}
-    {playingChannel && <BrowserPlayer channel={playingChannel} error={playerError} setError={setPlayerError} autoplay={webSettings.playbackAutoplay} videoSizing={webSettings.videoSizing} isStream={playingMovieStream} onClose={() => { setPlayingChannel(null); setPlayingMovieStream(false) }} />}
+    {playingChannel && <BrowserPlayer channel={playingChannel} error={playerError} setError={setPlayerError} autoplay={webSettings.playbackAutoplay} videoSizing={webSettings.videoSizing} isStream={playingMovieStream} subtitleContext={playingSubtitleContext} subtitleLanguage={webSettings.subtitleLanguage} subtitleSize={webSettings.subtitleSize} onClose={() => { setPlayingChannel(null); setPlayingMovieStream(false); setPlayingSubtitleContext(null) }} />}
     <MobileNav active={activeTab} onSelect={tab => { setActiveTab(tab); setSearchText(''); setSelected(null) }} />
   </div>
 }
@@ -641,8 +642,58 @@ function StreamSearchPage({request,onBack,onPlay}:{request:{item:Title;season:nu
  };void run();return()=>{live=false}},[request.item.id,request.item.media_type,request.season,request.episode])
  return <div className="provider-page-overlay"><section className="provider-page"><button className="detail-back" onClick={onBack}><ArrowLeft size={18}/> Back to title</button><span className="section-kicker">NEXVIO STREAM SEARCH</span><h1>Search Stream</h1><p className="provider-lead">{titleName(request.item)}{kindOf(request.item)==='tv'?' · Season '+request.season+', Episode '+request.episode:''}</p>{busy&&<div className="loading-line"><LoaderCircle className="spin" size={18}/> Searching built-in Vidlink and installed add-ons…</div>}{!busy&&!results.length&&<div className="empty-state"><Search size={28}/><h3>No streams found</h3><p>Vidlink and installed add-ons did not return a playable link. Some providers block browser requests.</p></div>}{results.map((r,i)=><article className="stream-result-card" key={r.url+i}><h3>{r.title}</h3><div className="stream-result-meta"><span><small>QUALITY</small><strong>{r.quality}</strong></span><span><small>AUDIO</small><strong>{r.audio}</strong></span></div><div className="stream-card-actions"><button className="primary-button stream-open" type="button" onClick={()=>onPlay({title:r.title,url:r.url,quality:r.quality,audio:r.audio})}><Play size={16}/> Stream</button>{r.addon.startsWith("Vidlink")&&<a className="secondary-button stream-download" href={"/api/stream?download=1&url="+encodeURIComponent(r.url)} onClick={event=>{if(/\.m3u8(?:$|[?#])/i.test(r.url)){event.preventDefault();window.alert("This Vidlink source is an HLS playlist, not a complete movie file. The website will not download the playlist as if it were the film.");}}}><Download size={16}/> Download</a>}</div></article>)}{errors.map((e,i)=><div className="notice error-notice" key={e+i}>{e}</div>)}<div className="detail-provider-note"><Info size={16}/> Vidlink is included by default. Additional compatible Stremio add-ons are queried too. Browser CORS restrictions may prevent some providers from responding.</div></section></div>
 }
-function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClose, isStream = false }: { channel: TvChannel; error: string; setError: (value: string) => void; autoplay: boolean; videoSizing: string; onClose: () => void; isStream?: boolean }) {
+function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClose, isStream = false, subtitleContext, subtitleLanguage = 'English', subtitleSize = 18 }: { channel: TvChannel; error: string; setError: (value: string) => void; autoplay: boolean; videoSizing: string; onClose: () => void; isStream?: boolean; subtitleContext: { item: Title; season: number; episode: number } | null; subtitleLanguage?: string; subtitleSize?: number }) {
   const videoRef = React.useRef<HTMLVideoElement>(null)
+  const [subtitleOptions, setSubtitleOptions] = useState<{ id: string; language: string; label: string; fileId: number; release?: string }[]>([])
+  const [subtitleStatus, setSubtitleStatus] = useState('')
+  const [subtitleChoice, setSubtitleChoice] = useState('')
+  useEffect(() => {
+    let live = true
+    setSubtitleOptions([]); setSubtitleChoice(''); setSubtitleStatus('')
+    if (!isStream || !subtitleContext || subtitleLanguage === 'No subtitles') return () => { live = false }
+    const item = subtitleContext.item
+    const type = kindOf(item) === 'tv' ? 'tv' : 'movie'
+    const params = new URLSearchParams({ action: 'search', title: titleName(item), year: yearOf(item), type, language: subtitleLanguage === 'Device language' ? (navigator.language?.slice(0, 2) || 'en') : subtitleLanguage.slice(0, 2) })
+    if (type === 'tv') { params.set('season', String(subtitleContext.season)); params.set('episode', String(subtitleContext.episode)) }
+    const run = async () => {
+      setSubtitleStatus('Searching for matching subtitles…')
+      try {
+        const response = await fetch('/api/subtitles?' + params.toString(), { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20000) })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data?.error || 'Subtitle search failed.')
+        if (!live) return
+        const options = Array.isArray(data?.subtitles) ? data.subtitles : []
+        setSubtitleOptions(options)
+        setSubtitleStatus(options.length ? 'Choose a subtitle track below the player.' : (data?.message || 'No matching subtitles found.'))
+      } catch (error) { if (live) setSubtitleStatus(error instanceof Error ? error.message : 'Subtitle search failed.') }
+    }
+    void run()
+    return () => { live = false }
+  }, [channel.url, isStream, subtitleContext?.item.id, subtitleContext?.season, subtitleContext?.episode, subtitleLanguage])
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    Array.from(video.querySelectorAll('track[data-nexvio-subtitle]')).forEach(track => track.remove())
+    if (!subtitleChoice) return
+    const option = subtitleOptions.find(item => item.id === subtitleChoice)
+    if (!option) return
+    let live = true
+    const addTrack = async () => {
+      try {
+        const response = await fetch('/api/subtitles?action=file&fileId=' + encodeURIComponent(String(option.fileId)))
+        if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data?.error || 'Could not load this subtitle file.') }
+        const vtt = await response.text()
+        if (!live) return
+        const track = document.createElement('track')
+        track.kind = 'subtitles'; track.label = option.label; track.srclang = option.language || 'en'; track.src = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt;charset=utf-8' })); track.default = true; track.dataset.nexvioSubtitle = 'true'
+        video.appendChild(track)
+        track.addEventListener('load', () => { if (track.track) track.track.mode = 'showing' })
+        window.setTimeout(() => { if (track.track) track.track.mode = 'showing' }, 300)
+      } catch (error) { setSubtitleStatus(error instanceof Error ? error.message : 'Could not load subtitle.') }
+    }
+    void addTrack()
+    return () => { live = false }
+  }, [subtitleChoice, subtitleOptions])
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -671,7 +722,7 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
     hls.attachMedia(video)
     return () => { video.pause(); hls?.destroy(); video.removeAttribute('src'); video.load() }
   }, [channel.url, setError])
-  return <div className="player-scrim" role="dialog" aria-modal="true" aria-label={`Player: ${channel.name}`}><section className="browser-player"><header><div><strong>{channel.name}</strong><small>{isStream ? "Nexvio Player · " + (channel.group || "Stream") : "Live TV · user-supplied source"}</small></div><button className="modal-close" onClick={onClose} aria-label="Close player"><X size={20}/></button></header><video ref={videoRef} controls playsInline autoPlay={autoplay} style={{ objectFit: videoSizing === 'Fill' ? 'fill' : videoSizing === 'Zoom' ? 'cover' : 'contain' }} onError={(event) => { const video = event.currentTarget; const mediaError = video.error; const code = mediaError?.code; const detail = code === 1 ? 'Playback was cancelled.' : code === 2 ? 'A network error interrupted the stream. The source may be offline, blocked by CORS, or rejecting this browser request.' : code === 3 ? 'The browser received media but could not decode it. The codec or container may be unsupported.' : code === 4 ? 'The browser cannot play this source URL or media format. It may be a magnet link, an unsupported playlist, or a provider-restricted URL.' : 'The browser could not start this stream. The source may be offline or restricted.'; setError(detail + (code ? ' (Media error ' + code + ')' : '') + (video.currentSrc ? ' Source: ' + new URL(video.currentSrc, window.location.href).hostname : '')); }} onCanPlay={() => setError('')}/>{error && <div className="notice error-notice" role="status"><Info size={18}/><span>{error}</span></div>}<p>Browser playback is limited by codec support, CORS, DRM, and provider authorization. Nexvio does not bypass those restrictions.</p></section></div>
+  return <div className="player-scrim" role="dialog" aria-modal="true" aria-label={`Player: ${channel.name}`}><section className="browser-player"><header><div><strong>{channel.name}</strong><small>{isStream ? "Nexvio Player · " + (channel.group || "Stream") : "Live TV · user-supplied source"}</small></div><button className="modal-close" onClick={onClose} aria-label="Close player"><X size={20}/></button></header><video ref={videoRef} controls playsInline autoPlay={autoplay} style={{ objectFit: videoSizing === 'Fill' ? 'fill' : videoSizing === 'Zoom' ? 'cover' : 'contain', '--subtitle-size': subtitleSize + 'px' } as React.CSSProperties} onError={(event) => { const video = event.currentTarget; const mediaError = video.error; const code = mediaError?.code; const detail = code === 1 ? 'Playback was cancelled.' : code === 2 ? 'A network error interrupted the stream. The source may be offline, blocked by CORS, or rejecting this browser request.' : code === 3 ? 'The browser received media but could not decode it. The codec or container may be unsupported.' : code === 4 ? 'The browser cannot play this source URL or media format. It may be a magnet link, an unsupported playlist, or a provider-restricted URL.' : 'The browser could not start this stream. The source may be offline or restricted.'; setError(detail + (code ? ' (Media error ' + code + ')' : '') + (video.currentSrc ? ' Source: ' + new URL(video.currentSrc, window.location.href).hostname : '')); }} onCanPlay={() => setError('')}/>{error && <div className="notice error-notice" role="status"><Info size={18}/><span>{error}</span></div>}{isStream && subtitleContext && <div className="subtitle-controls"><label htmlFor="nexvio-subtitle-select">Subtitles</label><select id="nexvio-subtitle-select" value={subtitleChoice} onChange={event => setSubtitleChoice(event.target.value)}><option value="">Off</option>{subtitleOptions.map(option => <option key={option.id} value={option.id}>{option.label}{option.release ? ' · ' + option.release : ''}</option>)}</select><small>{subtitleStatus || 'Subtitle search ready.'}</small></div>}<p>Browser playback is limited by codec support, CORS, DRM, and provider authorization. Nexvio does not bypass those restrictions.</p></section></div>
 }
 function MobileNav({ active, onSelect }: { active: string; onSelect: (tab: string) => void }) {
   const items = [{name:'Home', icon:Clapperboard},{name:'Search',icon:Search},{name:'Live TV',icon:Radio},{name:'Library',icon:Library},{name:'Profile',icon:UserRound}]
