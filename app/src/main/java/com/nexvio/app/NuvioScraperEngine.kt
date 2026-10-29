@@ -164,8 +164,8 @@ internal object NuvioScraperEngine {
                         // existing provider error status and diagnostics.
                         val script = if (providerName.equals("Vidlink", ignoreCase = true)) {
                             downloadedScript.replace(
-                                "console.error(`[Vidlink] Error in getStreams: ${error.message}`);\n      return [];",
-                                "console.error(`[Vidlink] Error in getStreams: ${error.message}`);\n      throw error;"
+                                "console.error(`[Vidlink] Error in getStreams: \${error.message}`);\n      return [];",
+                                "console.error(`[Vidlink] Error in getStreams: \${error.message}`);\n      throw error;"
                             )
                         } else downloadedScript
                         var failed = false
