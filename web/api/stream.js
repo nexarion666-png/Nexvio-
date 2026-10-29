@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
   const rawUrl = typeof req.query?.url === "string" ? req.query.url : "";
   const download = req.query?.download === "1";
-  if (download && /\\.m3u8(?:$|[?#])/i.test(rawUrl)) {
+  if (download && /\.m3u8(?:$|[?#])/i.test(rawUrl)) {
     res.statusCode = 415;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     return res.end("This source is an HLS playlist, not a complete video file. Downloading the playlist alone will not save the movie.");
