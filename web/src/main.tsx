@@ -10,6 +10,7 @@ import { supabase, supabaseConfigMissing } from './lib/supabase'
 import { loadCloudWatchlist, saveCloudWatchlist } from './lib/watchlistSync'
 import { loadCloudSettings, saveCloudSettings } from './lib/settingsSync'
 import { parseM3uPlaylist } from './lib/m3u'
+import Hls from 'hls.js'
 import './styles.css'
 
 type MediaKind = 'movie' | 'tv'
@@ -544,13 +545,32 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
     const video = videoRef.current
     if (!video) return
     const isHls = /\.m3u8(?:$|[?#])/i.test(channel.url)
-    const canPlayHls = Boolean(video.canPlayType('application/vnd.apple.mpegurl'))
-    if (isHls && !canPlayHls) setError('This browser does not natively play HLS playlists. This source may work in Safari or require a compatible HLS adapter; no adapter is installed here.')
-    else setError('')
+    let hls: Hls | null = null
+    video.removeAttribute('src')
+    video.load()
+    if (!isHls || video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = channel.url
+      setError('')
+      return () => { video.pause(); video.removeAttribute('src'); video.load() }
+    }
+    if (!Hls.isSupported()) {
+      setError('This browser cannot play HLS through its available media APIs. Try a supported browser or another compatible stream format.')
+      return
+    }
+    setError('')
+    hls = new Hls({ enableWorker: true, lowLatencyMode: true })
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (!data.fatal) return
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) setError('The HLS playlist or segments could not be loaded. Check the source URL, network access, and the provider’s CORS permissions.')
+      else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) setError('The HLS media could not be decoded by this browser. The stream may use an unsupported codec.')
+      else setError('HLS playback failed. The source may be offline, restricted, or incompatible with this browser.')
+    })
+    hls.loadSource(channel.url)
+    hls.attachMedia(video)
+    return () => { video.pause(); hls?.destroy(); video.removeAttribute('src'); video.load() }
   }, [channel.url, setError])
-  return <div className="player-scrim" role="dialog" aria-modal="true" aria-label={`Player: ${channel.name}`}><section className="browser-player"><header><div><strong>{channel.name}</strong><small>Live TV · user-supplied source</small></div><button className="modal-close" onClick={onClose} aria-label="Close player"><X size={20}/></button></header><video ref={videoRef} controls playsInline autoPlay={autoplay} style={{ objectFit: videoSizing === 'Fill' ? 'fill' : videoSizing === 'Zoom' ? 'cover' : 'contain' }} src={channel.url} onError={() => setError('Playback failed. The stream may be offline, use an unsupported codec, require headers the browser cannot set, or be blocked by CORS/provider rules.')} onCanPlay={() => setError('')}/>{error && <div className="notice error-notice" role="status"><Info size={18}/><span>{error}</span></div>}<p>Browser playback is limited by codec support, CORS, DRM, and provider authorization. Nexvio does not bypass those restrictions.</p></section></div>
+  return <div className="player-scrim" role="dialog" aria-modal="true" aria-label={`Player: ${channel.name}`}><section className="browser-player"><header><div><strong>{channel.name}</strong><small>Live TV · user-supplied source</small></div><button className="modal-close" onClick={onClose} aria-label="Close player"><X size={20}/></button></header><video ref={videoRef} controls playsInline autoPlay={autoplay} style={{ objectFit: videoSizing === 'Fill' ? 'fill' : videoSizing === 'Zoom' ? 'cover' : 'contain' }} onError={() => setError('Playback failed. The stream may be offline, use an unsupported codec, require headers the browser cannot set, or be blocked by CORS/provider rules.')} onCanPlay={() => setError('')}/>{error && <div className="notice error-notice" role="status"><Info size={18}/><span>{error}</span></div>}<p>Browser playback is limited by codec support, CORS, DRM, and provider authorization. Nexvio does not bypass those restrictions.</p></section></div>
 }
-
 function MobileNav({ active, onSelect }: { active: string; onSelect: (tab: string) => void }) {
   const items = [{name:'Home', icon:Clapperboard},{name:'Movies',icon:Film},{name:'Series',icon:Tv},{name:'Search',icon:Search},{name:'Live TV',icon:Radio},{name:'Library',icon:Library},{name:'Profile',icon:UserRound}]
   return <nav className="mobile-nav" aria-label="Main navigation">{items.map(item => <button key={item.name} className={active === item.name ? 'active' : ''} onClick={() => onSelect(item.name)} aria-current={active === item.name ? 'page' : undefined}><item.icon size={17}/><span>{item.name}</span></button>)}</nav>
