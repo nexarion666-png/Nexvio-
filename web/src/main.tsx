@@ -80,7 +80,7 @@ function App() {
   const [settingsReadyFor, setSettingsReadyFor] = useState<string | null>(null)
   const [settingsStatus, setSettingsStatus] = useState('')
   const [settingsError, setSettingsError] = useState('')
-  const [webSettings, setWebSettings] = useState({ reduceMotion: false })
+  const [webSettings, setWebSettings] = useState({ reduceMotion: false, theme: 'Emerald', amoledBlack: false })
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return }
@@ -191,6 +191,8 @@ function App() {
       if (cancelled) return
       setWebSettings({
         reduceMotion: remote.web_reduce_motion === true,
+        theme: typeof remote.web_theme === 'string' && ['Emerald', 'White', 'Crimson', 'Ocean', 'Violet', 'Amber', 'Rose'].includes(remote.web_theme) ? remote.web_theme : 'Emerald',
+        amoledBlack: remote.web_amoled_black === true,
       })
       setSettingsReadyFor(`${accountId}:${activeProfileId}`)
       setSettingsStatus('Preferences synced')
@@ -215,6 +217,8 @@ function App() {
           setSettingsError('')
           await saveCloudSettings(supabase!, accountId, {
             web_reduce_motion: webSettings.reduceMotion,
+            web_theme: webSettings.theme,
+            web_amoled_black: webSettings.amoledBlack,
           }, activeProfileId)
           const { data: after } = await supabase!.auth.getSession()
           if (cancelled || after.session?.user.id !== accountId) return
@@ -231,7 +235,14 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.reduceMotion = webSettings.reduceMotion ? 'true' : 'false'
-  }, [webSettings.reduceMotion])
+    const themeColors: Record<string, string> = {
+      Emerald: '#38c77a', White: '#f5f5f5', Crimson: '#e53950',
+      Ocean: '#3298f5', Violet: '#9b70f5', Amber: '#ffa43a', Rose: '#e85d9e',
+    }
+    document.documentElement.style.setProperty('--lime', themeColors[webSettings.theme] || themeColors.Emerald)
+    document.documentElement.style.setProperty('--bg', webSettings.amoledBlack ? '#000000' : '#101114')
+    document.documentElement.dataset.amoledBlack = webSettings.amoledBlack ? 'true' : 'false'
+  }, [webSettings.reduceMotion, webSettings.theme, webSettings.amoledBlack])
 
   useEffect(() => {
     const accountId = session?.user.id
@@ -449,7 +460,7 @@ function App() {
       {activeTab === 'Library' && <section className="workspace-page"><div className="section-heading"><div><span className="section-kicker">PROFILE: {profiles.find(profile => profile.id === activeProfileId)?.name || 'Main Profile'}</span><h2>Your Library</h2><p>Saved titles for this profile. TMDB supplies metadata only; it does not provide playable streams.</p></div></div><div className="sync-status" role="status"><ShieldCheck size={15}/><span>{watchlistError || watchlistStatus}</span></div><div className="library-tabs"><button className="chip active">Watchlist ({watchlist.length})</button><button className="chip" disabled title="Playback history will appear after browser playback is connected">History (not connected)</button></div>{watchlist.length ? <MediaRow title="Saved titles" items={watchlist} onSelect={openTitle}/> : <div className="empty-state"><Bookmark size={28}/><h3>Your library is waiting</h3><p>Add movies or series from their detail pages to keep them here.</p><button className="secondary-button" onClick={() => setActiveTab('Search')}>Discover titles</button></div>}</section>}
 
       {activeTab === 'Profile' && <section className="workspace-page profile-page"><div className="section-heading"><div><span className="section-kicker">YOUR NEXVIO SPACE</span><h2>Profiles & settings</h2><p>Profiles separate watchlists and preferences within your signed-in account.</p></div></div><div className="profile-list">{profiles.map(profile => <button key={profile.id} className={profile.id === activeProfileId ? 'profile-card active' : 'profile-card'} onClick={() => selectProfile(profile.id)}><span className="profile-avatar"><UserRound size={23}/></span><span><strong>{profile.name}</strong><small>{profile.primary ? 'Primary profile' : 'Profile'}{profile.id === activeProfileId ? ' · Active' : ''}</small></span>{profile.id === activeProfileId && <Check size={18}/>}</button>)}</div><form className="create-profile-form" onSubmit={createProfile}><h3>Create a profile</h3><label htmlFor="profile-name">Profile name</label><div><input id="profile-name" value={profileName} onChange={event => setProfileName(event.target.value)} maxLength={40} required placeholder="e.g. Family"/><button className="primary-button" disabled={profileBusy}>{profileBusy ? 'Creating…' : 'Create profile'}</button></div></form>{profileError && <div className="notice error-notice" role="alert">{profileError}</div>}
-        <div className="settings-subheading"><Settings size={18}/><h3>Preferences</h3><span className="sync-status">{settingsError || settingsStatus}</span></div><div className="settings-card"><div><strong>Reduce motion</strong><p>Disable non-essential interface transitions and animations in this browser.</p></div><button className={webSettings.reduceMotion ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-label="Reduce motion" aria-checked={webSettings.reduceMotion} onClick={() => setWebSettings(value => ({ ...value, reduceMotion: !value.reduceMotion }))}><span /></button></div><button className="secondary-button signout-button" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
+        <div className="settings-subheading"><Settings size={18}/><h3>Preferences</h3><span className="sync-status">{settingsError || settingsStatus}</span></div><div className="settings-card"><div><strong>Accent theme</strong><p>Choose the accent colour used across Nexvio. This preference syncs with your profile.</p></div><select className="settings-select" aria-label="Accent theme" value={webSettings.theme} onChange={event => setWebSettings(value => ({ ...value, theme: event.target.value }))}>{['Emerald', 'White', 'Crimson', 'Ocean', 'Violet', 'Amber', 'Rose'].map(theme => <option key={theme} value={theme}>{theme}</option>)}</select></div><div className="settings-card"><div><strong>AMOLED black</strong><p>Use a true black app background on OLED displays.</p></div><button className={webSettings.amoledBlack ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-label="AMOLED black" aria-checked={webSettings.amoledBlack} onClick={() => setWebSettings(value => ({ ...value, amoledBlack: !value.amoledBlack }))}><span /></button></div><div className="settings-card"><div><strong>Reduce motion</strong><p>Disable non-essential interface transitions and animations in this browser.</p></div><button className={webSettings.reduceMotion ? 'setting-toggle enabled' : 'setting-toggle'} role="switch" aria-label="Reduce motion" aria-checked={webSettings.reduceMotion} onClick={() => setWebSettings(value => ({ ...value, reduceMotion: !value.reduceMotion }))}><span /></button></div><button className="secondary-button signout-button" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
     </main>
     <footer className="footer"><span>© {new Date().getFullYear()} Nexvio</span><span>Movies · Series · Your watchlist</span><span>Playback and cloud data parity are being built in stages.</span></footer>
 
