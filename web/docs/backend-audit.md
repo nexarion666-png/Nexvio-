@@ -1,65 +1,60 @@
-# Nexvio web backend audit — Stage 2
+# Nexvio web backend audit — Stage 3 live audit
 
-## Scope and evidence
+## Project and evidence
 
-This is a read-only code audit of the current repository. It is **not** a live Supabase dashboard/database audit: this environment does not have a connected Supabase administration session, so the actual deployed table definitions, grants, and Row Level Security (RLS) policies have not been independently verified.
+Read-only inspection of the connected Nexvio Supabase project (`lbgssprmmqikzmyifphi`). This audit queried the live `public` schema, table metadata, PostgreSQL policies, grants, and Supabase security advisors on 2026-10-29. No database migration has been applied by this audit.
 
-No database tables, policies, or migrations are changed by this stage.
+## Existing Android-compatible schema — confirmed
 
-## What the Android client currently expects
+### `public.nexvio_profiles`
+- Columns: `account_id uuid`, `profile_id text`, `profile_data jsonb`, `updated_at timestamptz`.
+- Primary key: (`account_id, profile_id`).
+- Foreign key: `account_id` references `auth.users(id)`.
 
-The Android implementation in `app/src/main/java/com/nexvio/app/NexvioCloudSync.kt` calls Supabase Auth to resolve the signed-in user, then accesses these tables through the REST API using the user's access token and the publishable key:
+### `public.nexvio_profile_state`
+- Columns: `account_id uuid`, `profile_id text`, `state_key text`, `state_data jsonb`, `updated_at timestamptz`.
+- Primary key: (`account_id, profile_id, state_key`).
+- Foreign key: (`account_id, profile_id`) references `public.nexvio_profiles(account_id, profile_id)`.
 
-### `nexvio_profiles`
+These columns and keys match the Android client's REST filters and upsert conflict targets.
 
-Fields referenced by the client:
-- `account_id`
-- `profile_id`
-- `profile_data` (JSON object)
-- `updated_at`
+## RLS — confirmed
 
-The client performs an upsert with conflict target `account_id,profile_id`.
+Both tables have RLS enabled. The current policies target the `authenticated` role and use:
+- `USING (auth.uid() = account_id)`
+- `WITH CHECK (auth.uid() = account_id)`
 
-### `nexvio_profile_state`
+This is the expected row-ownership boundary for normal authenticated reads and writes, including attempted account-id spoofing.
 
-Fields referenced by the client:
-- `account_id`
-- `profile_id`
-- `state_key`
-- `state_data` (JSON object)
-- `updated_at`
+## Security issue found — migration proposed, not applied
 
-The client performs an upsert with conflict target `account_id,profile_id,state_key`.
+The live table ACLs grant the `anon` role direct SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, and TRIGGER privileges on both tables. RLS policies are currently scoped to `authenticated`, but the anonymous grants are over-broad and must be removed. The database also reports a Supabase Auth advisor warning that leaked-password protection is disabled.
 
-The client currently uses these state keys for profile-owned data: `settings`, `watchlist`, and `watch_history`. It also uses `shared_addons`, `shared_plugin_repositories`, and `shared_iptv` in the `primary` profile bucket. This describes client behavior, not a verified database schema or an endorsement of syncing every value to the cloud.
+A narrowly scoped migration has been proposed in [PR #109](https://github.com/nexarion666-png/Nexvio-/pull/109):
+- Revoke all table privileges from `anon` on both tables.
+- Grant only SELECT/INSERT/UPDATE/DELETE to `authenticated`, preserving Android's current REST sync operations.
+- Leave the current RLS policies and data untouched.
 
-## Required live checks before adding web cloud sync
+**Do not enable web cloud sync until PR #109 is reviewed and the migration is applied.** After application, re-query the actual table grants and policies, then perform authenticated two-account isolation tests. Do not run writes as a service-role or postgres test because that bypasses normal user RLS behavior.
 
-In the Supabase Dashboard for the existing project, inspect **Database → Tables**, **Authentication → Policies**, and the SQL editor. Verify:
+## Android compatibility
 
-1. Both tables exist and their column types match the fields above.
-2. The unique constraints required by each upsert conflict target exist.
-3. RLS is enabled on both tables.
-4. Every SELECT/INSERT/UPDATE/DELETE policy scopes rows to the authenticated owner. The expected ownership relationship is `account_id = auth.uid()`, but confirm the deployed schema and policy expressions rather than assuming them.
-5. Anonymous users cannot read or mutate account rows.
-6. A signed-in user A cannot read, insert, update, or delete user B's rows, including by submitting B's `account_id`.
-7. Table grants do not bypass the intended RLS restrictions.
-8. No service-role or secret key is embedded in web source, Vite `VITE_*` variables, client bundles, or Android client configuration.
-9. Confirm data-retention expectations and whether shared add-on/provider settings may contain private URLs or device-local identifiers. Device-specific document URIs must not be synchronized.
+The proposed migration does not change the tables or the authenticated grants required for Android to read, upsert, or delete rows. Nevertheless, Android sync must be regression-tested after migration application. No Android source files were modified.
 
-Do not create replacement tables or loosen policies to make a web request work. If a check fails, design a minimal migration/policy correction only after reviewing the current policy definitions and preserving Android compatibility.
+## Other findings and limits
 
-## Web authentication changes in Stage 2
+- The security advisor reports `auth_leaked_password_protection` is disabled; consider enabling it in Supabase Auth settings.
+- The project currently shows no migration history through the Supabase migration-list endpoint, even though tables exist. Establish a migration baseline carefully rather than assuming the history is complete.
+- The publishable client key is intended for browser use; do not add any service-role/secret key to `VITE_*` environment variables or web bundles.
+- Existing state keys include `settings`, `watchlist`, `watch_history`, `shared_addons`, `shared_plugin_repositories`, and `shared_iptv`. Only web-safe fields should be synchronized. Device-specific file URIs and local downloaded media are not portable.
+- This audit has not yet run live browser HTTP tests with separate user accounts. RLS ownership expressions and schema shape are confirmed from metadata; end-to-end account isolation still needs testing.
 
-The web client now:
-- Uses the same project URL and publishable client key supplied through environment variables.
-- Requests email-confirmation and password-recovery redirects back to the current web origin.
-- Handles the Supabase `PASSWORD_RECOVERY` event and presents a new-password form.
-- Updates the password through Supabase Auth, then signs out so the user can sign in with the new password.
-- Handles session restoration errors instead of leaving the loading screen stuck indefinitely.
+## Stage 3 implementation gate
 
-These are code-level changes. Real email confirmation and password recovery still require the actual production/preview domains to be allow-listed in Supabase Auth URL configuration and tested using a real account.
-
-## Current decision
-
-**Do not implement web writes to `nexvio_profiles` or `nexvio_profile_state` yet.** First complete the live RLS/schema checks above. Until then, web authentication and Android compatibility can be built/tested, but shared cloud data must remain unimplemented.
+After the grant migration is merged/applied and independently re-verified:
+1. Read existing primary profile and its `watchlist` state for the signed-in account.
+2. Preserve the existing Android watchlist JSON schema and identifiers; do not create a separate web-only table.
+3. Implement authenticated upsert for that same state key, with explicit empty-list semantics for deletions.
+4. Add loading/error/sync status and prevent stale requests from a previous session from updating a newly signed-in account.
+5. Test refresh persistence and two-account isolation.
+6. Extend carefully to history/settings after the watchlist path is validated.
