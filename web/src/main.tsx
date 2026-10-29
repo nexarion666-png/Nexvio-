@@ -591,7 +591,7 @@ function StreamSearchPage({request,onBack,onPlay}:{request:{item:Title;season:nu
    if(!vr.ok){const detail=await vr.json().catch(()=>({}));throw new Error(String(detail?.error||('Vidlink proxy returned HTTP '+vr.status)))}
    const data:any=await vr.json();const title=titleName(request.item)+(mediaType==='tv'?' · S'+String(request.season).padStart(2,'0')+'E'+String(request.episode).padStart(2,'0'):'');
    const raw:{url:string;quality:string;audio:string}[]=[];
-   if(data?.stream?.playlist&&typeof data.stream.playlist==='string')raw.push({url:data.stream.playlist,quality:'Auto',audio:audioFrom(data?.stream?.audio,data?.audio,data?.stream?.language)});
+   if(data?.stream?.playlist&&typeof data.stream.playlist==='string')raw.push({url:data.stream.playlist,quality:'Adaptive',audio:audioFrom(data?.stream?.audio,data?.audio,data?.stream?.language)});
    if(data?.stream?.qualities&&typeof data.stream.qualities==='object')for(const [quality,q] of Object.entries(data.stream.qualities) as [string,any][])if(typeof q?.url==='string')raw.push({url:q.url,quality:qualityFrom(quality),audio:audioFrom(q?.audio,q?.language,data?.stream?.audio,data?.audio)});
    if(typeof data?.url==='string')raw.push({url:data.url,quality:qualityFrom(data?.quality,data?.resolution),audio:audioFrom(data?.audio,data?.language)});
    if(Array.isArray(data?.streams))for(const x of data.streams)if(typeof x?.url==='string')raw.push({url:x.url,quality:qualityFrom(x?.quality,x?.resolution,x?.name),audio:audioFrom(x?.audio,x?.language,x?.name)});
