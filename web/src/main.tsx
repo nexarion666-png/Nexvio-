@@ -47,6 +47,7 @@ async function tmdb<T>(path: string): Promise<T> {
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
+  const [isGuest, setIsGuest] = useState(false)
   const [authReady, setAuthReady] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('signin')
   const [email, setEmail] = useState('')
@@ -92,6 +93,7 @@ function App() {
     if (!supabase) { setAuthReady(true); return }
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession)
+      if (nextSession) setIsGuest(false)
       setActiveProfileId('primary')
       if (event === 'PASSWORD_RECOVERY') {
         setAuthMode('update-password')
@@ -467,10 +469,11 @@ function App() {
   }, [activeTab, rows, watchlist])
 
   if (!authReady) return <div className="boot-screen"><div className="brand-mark">N</div><LoaderCircle className="spin" size={22} /></div>
-  if (!session || authMode === 'update-password') return <AuthScreen
+  if ((!session && !isGuest) || authMode === 'update-password') return <AuthScreen
     mode={authMode} setMode={setAuthMode} email={email} setEmail={setEmail}
     password={password} setPassword={setPassword} busy={authBusy}
     error={authError} message={authMessage} setAuthError={setAuthError} setAuthMessage={setAuthMessage} onSubmit={doAuth}
+    onContinueGuest={() => { setIsGuest(true); setAuthError(''); setAuthMessage('') }}
   />
 
   return <div className="app-shell">
@@ -530,9 +533,9 @@ function AuthScreen(props: {
   mode: AuthMode; setMode: (mode: AuthMode) => void; email: string; setEmail: (value: string) => void
   password: string; setPassword: (value: string) => void; busy: boolean; error: string; message: string
   setAuthError: (value: string) => void; setAuthMessage: (value: string) => void
-  onSubmit: (event: React.FormEvent) => void
+  onSubmit: (event: React.FormEvent) => void; onContinueGuest: () => void
 }) {
-  const { mode, setMode, email, setEmail, password, setPassword, busy, error, message, setAuthError, setAuthMessage, onSubmit } = props
+  const { mode, setMode, email, setEmail, password, setPassword, busy, error, message, setAuthError, setAuthMessage, onSubmit, onContinueGuest } = props
   return <div className="auth-screen">
     <div className="auth-backdrop" />
     <header className="auth-top"><div className="brand"><span className="brand-mark">N</span><span>NEXVIO</span></div><div className="secure-label"><ShieldCheck size={15} /> One account across your devices</div></header>
@@ -543,6 +546,7 @@ function AuthScreen(props: {
         {mode !== 'reset' && <label>{mode === 'update-password' ? 'New password' : 'Password'}<input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={6} value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 6 characters" /></label>}
         {error && <div className="form-message error">{error}</div>}{message && <div className="form-message success">{message}</div>}
         <button className="primary-button auth-submit" type="submit" disabled={busy || supabaseConfigMissing}>{busy ? <LoaderCircle className="spin" size={18} /> : null}{mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send reset link' : mode === 'update-password' ? 'Update password' : 'Sign in'}</button>
+        {mode === 'signin' && <button className="secondary-button auth-guest-button" type="button" onClick={onContinueGuest}><Play size={16} /> Continue without account</button>}
         <div className="auth-links">{mode === 'signin' && <button type="button" onClick={() => { setAuthMessage(''); setAuthError(''); setMode('reset') }}>Forgot password?</button>}{mode !== 'signin' && mode !== 'update-password' && <button type="button" onClick={() => { setAuthMessage(''); setAuthError(''); setMode('signin') }}>Back to sign in</button>}{mode === 'signin' && <span>New to Nexvio? <button type="button" onClick={() => setMode('signup')}>Create account</button></span>}</div>
         <div className="auth-foot"><ShieldCheck size={14} /> Secured by Supabase Authentication</div>
       </form></div>
