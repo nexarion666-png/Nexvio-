@@ -140,7 +140,7 @@ export async function loadCloudWatchlist(
     .eq('state_key', WATCHLIST_KEY)
     .maybeSingle()
   if (error) throw error
-  return parseItems(asRecord(data as StateRow | null)?.items)
+  return parseItems(asRecord((data as StateRow | null)?.state_data).items)
 }
 
 export async function saveCloudWatchlist(
