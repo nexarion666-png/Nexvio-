@@ -18,6 +18,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.util.zip.GZIPInputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
@@ -394,7 +395,11 @@ internal object NuvioScraperEngine {
                                     targetUri = URI(normalizeRequestUrl(targetUri.resolve(location).toString()))
                                     continue
                                 }
-                                val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                                val rawStream = if (status >= 400) connection.errorStream else connection.inputStream
+                                val contentEncoding = connection.getHeaderField("Content-Encoding").orEmpty()
+                                val stream = if (contentEncoding.split(',').any { it.trim().equals("gzip", true) }) {
+                                    rawStream?.let { GZIPInputStream(it) }
+                                } else rawStream
                                 val contentLength = connection.getHeaderFieldLong("Content-Length", -1L)
                                 if (contentLength > MAX_RESPONSE_BYTES) throw IllegalStateException("Response exceeds 8 MB (Content-Length: $contentLength)")
                                 if (contentLength >= 0 && tracker.totalBytes() + contentLength > MAX_RUN_RESPONSE_BYTES) throw IllegalStateException("Total response exceeds 24 MB (Content-Length: $contentLength)")
