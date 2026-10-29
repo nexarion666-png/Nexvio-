@@ -185,7 +185,7 @@ function App() {
   if (!session || authMode === 'update-password') return <AuthScreen
     mode={authMode} setMode={setAuthMode} email={email} setEmail={setEmail}
     password={password} setPassword={setPassword} busy={authBusy}
-    error={authError} message={authMessage} onSubmit={doAuth}
+    error={authError} message={authMessage} setAuthError={setAuthError} setAuthMessage={setAuthMessage} onSubmit={doAuth}
   />
 
   return <div className="app-shell">
@@ -224,9 +224,10 @@ function App() {
 function AuthScreen(props: {
   mode: AuthMode; setMode: (mode: AuthMode) => void; email: string; setEmail: (value: string) => void
   password: string; setPassword: (value: string) => void; busy: boolean; error: string; message: string
+  setAuthError: (value: string) => void; setAuthMessage: (value: string) => void
   onSubmit: (event: React.FormEvent) => void
 }) {
-  const { mode, setMode, email, setEmail, password, setPassword, busy, error, message, onSubmit } = props
+  const { mode, setMode, email, setEmail, password, setPassword, busy, error, message, setAuthError, setAuthMessage, onSubmit } = props
   return <div className="auth-screen">
     <div className="auth-backdrop" />
     <header className="auth-top"><div className="brand"><span className="brand-mark">N</span><span>NEXVIO</span></div><div className="secure-label"><ShieldCheck size={15} /> One account across your devices</div></header>
