@@ -518,7 +518,7 @@ function App() {
     <footer className="footer"><span>© {new Date().getFullYear()} Nexvio</span><span>Movies · Series · Your watchlist</span><span>Playback and cloud data parity are being built in stages.</span></footer>
 
     {selected && <TitleDetailPage item={selected} saved={watchlist.some(item => item.id === selected.id && kindOf(item) === kindOf(selected))} onSave={() => toggleWatchlist(selected)} onClose={closeTitle} onSearchStreams={(item, season, episode) => setStreamRequest({ item, season, episode })} />}
-    {streamRequest && <StreamSearchPage request={streamRequest} onBack={() => setStreamRequest(null)} onPlay={result => { setPlayerError(""); setPlayingMovieStream(true); setPlayingChannel({ id: "stream-" + Date.now(), name: result.title, url: result.url, group: result.quality + " · " + result.audio, favorite: false }) }} />}
+    {streamRequest && <StreamSearchPage request={streamRequest} onBack={() => setStreamRequest(null)} onPlay={result => { setPlayerError(""); setPlayingMovieStream(true); setPlayingChannel({ id: "stream-" + Date.now(), name: result.title, url: result.url, group: result.quality + " · " + result.audio, favorite: false }); setStreamRequest(null) }} />}
     {providerPage && <ContentProvidersPage page={providerPage} onNavigate={setProviderPage} onBack={() => setProviderPage(null)} />}
     {playingChannel && <BrowserPlayer channel={playingChannel} error={playerError} setError={setPlayerError} autoplay={webSettings.playbackAutoplay} videoSizing={webSettings.videoSizing} isStream={playingMovieStream} onClose={() => { setPlayingChannel(null); setPlayingMovieStream(false) }} />}
     <MobileNav active={activeTab} onSelect={tab => { setActiveTab(tab); setSearchText(''); setSelected(null) }} />
