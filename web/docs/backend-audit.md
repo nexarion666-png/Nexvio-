@@ -26,16 +26,11 @@ Both tables have RLS enabled. The current policies target the `authenticated` ro
 
 This is the expected row-ownership boundary for normal authenticated reads and writes, including attempted account-id spoofing.
 
-## Security issue found — migration proposed, not applied
+## Security issue found and remediated — verified 2026-10-29
 
-The live table ACLs grant the `anon` role direct SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, and TRIGGER privileges on both tables. RLS policies are currently scoped to `authenticated`, but the anonymous grants are over-broad and must be removed. The database also reports a Supabase Auth advisor warning that leaked-password protection is disabled.
+The initial live audit found direct table privileges on both tables granted to `anon`. The SQL revoke migration tracked in [PR #109](https://github.com/nexarion666-png/Nexvio-/pull/109) has since been applied to the connected Supabase project and independently re-queried. Current checks confirm `anon` has no SELECT/INSERT/UPDATE privileges on either table; `authenticated` retains SELECT/INSERT/UPDATE needed by the clients. The existing RLS policies remain scoped to `authenticated` and enforce `auth.uid() = account_id` in both `USING` and `WITH CHECK`.
 
-A narrowly scoped migration has been proposed in [PR #109](https://github.com/nexarion666-png/Nexvio-/pull/109):
-- Revoke all table privileges from `anon` on both tables.
-- Grant only SELECT/INSERT/UPDATE/DELETE to `authenticated`, preserving Android's current REST sync operations.
-- Leave the current RLS policies and data untouched.
-
-**Do not enable web cloud sync until PR #109 is reviewed and the migration is applied.** After application, re-query the actual table grants and policies, then perform authenticated two-account isolation tests. Do not run writes as a service-role or postgres test because that bypasses normal user RLS behavior.
+The Supabase security advisor still reports leaked-password protection is disabled. Enable it in Supabase Auth settings as a separate account-security follow-up. A real two-user browser isolation test has not been run yet; the grant and policy metadata are verified, but that end-to-end test remains an explicit validation item.
 
 ## Android compatibility
 
@@ -47,14 +42,8 @@ The proposed migration does not change the tables or the authenticated grants re
 - The project currently shows no migration history through the Supabase migration-list endpoint, even though tables exist. Establish a migration baseline carefully rather than assuming the history is complete.
 - The publishable client key is intended for browser use; do not add any service-role/secret key to `VITE_*` environment variables or web bundles.
 - Existing state keys include `settings`, `watchlist`, `watch_history`, `shared_addons`, `shared_plugin_repositories`, and `shared_iptv`. Only web-safe fields should be synchronized. Device-specific file URIs and local downloaded media are not portable.
-- This audit has not yet run live browser HTTP tests with separate user accounts. RLS ownership expressions and schema shape are confirmed from metadata; end-to-end account isolation still needs testing.
+- This audit has not yet run live browser HTTP tests with separate user accounts. RLS ownership expressions, schema shape, and anonymous table privilege revocation are confirmed from live metadata; end-to-end account isolation still needs testing.
 
 ## Stage 3 implementation gate
 
-After the grant migration is merged/applied and independently re-verified:
-1. Read existing primary profile and its `watchlist` state for the signed-in account.
-2. Preserve the existing Android watchlist JSON schema and identifiers; do not create a separate web-only table.
-3. Implement authenticated upsert for that same state key, with explicit empty-list semantics for deletions.
-4. Add loading/error/sync status and prevent stale requests from a previous session from updating a newly signed-in account.
-5. Test refresh persistence and two-account isolation.
-6. Extend carefully to history/settings after the watchlist path is validated.
+Stage 3 watchlist implementation now uses the existing `nexvio_profiles` and `nexvio_profile_state` tables, `profile_id = primary`, and `state_key = watchlist`; it stores the `items` preference as a JSON string and preserves other state keys. Empty lists are written as `[]` so removals persist. The web app shows load/save/error status and checks the active account before applying results. Build checks and live grant/policy metadata should be re-verified on the final commit. Refresh persistence and two-account browser isolation remain runtime checks that require signing in with separate test accounts.
