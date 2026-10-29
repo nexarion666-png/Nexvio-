@@ -22,10 +22,10 @@ In Supabase Auth settings, add the Vercel production domain and preview domains 
 ## Current milestone
 
 - Responsive Nexvio-inspired web shell for mobile and desktop.
-- Supabase sign-up, sign-in, session persistence, sign-out and password reset using the same project as Android.
+- Supabase sign-up, sign-in, session persistence, sign-out, email-confirmation redirects, password-reset email, and password recovery completion using the same project as Android.
 - Live TMDB trending/popular catalogue, title search, detail cards and initial watchlist UI.
 - Vercel SPA routing configuration.
 
 ## Not yet implemented
 
-This foundation does **not** claim full feature parity yet. Browser provider execution and real stream playback, profile-scoped cloud sync, shared watchlist/history/preferences, add-on management, downloads, and release/update parity still need dedicated implementation and testing. The Android app's existing cloud sync currently covers profile metadata and profile-scoped preferences; the actual Supabase schema and row-level security policies must be audited before adding more shared records. Browser storage is not being presented as cloud sync.
+This foundation does **not** claim full feature parity yet. Browser provider execution and real stream playback, profile-scoped cloud sync, shared watchlist/history/preferences, add-on management, downloads, and release/update parity still need dedicated implementation and testing. The Android app's existing cloud sync currently uses `nexvio_profiles` and `nexvio_profile_state` for profile metadata and profile-scoped state. The repository-level expectations and required live schema/RLS checks are documented in [`docs/backend-audit.md`](docs/backend-audit.md). The deployed Supabase schema and policies have not been independently inspected, so web writes to those tables remain blocked until the live audit is complete. Browser storage is not being presented as cloud sync.
