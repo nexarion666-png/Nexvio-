@@ -676,12 +676,15 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
     if (!subtitleChoice || muxBusy) return
     const option = subtitleOptions.find(item => item.id === subtitleChoice)
     if (!option) return
-    setMuxBusy(true); setMuxStatus('Preparing video and subtitle…')
+    setMuxBusy(true); setMuxStatus('Connecting to the video source…')
     let ffmpeg: any = null
+    const temporaryUrls: string[] = []
     try {
       if (/\.m3u8(?:$|[?#])/i.test(channel.url)) throw new Error('This source is an HLS playlist. Embedding subtitles needs a complete downloadable video file; this source cannot be muxed directly.')
-      const videoResponse = await fetch(channel.url)
-      if (!videoResponse.ok) throw new Error('The video source could not be downloaded.')
+      const videoResponse = await fetch(channel.url, { signal: AbortSignal.timeout(90000) })
+      if (!videoResponse.ok) throw new Error('The video source could not be downloaded (HTTP ' + videoResponse.status + '). Try another source.')
+      setMuxStatus('Downloading the video into memory… This can take several minutes for large files.')
+
       const size = Number(videoResponse.headers.get('content-length') || 0)
       if (size > 250 * 1024 * 1024) throw new Error('This file is larger than the 250 MB browser-processing limit. A server-side video processor is needed for larger movies.')
       const videoBlob = await videoResponse.blob()
@@ -691,16 +694,18 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
       const { FFmpeg } = await import('@ffmpeg/ffmpeg')
       ffmpeg = new FFmpeg()
       const toBlobURL = async (url: string, type: string) => {
-        const response = await fetch(url)
-        if (!response.ok) throw new Error('Could not load the video processing engine.')
-        return URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }))
+        const response = await fetch(url, { signal: AbortSignal.timeout(90000) })
+        if (!response.ok) throw new Error('Could not load the video processing engine (HTTP ' + response.status + ').')
+        const objectUrl = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }))
+        temporaryUrls.push(objectUrl)
+        return objectUrl
       }
       const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd'
       const coreURL = await toBlobURL(base + '/ffmpeg-core.js', 'text/javascript')
       const wasmURL = await toBlobURL(base + '/ffmpeg-core.wasm', 'application/wasm')
       await ffmpeg.load({ coreURL, wasmURL })
       setMuxStatus('Fetching the selected subtitle…')
-      const subResponse = await fetch('/api/subtitles?action=file&fileId=' + encodeURIComponent(String(option.fileId)))
+      const subResponse = await fetch('/api/subtitles?action=file&fileId=' + encodeURIComponent(String(option.fileId)), { signal: AbortSignal.timeout(45000) })
       if (!subResponse.ok) throw new Error('The selected subtitle could not be downloaded.')
       const subtitleText = await subResponse.text()
       setMuxStatus('Embedding subtitles into the video. Keep this page open…')
@@ -721,6 +726,7 @@ function BrowserPlayer({ channel, error, setError, autoplay, videoSizing, onClos
       setMuxStatus(error instanceof Error ? error.message : 'Could not embed subtitles in this video.')
     } finally {
       try { await ffmpeg?.terminate() } catch {}
+      temporaryUrls.forEach(url => URL.revokeObjectURL(url))
       setMuxBusy(false)
     }
   }
