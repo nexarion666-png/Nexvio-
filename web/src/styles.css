@@ -121,3 +121,21 @@ html[data-reduce-motion="true"] *,html[data-reduce-motion="true"] *::before,html
   body{padding-bottom:112px;background:#000}
   .app-shell,main{background:#000}
 }
+
+/* Keep only the Nexvio mark and wordmark in the header; use the app-style bottom navigation. */
+.topbar>.desktop-nav,
+.topbar>.search-box,
+.topbar>.account-wrap{display:none!important}
+.topbar{height:76px;min-height:76px;padding:0 22px;display:flex;align-items:center;justify-content:flex-start;gap:0;background:#000;border-bottom:0}
+.topbar>.brand{display:flex;align-items:center;gap:10px;font-size:16px;letter-spacing:2px}
+.topbar>.brand .brand-mark{width:36px;height:36px;min-width:36px;border-radius:10px;font-size:25px;letter-spacing:-2px}
+.brand-copy{gap:0}
+.brand-copy strong{font-size:20px;letter-spacing:2px}
+.brand-copy small{display:none!important}
+.mobile-nav{position:fixed;z-index:30;left:22px;right:22px;bottom:17px;display:flex;justify-content:space-around;gap:3px;padding:9px 10px calc(9px + env(safe-area-inset-bottom));background:rgba(28,29,34,.98);border:1px solid rgba(255,255,255,.045);border-radius:40px;box-shadow:0 8px 28px #0008;backdrop-filter:blur(18px)}
+.mobile-nav button{display:flex;flex:1;min-width:0;height:60px;align-items:center;justify-content:center;flex-direction:column;gap:4px;border:0;border-radius:36px;background:transparent;color:#9ca49e;padding:5px 1px;font-size:9px;white-space:nowrap}
+.mobile-nav button svg{width:23px;height:23px;stroke-width:1.8}
+.mobile-nav button.active{background:#38c77a24;color:var(--lime)}
+body{padding-bottom:112px;background:#000}
+.app-shell,main{background:#000}
+@media(max-width:650px){.topbar{height:70px;min-height:70px;padding:0 18px}.topbar>.brand{gap:9px;font-size:15px;letter-spacing:1.8px}.topbar>.brand .brand-mark{width:34px;height:34px;min-width:34px;border-radius:10px;font-size:24px}.brand-copy strong{font-size:19px;letter-spacing:2px}}
