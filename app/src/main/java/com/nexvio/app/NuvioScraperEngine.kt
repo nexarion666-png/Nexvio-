@@ -116,33 +116,22 @@ internal object NuvioScraperEngine {
         // Run a small number of providers concurrently so one slow scraper does not
         // block faster providers from publishing their results.
         val repositories = PluginRepositoryStore(context).all()
+        // Vidlink is a built-in asset, not a repository-hosted provider. Ignore any
+        // repository copy named Vidlink so it cannot suppress or duplicate the bundled provider.
         val providers = repositories.filter { it.enabled }
             .flatMap { repository ->
                 repository.providers.filter {
-                    it.enabled &&
+                    !it.name.equals("Vidlink", ignoreCase = true) &&
+                        it.enabled &&
                         (providerFilter == null || it.name.equals(providerFilter, true)) &&
                         it.name !in disabledProviders
                 }.map { provider -> listOf(repository.name, provider.name, provider.fileUrl, provider.hasSettings) }
             }.toMutableList()
 
-        // Vidlink is available by default so it appears alongside installed Stremio add-ons
-        // on Find Streams, without requiring users to install the entire external provider repo.
-        // If a repository already defines Vidlink, respect that provider's enabled/disabled setting.
-        val vidlinkConfigured = repositories.any { repository ->
-            repository.providers.any { it.name.equals("Vidlink", ignoreCase = true) }
-        }
-        if (!vidlinkConfigured &&
-            (providerFilter == null || "Vidlink".equals(providerFilter, ignoreCase = true)) &&
+        if ((providerFilter == null || "Vidlink".equals(providerFilter, ignoreCase = true)) &&
             disabledProviders.none { it.equals("Vidlink", ignoreCase = true) }
         ) {
-            providers.add(
-                listOf(
-                    "Yoru's Nuvio Providers",
-                    "Vidlink",
-                    "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/providers/vidlink.js",
-                    false
-                )
-            )
+            providers.add(listOf("Nexvio Built-in", "Vidlink", "asset:vidlink.js", false))
         }
         val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
         val publishLock = kotlinx.coroutines.sync.Mutex()
@@ -158,17 +147,16 @@ internal object NuvioScraperEngine {
                     concurrency.withPermit {
                         onStatus(providerName + ": waiting for search slot")
                         onStatus(providerName + ": downloading script")
-                        val downloadedScript = try { fetchText(fileUrl, MAX_BYTES) } catch (e: Exception) { onStatus(providerName + ": network/download error — " + (e.message ?: "network error")); return@withPermit }
-                        // The upstream Vidlink provider catches API/runtime errors and returns an empty
-                        // list, which hides the actual failure as "no streams". Preserve its normal
-                        // empty-result behavior, but let genuine getStreams exceptions reach Nexvio's
-                        // existing provider error status and diagnostics.
-                        val script = if (providerName.equals("Vidlink", ignoreCase = true)) {
-                            downloadedScript.replace(
-                                "console.error(`[Vidlink] Error in getStreams: \${error.message}`);\n      return [];",
-                                "console.error(`[Vidlink] Error in getStreams: \${error.message}`);\n      throw error;"
-                            )
-                        } else downloadedScript
+                        val script = try {
+                            if (providerName.equals("Vidlink", ignoreCase = true)) {
+                                context.assets.open("vidlink.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
+                            } else {
+                                fetchText(fileUrl, MAX_BYTES)
+                            }
+                        } catch (e: Exception) {
+                            onStatus(providerName + ": " + (if (providerName.equals("Vidlink", true)) "bundled provider load error" else "network/download error") + " — " + (e.message ?: "provider load error"))
+                            return@withPermit
+                        }
                         var failed = false
                         val found = try {
                             onStatus(providerName + ": script downloaded; searching")
