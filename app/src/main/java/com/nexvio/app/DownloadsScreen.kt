@@ -29,6 +29,27 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.io.File
 import java.net.URI
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private const val DOWNLOADS_TMDB_API_KEY = "df35ad7483eaf39d05d6b534109453bb"
+private const val DOWNLOADS_TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
+private suspend fun findDownloadPoster(title: String, mediaType: String): String? = withContext(Dispatchers.IO) {
+    val type = if (mediaType == "tv" || mediaType == "series") "tv" else "movie"
+    val query = URLEncoder.encode(title, "UTF-8")
+    val connection = URL("https://api.themoviedb.org/3/search/$type?api_key=$DOWNLOADS_TMDB_API_KEY&query=$query").openConnection() as HttpURLConnection
+    try {
+        connection.connectTimeout = 8000
+        connection.readTimeout = 8000
+        if (connection.responseCode !in 200..299) return@withContext null
+        val results = org.json.JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optJSONArray("results") ?: return@withContext null
+        val path = results.optJSONObject(0)?.optString("poster_path").orEmpty()
+        if (path.startsWith("/")) DOWNLOADS_TMDB_IMAGE_BASE + path else null
+    } catch (_: Exception) { null } finally { connection.disconnect() }
+}
 
 internal class OfflineDownloads(private val context: Context, private val profileId: String = NexvioProfileStore.active(context).id) {
     private val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -148,6 +169,20 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
     var error by remember { mutableStateOf<String?>(null) }
     var progressRefresh by remember { mutableIntStateOf(0) }
     var openedFolder by remember { mutableStateOf<String?>(null) }
+    var posterOverrides by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(rows.map { it.first }) {
+        for (row in rows) {
+            val meta = store.metadata(row.first)
+            if (meta.optString("posterUrl").startsWith("https://")) continue
+            val title = meta.optString("groupTitle").takeIf { it.isNotBlank() }
+                ?: row.second.replace(Regex("(?i)\\s+-\\s+S\\d{1,2}E\\d{1,3}.*$"), "").trim()
+            val key = title.lowercase()
+            if (!posterOverrides.containsKey(key)) {
+                val poster = findDownloadPoster(title, meta.optString("mediaType", "movie"))
+                if (poster != null) posterOverrides = posterOverrides + (key to poster)
+            }
+        }
+    }
     LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressRefresh++; delay(1000) } }
     val groups = remember(rows, progressRefresh) {
         rows.groupBy { row ->
@@ -207,7 +242,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
             val meta = store.metadata(groupRows.first().first)
             val title = meta.optString("groupTitle").takeIf { it.isNotBlank() }
                 ?: groupRows.first().second.replace(Regex("(?i)\\s+-\\s+S\\d{1,2}E\\d{1,3}.*$"), "").trim()
-            val poster = meta.optString("posterUrl").takeIf { it.startsWith("https://") }
+            val poster = meta.optString("posterUrl").takeIf { it.startsWith("https://") } ?: posterOverrides[title.lowercase()]
             val isShow = entry.key.startsWith("tv:")
             Row(Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF1B1D22)).clickable { openedFolder = entry.key }) {
                 Box(Modifier.width(126.dp).fillMaxHeight().background(Color(0xFF292B31))) {

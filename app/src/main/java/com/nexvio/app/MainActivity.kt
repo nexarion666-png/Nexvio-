@@ -855,7 +855,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 
     val watchHistory = remember(context, profileId) { WatchHistoryStore(context, profileId) }
-    LaunchedEffect(channel.id) { if (channel.id.startsWith("addon-")) watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
+    LaunchedEffect(channel.id) { watchHistory.record(channel, savedPositionMs, watchHistory.get(channel.id)?.durationMs ?: 0L) }
 
     // Landscape is fullscreen by default. Back exits fullscreen first; rotating again
     // clears the temporary override so orientation-driven fullscreen works normally.
@@ -1042,7 +1042,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
             // only for non-live media that supports a meaningful seek position.
             if (activePlayer.playbackState == Player.STATE_READY && !activePlayer.isCurrentMediaItemLive) {
                 savedPositionMs = activePlayer.currentPosition.coerceAtLeast(0L)
-                if (channel.id.startsWith("addon-") && saveTick % 5 == 0) {
+                if (saveTick % 5 == 0) {
                     watchHistory.record(channel, savedPositionMs, activePlayer.duration.takeIf { it > 0L } ?: 0L)
                 }
             }
@@ -1081,7 +1081,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
-                if (channel.id.startsWith("addon-")) {
+                if (!activePlayer.isCurrentMediaItemLive) {
                     val position = activePlayer.currentPosition.coerceAtLeast(0L)
                     val duration = activePlayer.duration.takeIf { it > 0L } ?: 0L
                     watchHistory.record(channel, position, duration)

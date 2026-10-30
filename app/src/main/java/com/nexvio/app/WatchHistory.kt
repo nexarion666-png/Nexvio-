@@ -63,8 +63,6 @@ internal class WatchHistoryStore(context: Context, profileId: String = "primary"
     }
     @Synchronized fun get(id: String): WatchEntry? = all().firstOrNull { it.id == id }
     @Synchronized fun record(channel: TvChannel, positionMs: Long = 0L, durationMs: Long = 0L) {
-        // Live IPTV channels are not personal movie/series viewing history.
-        if (!channel.id.startsWith("addon-")) return
         val old = get(channel.id)
         val type = when {
             channel.id.startsWith("addon-tv-") -> "series"
