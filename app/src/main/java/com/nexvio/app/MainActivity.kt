@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1058,7 +1060,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 color = Panel
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(18.dp),
+                    modifier = Modifier.fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1182,8 +1184,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     }
                     if (subtitleResults.isNotEmpty()) {
                         Text("SEARCH RESULTS  •  ${subtitleResults.size}", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        LazyColumn(Modifier.weight(1f, fill = false).heightIn(min = 100.dp, max = 340.dp)) {
-                            items(subtitleResults) { option ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            subtitleResults.forEach { option ->
                                 TextButton(
                                     enabled = !subtitleDownloading,
                                     onClick = {
