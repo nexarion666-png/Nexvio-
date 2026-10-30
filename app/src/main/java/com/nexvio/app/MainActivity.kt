@@ -1160,14 +1160,43 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                             subtitleError = null
                                             try {
                                                 val file = withContext(Dispatchers.IO) {
-                                                    val endpoint = "https://nexvio-web-app.vercel.app/api/subtitles?action=file&fileId=${Uri.encode(option.fileId)}"
-                                                    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                                                    val apiKey = BuildConfig.OPENSUBTITLES_API_KEY
+                                                    if (apiKey.isBlank()) throw IllegalStateException("OpenSubtitles API key is missing. Rebuild the APK after adding the GitHub Actions secret.")
+                                                    val request = (URL("https://api.opensubtitles.com/api/v1/download").openConnection() as HttpURLConnection).apply {
+                                                        requestMethod = "POST"
+                                                        doOutput = true
+                                                        connectTimeout = 15000
+                                                        readTimeout = 20000
+                                                        setRequestProperty("Api-Key", apiKey)
+                                                        setRequestProperty("User-Agent", "Nexvio v1.0")
+                                                        setRequestProperty("Accept", "application/json")
+                                                        setRequestProperty("Content-Type", "application/json")
+                                                    }
+                                                    val downloadJson: org.json.JSONObject
+                                                    try {
+                                                        request.outputStream.use { output ->
+                                                            val payload = org.json.JSONObject().put("file_id", option.fileId.toLong()).put("sub_format", "srt")
+                                                            output.write(payload.toString().toByteArray(Charsets.UTF_8))
+                                                        }
+                                                        val code = request.responseCode
+                                                        val body = (if (code in 200..299) request.inputStream else request.errorStream)
+                                                            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                                        if (code !in 200..299) {
+                                                            val message = runCatching { org.json.JSONObject(body).optString("message") }.getOrNull()
+                                                            throw IllegalStateException(message?.takeIf { it.isNotBlank() && it != "null" } ?: "OpenSubtitles download request failed (HTTP $code).")
+                                                        }
+                                                        downloadJson = org.json.JSONObject(body)
+                                                    } finally { request.disconnect() }
+                                                    val downloadUrl = downloadJson.optString("link")
+                                                    if (downloadUrl.isBlank() || downloadUrl == "null") throw IllegalStateException("OpenSubtitles did not return a subtitle download link.")
+                                                    val fileConnection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
                                                         connectTimeout = 15000
                                                         readTimeout = 30000
+                                                        setRequestProperty("User-Agent", "Nexvio v1.0")
                                                     }
                                                     try {
-                                                        if (connection.responseCode !in 200..299) throw IllegalStateException("Subtitle download failed (HTTP ${connection.responseCode}).")
-                                                        val bytes = connection.inputStream.use { input ->
+                                                        if (fileConnection.responseCode !in 200..299) throw IllegalStateException("Subtitle file download failed (HTTP ${fileConnection.responseCode}).")
+                                                        val rawBytes = fileConnection.inputStream.use { input ->
                                                             val output = java.io.ByteArrayOutputStream()
                                                             val buffer = ByteArray(8192)
                                                             var total = 0
@@ -1180,9 +1209,18 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                             }
                                                             output.toByteArray()
                                                         }
-                                                        if (bytes.isEmpty()) throw IllegalStateException("Subtitle file was empty.")
-                                                        java.io.File(context.cacheDir, "nexvio_subtitle_${channel.id.hashCode()}.vtt").apply { writeBytes(bytes) }
-                                                    } finally { connection.disconnect() }
+                                                        if (rawBytes.isEmpty()) throw IllegalStateException("Subtitle file was empty.")
+                                                        val text = rawBytes.toString(Charsets.UTF_8).trimStart('\uFEFF')
+                                                        val normalized = text.replace("\r\n", "\n").replace('\r', '\n')
+                                                        val vtt = if (normalized.startsWith("WEBVTT")) normalized else {
+                                                            val converted = Regex("""(?m)^(\d{2}:\d{2}:\d{2}),(\d{3})\s+-->""")
+                                                                .replace(normalized) { match -> "${match.groupValues[1]}.${match.groupValues[2]} -->" }
+                                                            "WEBVTT\n\n$converted"
+                                                        }
+                                                        java.io.File(context.cacheDir, "nexvio_subtitle_${channel.id.hashCode()}.vtt").apply {
+                                                            writeText(vtt, Charsets.UTF_8)
+                                                        }
+                                                    } finally { fileConnection.disconnect() }
                                                 }
                                                 val active = player ?: throw IllegalStateException("Player is not ready.")
                                                 val currentItem = active.currentMediaItem ?: throw IllegalStateException("No video is loaded.")
