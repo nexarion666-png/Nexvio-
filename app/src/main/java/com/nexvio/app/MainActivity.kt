@@ -799,6 +799,12 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var muted by rememberSaveable(channel.id) { mutableStateOf(false) }
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var trackDialogOpen by remember { mutableStateOf(false) }
+    var subtitleDialogOpen by remember { mutableStateOf(false) }
+    var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
+    var subtitleResults by remember(channel.id) { mutableStateOf<List<SubtitleOption>>(emptyList()) }
+    var subtitleLoading by remember(channel.id) { mutableStateOf(false) }
+    var subtitleError by remember(channel.id) { mutableStateOf<String?>(null) }
+    var subtitleDownloading by remember(channel.id) { mutableStateOf(false) }
     var positionMs by remember(channel.id) { mutableLongStateOf(0L) }
     var scrubPositionMs by remember(channel.id) { mutableStateOf<Long?>(null) }
     var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
@@ -1034,6 +1040,156 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
 
+    val subtitleScope = rememberCoroutineScope()
+    if (subtitleDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!subtitleLoading && !subtitleDownloading) subtitleDialogOpen = false },
+            title = { Text("Subtitles") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Search OpenSubtitles using this video title: ${channel.name}", color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(
+                        value = subtitleLanguage,
+                        onValueChange = { subtitleLanguage = it.take(8) },
+                        label = { Text("Language code (e.g. en)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            subtitleScope.launch {
+                                subtitleLoading = true
+                                subtitleError = null
+                                subtitleResults = emptyList()
+                                try {
+                                    val results = withContext(Dispatchers.IO) {
+                                        val endpoint = "https://nexvio-web-app.vercel.app/api/subtitles?action=search&title=${Uri.encode(channel.name)}&type=movie&language=${Uri.encode(subtitleLanguage.ifBlank { "en" })}"
+                                        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                                            connectTimeout = 15000
+                                            readTimeout = 20000
+                                            setRequestProperty("Accept", "application/json")
+                                        }
+                                        try {
+                                            val code = connection.responseCode
+                                            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                                                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                            if (code !in 200..299) throw IllegalStateException(
+                                                if (code == 503) "Subtitle service is not configured on the website yet."
+                                                else "Subtitle search failed (HTTP $code)."
+                                            )
+                                            val array = org.json.JSONObject(body).optJSONArray("subtitles") ?: org.json.JSONArray()
+                                            buildList {
+                                                for (i in 0 until array.length()) {
+                                                    val item = array.optJSONObject(i) ?: continue
+                                                    val fileId = item.optString("fileId")
+                                                    if (fileId.isNotBlank() && fileId != "null") add(
+                                                        SubtitleOption(
+                                                            fileId,
+                                                            item.optString("language", subtitleLanguage),
+                                                            item.optString("label", "Subtitle"),
+                                                            item.optString("release", "")
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        } finally { connection.disconnect() }
+                                    }
+                                    subtitleResults = results
+                                    if (results.isEmpty()) subtitleError = "No subtitles found. Try another language or a more specific title."
+                                } catch (e: Exception) {
+                                    subtitleError = e.message ?: "Could not search subtitles."
+                                } finally { subtitleLoading = false }
+                            }
+                        },
+                        enabled = !subtitleLoading && !subtitleDownloading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (subtitleLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Text("Search subtitles")
+                    }
+                    subtitleError?.let { Text(it, color = Color(0xFFFF8A80), fontSize = 12.sp) }
+                    if (subtitleResults.isNotEmpty()) {
+                        LazyColumn(Modifier.heightIn(max = 210.dp)) {
+                            items(subtitleResults) { option ->
+                                TextButton(
+                                    enabled = !subtitleDownloading,
+                                    onClick = {
+                                        subtitleScope.launch {
+                                            subtitleDownloading = true
+                                            subtitleError = null
+                                            try {
+                                                val file = withContext(Dispatchers.IO) {
+                                                    val endpoint = "https://nexvio-web-app.vercel.app/api/subtitles?action=file&fileId=${Uri.encode(option.fileId)}"
+                                                    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                                                        connectTimeout = 15000
+                                                        readTimeout = 30000
+                                                    }
+                                                    try {
+                                                        if (connection.responseCode !in 200..299) throw IllegalStateException("Subtitle download failed (HTTP ${connection.responseCode}).")
+                                                        val bytes = connection.inputStream.use { input ->
+                                                            val output = java.io.ByteArrayOutputStream()
+                                                            val buffer = ByteArray(8192)
+                                                            var total = 0
+                                                            while (true) {
+                                                                val count = input.read(buffer)
+                                                                if (count < 0) break
+                                                                total += count
+                                                                if (total > 2 * 1024 * 1024) throw IllegalStateException("Subtitle file is too large.")
+                                                                output.write(buffer, 0, count)
+                                                            }
+                                                            output.toByteArray()
+                                                        }
+                                                        if (bytes.isEmpty()) throw IllegalStateException("Subtitle file was empty.")
+                                                        java.io.File(context.cacheDir, "nexvio_subtitle_${channel.id.hashCode()}.vtt").apply { writeBytes(bytes) }
+                                                    } finally { connection.disconnect() }
+                                                }
+                                                val active = player ?: throw IllegalStateException("Player is not ready.")
+                                                val currentItem = active.currentMediaItem ?: throw IllegalStateException("No video is loaded.")
+                                                val subtitle = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
+                                                    .setMimeType(MimeTypes.TEXT_VTT)
+                                                    .setLanguage(option.language.ifBlank { "en" })
+                                                    .setLabel(option.label)
+                                                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                                                    .build()
+                                                val updatedItem = currentItem.buildUpon().setSubtitleConfigurations(listOf(subtitle)).build()
+                                                val position = active.currentPosition.coerceAtLeast(0L)
+                                                val resume = active.playWhenReady
+                                                active.setMediaItem(updatedItem, position)
+                                                active.prepare()
+                                                active.playWhenReady = resume
+                                                subtitleDialogOpen = false
+                                                showPlayerMessage("Subtitle downloaded. Open subtitle tracks to select it if it does not appear automatically.")
+                                            } catch (e: Exception) {
+                                                subtitleError = e.message ?: "Could not download subtitle."
+                                            } finally { subtitleDownloading = false }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(Modifier.fillMaxWidth()) {
+                                        Text(option.label)
+                                        if (option.release.isNotBlank()) Text(option.release, color = Muted, fontSize = 10.sp, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            subtitleDialogOpen = false
+                            openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitle tracks", true)
+                        },
+                        enabled = !subtitleLoading && !subtitleDownloading
+                    ) { Text("Choose embedded subtitles") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { subtitleDialogOpen = false }, enabled = !subtitleLoading && !subtitleDownloading) { Text("Close") } },
+            containerColor = Panel,
+            titleContentColor = Color.White,
+            textContentColor = Color.White
+        )
+    }
+
     Column(Modifier.fillMaxSize().background(Color.Black), verticalArrangement = Arrangement.Center) {
         if (!fullscreen) Spacer(Modifier.weight(1f))
         Box((if (fullscreen) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).background(Color.Black), contentAlignment=Alignment.Center) {
@@ -1208,7 +1364,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             revealControls()
                         }, size = 23)
                         PlayerIconButton(Icons.Filled.HighQuality, "Video quality", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, size = 25)
-                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true) }, size = 24)
+                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { subtitleDialogOpen = true; subtitleError = null; revealControls() }, size = 24)
                         PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
                             if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
                             else showPlayerMessage("No playlist is attached to this stream.")
@@ -1230,7 +1386,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 })
                                 DropdownMenuItem(text = { Text("Subtitles") }, onClick = {
                                     moreMenuExpanded = false
-                                    openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitles", true)
+                                    subtitleDialogOpen = true
+                                    subtitleError = null
+                                    revealControls()
                                 })
                                 DropdownMenuItem(text = { Text("Cycle playback speed") }, onClick = {
                                     moreMenuExpanded = false
@@ -1418,6 +1576,8 @@ private fun PlayerFloatingButton(
         Text(label, color = Color.White, fontSize = fontSize.sp, maxLines = 1, fontWeight = FontWeight.Medium)
     }
 }
+
+private data class SubtitleOption(val fileId: String, val language: String, val label: String, val release: String)
 
 private data class PlaybackFailure(val message: String, val details: String)
 
