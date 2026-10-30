@@ -1070,7 +1070,23 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 subtitleResults = emptyList()
                                 try {
                                     val results = withContext(Dispatchers.IO) {
-                                        val endpoint = "https://nexvio-web-app.vercel.app/api/subtitles?action=search&title=${Uri.encode(subtitleSearchTitle.trim().ifBlank { channel.name })}&type=movie&language=${Uri.encode(subtitleLanguage.ifBlank { "en" })}"
+                                        val episodeMatch = Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b").find(channel.name)
+                                        val cleanChannelTitle = channel.name
+                                            .replace(Regex("(?i)\\s*[•|·-]\\s*[^•|·-]*$"), "")
+                                            .replace(Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b"), "")
+                                            .trim()
+                                        val searchTitle = subtitleSearchTitle.trim().ifBlank { cleanChannelTitle }
+                                        val mediaType = if (episodeMatch != null) "tv" else "movie"
+                                        val endpoint = buildString {
+                                            append("https://nexvio-web-app.vercel.app/api/subtitles?action=search")
+                                            append("&title=").append(Uri.encode(searchTitle))
+                                            append("&type=").append(mediaType)
+                                            append("&language=").append(Uri.encode(subtitleLanguage.trim().ifBlank { "en" }))
+                                            if (episodeMatch != null) {
+                                                append("&season=").append(episodeMatch.groupValues[1].toInt())
+                                                append("&episode=").append(episodeMatch.groupValues[2].toInt())
+                                            }
+                                        }
                                         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                                             connectTimeout = 15000
                                             readTimeout = 20000
