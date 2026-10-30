@@ -1301,7 +1301,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                 // explicitly select that track instead of relying on language
                                                 // preference or the stream's embedded subtitle tracks.
                                                 var downloadedTrackSelected = false
-                                                repeat(50) {
+                                                for (attempt in 0 until 50) {
                                                     val textGroup = active.currentTracks.groups
                                                         .firstOrNull { group ->
                                                             group.type == C.TRACK_TYPE_TEXT &&
@@ -1327,7 +1327,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                             )
                                                             .build()
                                                         downloadedTrackSelected = true
-                                                        return@repeat
+                                                        break
                                                     }
                                                     delay(200)
                                                 }
