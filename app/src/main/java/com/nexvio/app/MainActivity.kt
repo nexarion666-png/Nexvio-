@@ -1048,11 +1048,28 @@ private fun formatPlayerTime(milliseconds: Long): String {
 
     val subtitleScope = rememberCoroutineScope()
     if (subtitleDialogOpen) {
-        AlertDialog(
+        androidx.compose.ui.window.Dialog(
             onDismissRequest = { if (!subtitleLoading && !subtitleDownloading) subtitleDialogOpen = false },
-            title = { Text("Subtitles") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.94f).heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.88f),
+                shape = RoundedCornerShape(24.dp),
+                color = Panel
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Online subtitles", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Text("Search and download subtitles from OpenSubtitles", color = Muted, fontSize = 12.sp)
+                        }
+                        IconButton(onClick = { if (!subtitleLoading && !subtitleDownloading) subtitleDialogOpen = false }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Close subtitles", tint = Color.White)
+                        }
+                    }
                     OutlinedTextField(
                         value = subtitleSearchTitle,
                         onValueChange = { subtitleSearchTitle = it },
@@ -1148,9 +1165,24 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         if (subtitleLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         else Text("Search subtitles")
                     }
-                    subtitleError?.let { Text(it, color = Color(0xFFFF8A80), fontSize = 12.sp) }
+                    if (subtitleLoading) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text("Searching OpenSubtitles…", color = Color.White, fontSize = 13.sp)
+                        }
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    } else if (subtitleError != null) {
+                        val isSuccess = subtitleResults.isNotEmpty()
+                        Text(
+                            subtitleError!!,
+                            color = if (isSuccess) Color(0xFF80D8A5) else Color(0xFFFFA0A0),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                     if (subtitleResults.isNotEmpty()) {
-                        LazyColumn(Modifier.heightIn(max = 210.dp)) {
+                        Text("SEARCH RESULTS  •  ${subtitleResults.size}", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        LazyColumn(Modifier.weight(1f, fill = false).heightIn(min = 100.dp, max = 340.dp)) {
                             items(subtitleResults) { option ->
                                 TextButton(
                                     enabled = !subtitleDownloading,
@@ -1245,9 +1277,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(Modifier.fillMaxWidth()) {
-                                        Text(option.label)
-                                        if (option.release.isNotBlank()) Text(option.release, color = Muted, fontSize = 10.sp, maxLines = 1)
+                                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                        Text(option.label, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text(
+                                            listOf(option.language.uppercase(), option.release).filter { it.isNotBlank() }.joinToString(" • "),
+                                            color = Muted, fontSize = 11.sp, maxLines = 2
+                                        )
+                                        Text("Tap to download and apply", color = Accent, fontSize = 11.sp)
                                     }
                                 }
                             }
@@ -1260,13 +1296,28 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         },
                         enabled = !subtitleLoading && !subtitleDownloading
                     ) { Text("Choose embedded subtitles") }
+                    if (subtitleDownloading) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text("Downloading and applying subtitle…", color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(
+                            onClick = {
+                                subtitleDialogOpen = false
+                                openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitle tracks", true)
+                            },
+                            enabled = !subtitleLoading && !subtitleDownloading
+                        ) { Text("Embedded subtitles") }
+                        TextButton(
+                            onClick = { subtitleDialogOpen = false },
+                            enabled = !subtitleLoading && !subtitleDownloading
+                        ) { Text("Close") }
+                    }
                 }
-            },
-            confirmButton = { TextButton(onClick = { subtitleDialogOpen = false }, enabled = !subtitleLoading && !subtitleDownloading) { Text("Close") } },
-            containerColor = Panel,
-            titleContentColor = Color.White,
-            textContentColor = Color.White
-        )
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize().background(Color.Black), verticalArrangement = Arrangement.Center) {
