@@ -6,6 +6,9 @@ android { namespace = "com.nexvio.app"; compileSdk = 35
         // Supabase URL and publishable key are client-safe configuration, not server secrets.
         buildConfigField("String", "SUPABASE_URL", "\"https://lbgssprmmqikzmyifphi.supabase.co\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_KOjZfEB_Xx7l5lmHHJlIYg_K1SrDBn-\"")
+        // This key is supplied by GitHub Actions at build time. It is extractable from the APK.
+        val openSubtitlesKey = (System.getenv("OPENSUBTITLES_API_KEY") ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+        buildConfigField("String", "OPENSUBTITLES_API_KEY", "\"$openSubtitlesKey\"")
         versionCode = (System.getenv("NEXVIO_VERSION_CODE") ?: "7").toInt()
         versionName = System.getenv("NEXVIO_VERSION_NAME") ?: "1.0.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
