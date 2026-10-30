@@ -801,7 +801,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
-    var subtitleSearchTitle by rememberSaveable(channel.id) { mutableStateOf(channel.name) }
+    var subtitleSearchTitle by rememberSaveable(channel.id) {
+        mutableStateOf(
+            channel.name.substringBefore(" • ")
+                .replace(Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b"), "")
+                .trim()
+        )
+    }
     var subtitleResults by remember(channel.id) { mutableStateOf<List<SubtitleOption>>(emptyList()) }
     var subtitleLoading by remember(channel.id) { mutableStateOf(false) }
     var subtitleError by remember(channel.id) { mutableStateOf<String?>(null) }
