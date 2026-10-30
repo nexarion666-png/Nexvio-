@@ -17,7 +17,9 @@ export default async function handler(req, res) {
     if (action === "search") {
       const title = clean(q.title), type = clean(q.type, 8), year = clean(q.year, 4), language = lang(clean(q.language, 3));
       if (!title || !["movie", "tv"].includes(type)) return json(res, 400, { error: "A title and media type are required." });
-      const params = new URLSearchParams({ query: title, languages: language, type: type === "tv" ? "episode" : "movie" });
+      // OpenSubtitles recommends lowercase queries. no_guessit=1 avoids a known API
+      // regression where valid season/episode searches can otherwise return zero rows.
+      const params = new URLSearchParams({ query: title.toLowerCase(), languages: language, type: type === "tv" ? "episode" : "movie", no_guessit: "1" });
       if (/^\d{4}$/.test(year)) params.set("year", year);
       if (type === "tv") {
         const season = Number(q.season), episode = Number(q.episode);
