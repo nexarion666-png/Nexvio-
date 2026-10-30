@@ -820,6 +820,11 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var scrubPositionMs by remember(channel.id) { mutableStateOf<Long?>(null) }
     var durationMs by remember(channel.id) { mutableLongStateOf(0L) }
     var brightnessLevel by rememberSaveable { mutableFloatStateOf(0.6f) }
+    var gestureVisible by remember { mutableStateOf(false) }
+    var gestureKind by remember { mutableStateOf("volume") }
+    var gestureLevel by remember { mutableFloatStateOf(0f) }
+    var gestureTick by remember { mutableIntStateOf(0) }
+    var lockHintVisible by remember(channel.id) { mutableStateOf(false) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
     fun revealControls() { controlsVisible = true; controlsInteraction++ }
@@ -928,6 +933,10 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 .build()
             createdPlayer = instance
             player = instance
+            // Restore the saved position only on the FIRST ready state. Without this, every
+            // buffering->ready transition (including after a seek) jumped back to the stale
+            // position that is refreshed once per second, which undid skips and drags.
+            var initialResumeHandled = false
             instance.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     isBuffering = playbackState == Player.STATE_BUFFERING
@@ -936,9 +945,12 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         playbackDetails = null
                         // For seekable/VOD sources, restore a saved position once. Do not
                         // seek live IPTV streams away from their default live position.
-                        if (playerPrefs.getBoolean("playback_resume", true) && savedPositionMs > 0L && !instance.isCurrentMediaItemLive) {
-                            instance.seekTo(savedPositionMs)
-                            savedPositionMs = 0L
+                        if (!initialResumeHandled) {
+                            initialResumeHandled = true
+                            if (playerPrefs.getBoolean("playback_resume", true) && savedPositionMs > 0L && !instance.isCurrentMediaItemLive) {
+                                instance.seekTo(savedPositionMs)
+                                savedPositionMs = 0L
+                            }
                         }
                     }
                 }
@@ -1036,6 +1048,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
         }
     }
     LaunchedEffect(player, muted) { player?.volume = if (muted) 0f else 1f }
+    LaunchedEffect(gestureTick) { if (gestureTick > 0) { delay(900); gestureVisible = false } }
+    LaunchedEffect(lockHintVisible, screenLocked) { if (screenLocked && lockHintVisible) { delay(3_000); lockHintVisible = false } }
 
     DisposableEffect(player, lifecycleOwner) {
         val activePlayer = player
@@ -1440,7 +1454,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     modifier = (if (fullscreen) Modifier.fillMaxSize()
                         else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).pointerInput(player) {
                             detectTapGestures(
-                                onTap = { if (!screenLocked) { controlsVisible = !controlsVisible; controlsInteraction++ } },
+                                onTap = { if (screenLocked) lockHintVisible = true else { controlsVisible = !controlsVisible; controlsInteraction++ } },
                                 onDoubleTap = { offset ->
                                     if (!screenLocked) {
                                         val active = player
@@ -1462,6 +1476,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                         val current = window.attributes.screenBrightness.takeIf { it >= 0f } ?: brightnessLevel
                                         brightnessLevel = (current - dragAmount / 900f).coerceIn(0.05f, 1f)
                                         window.attributes = window.attributes.apply { screenBrightness = brightnessLevel }
+                                        gestureKind = "brightness"; gestureLevel = brightnessLevel; gestureVisible = true; gestureTick++
                                     }
                                 } else {
                                     val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
@@ -1469,6 +1484,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                     val step = if (kotlin.math.abs(dragAmount) >= 1f) kotlin.math.ceil(kotlin.math.abs(dragAmount) / 24f).toInt().coerceAtLeast(1) else 1
                                     val newVolume = if (dragAmount < 0f) (currentVolume + step).coerceAtMost(maxVolume) else (currentVolume - step).coerceAtLeast(0)
                                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+                                    gestureKind = "volume"; gestureLevel = newVolume.toFloat() / maxVolume; gestureVisible = true; gestureTick++
                                 }
                                 change.consume()
                             }
@@ -1476,6 +1492,37 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 )
             }
             if (isBuffering && playbackError == null && playerPrefs.getBoolean("playback_loading_overlay", true)) CircularProgressIndicator(color = Accent)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = gestureVisible,
+                enter = fadeIn(animationSpec = tween(durationMillis = 120)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 300)),
+                modifier = Modifier.align(if (gestureKind == "brightness") Alignment.CenterStart else Alignment.CenterEnd).padding(horizontal = 36.dp)
+            ) {
+                Column(
+                    Modifier.background(Color(0xAA000000), RoundedCornerShape(22.dp)).padding(horizontal = 14.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        when {
+                            gestureKind == "brightness" -> Icons.Filled.BrightnessMedium
+                            gestureLevel <= 0f -> Icons.Filled.VolumeOff
+                            gestureLevel < 0.5f -> Icons.Filled.VolumeDown
+                            else -> Icons.Filled.VolumeUp
+                        },
+                        contentDescription = if (gestureKind == "brightness") "Brightness" else "Volume",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Box(
+                        Modifier.width(6.dp).height(110.dp).clip(RoundedCornerShape(3.dp)).background(Color(0x55FFFFFF)),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Box(Modifier.fillMaxWidth().fillMaxHeight(gestureLevel.coerceIn(0f, 1f)).background(Color.White))
+                    }
+                    Text("${(gestureLevel.coerceIn(0f, 1f) * 100).toInt()}%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
             if (playbackError != null) Column(Modifier.padding(24.dp), horizontalAlignment=Alignment.CenterHorizontally) {
                 Text(playbackError!!, color=Color.White)
                 if (!playbackDetails.isNullOrBlank()) {
@@ -1490,13 +1537,19 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 Button(onClick={ playbackError=null; shouldResumePlayback=true; retry++ }, colors=ButtonDefaults.buttonColors(containerColor=Accent, contentColor=Ink)) { Text("Retry") }
             }
             if (screenLocked) {
-                Box(
-                    Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 18.dp)
-                        .size(46.dp).clip(CircleShape).background(Color(0x99080A0F))
-                        .clickable { screenLocked = false; revealControls() },
-                    contentAlignment = Alignment.Center
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = lockHintVisible,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 150)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 250)),
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 18.dp)
                 ) {
-                    Icon(Icons.Filled.LockOpen, contentDescription = "Unlock controls", tint = Color.White, modifier = Modifier.size(24.dp))
+                    Box(
+                        Modifier.size(52.dp).clip(CircleShape).background(Color(0x99080A0F))
+                            .clickable { screenLocked = false; lockHintVisible = false; revealControls() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.LockOpen, contentDescription = "Unlock controls", tint = Color.White, modifier = Modifier.size(26.dp))
+                    }
                 }
             } else {
                 androidx.compose.animation.AnimatedVisibility(
@@ -1582,6 +1635,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             maxLines = 1,
                             modifier = Modifier.weight(1f).padding(start = 4.dp, end = 3.dp)
                         )
+                        PlayerIconButton(Icons.Filled.Lock, "Lock controls", {
+                            moreMenuExpanded = false
+                            controlsVisible = false
+                            screenLocked = true
+                            lockHintVisible = true
+                            showPlayerMessage("Locked. Tap the screen to show the unlock button.")
+                        }, size = 23)
                         PlayerIconButton(Icons.Filled.Cast, "Cast", {
                             showPlayerMessage("Casting is not configured in this build.")
                             revealControls()
