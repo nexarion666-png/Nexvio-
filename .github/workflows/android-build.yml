@@ -86,6 +86,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           NEXVIO_VERSION_NAME: 1.0.${{ github.run_number }}
           NEXVIO_VERSION_CODE: ${{ github.run_number }}
+          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
         run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
 
       - name: Upload debug APK artifact
