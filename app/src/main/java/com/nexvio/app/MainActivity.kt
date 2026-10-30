@@ -801,12 +801,11 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
+    // Keep the episode identifier visible in the search field (for example,
+    // "The Example Show S02E05"), but send only the series title plus explicit
+    // season/episode parameters to the subtitle provider.
     var subtitleSearchTitle by rememberSaveable(channel.id) {
-        mutableStateOf(
-            channel.name.substringBefore(" • ")
-                .replace(Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b"), "")
-                .trim()
-        )
+        mutableStateOf(channel.name.substringBefore(" • ").trim())
     }
     var subtitleResults by remember(channel.id) { mutableStateOf<List<SubtitleOption>>(emptyList()) }
     var subtitleLoading by remember(channel.id) { mutableStateOf(false) }
@@ -1076,12 +1075,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 subtitleResults = emptyList()
                                 try {
                                     val results = withContext(Dispatchers.IO) {
-                                        val episodeMatch = Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b").find(channel.name)
-                                        val cleanChannelTitle = channel.name
-                                            .replace(Regex("(?i)\\s*[•|·-]\\s*[^•|·-]*$"), "")
+                                        val visibleTitle = subtitleSearchTitle.trim()
+                                        val episodeMatch = Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b")
+                                            .find(visibleTitle) ?: Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b").find(channel.name)
+                                        val cleanChannelTitle = channel.name.substringBefore(" • ")
                                             .replace(Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b"), "")
                                             .trim()
-                                        val searchTitle = subtitleSearchTitle.trim().ifBlank { cleanChannelTitle }
+                                        val searchTitle = visibleTitle
+                                            .replace(Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b"), "")
+                                            .trim()
+                                            .ifBlank { cleanChannelTitle }
                                         val mediaType = if (episodeMatch != null) "tv" else "movie"
                                         val endpoint = buildString {
                                             append("https://nexvio-web-app.vercel.app/api/subtitles?action=search")
@@ -1102,11 +1105,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                             val code = connection.responseCode
                                             val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
                                                 ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                                            if (code !in 200..299) throw IllegalStateException(
-                                                if (code == 503) "Subtitle service is not configured on the website yet."
-                                                else "Subtitle search failed (HTTP $code)."
-                                            )
-                                            val array = org.json.JSONObject(body).optJSONArray("subtitles") ?: org.json.JSONArray()
+                                            val responseJson = runCatching { org.json.JSONObject(body) }.getOrNull()
+                                            if (code !in 200..299) {
+                                                val serverMessage = responseJson?.optString("error")?.takeIf { it.isNotBlank() && it != "null" }
+                                                throw IllegalStateException(
+                                                    serverMessage ?: if (code == 503)
+                                                        "Subtitle service is not configured. Add OPENSUBTITLES_API_KEY to the Nexvio website's Vercel environment variables."
+                                                    else "Subtitle search failed (HTTP $code)."
+                                                )
+                                            }
+                                            val array = responseJson?.optJSONArray("subtitles") ?: org.json.JSONArray()
                                             buildList {
                                                 for (i in 0 until array.length()) {
                                                     val item = array.optJSONObject(i) ?: continue
