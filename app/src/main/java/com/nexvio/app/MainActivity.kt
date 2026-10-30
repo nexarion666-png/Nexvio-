@@ -1157,9 +1157,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 
     // Automatically picks and applies the best online subtitle for movies/episodes.
-    LaunchedEffect(player) {
+    LaunchedEffect(player, channel.id) {
         val active = player ?: return@LaunchedEffect
-        if (!channel.id.startsWith("addon-")) return@LaunchedEffect
         if (!playerPrefs.getBoolean("auto_subtitles", true)) return@LaunchedEffect
         val code = subtitleLanguageCode(playerPrefs.getString("preferred_subtitle_language", "Device language") ?: "Device language")
             ?: return@LaunchedEffect
@@ -1219,7 +1218,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
 
     if (subtitleDialogOpen) {
         androidx.compose.ui.window.Dialog(
-            onDismissRequest = { if (!subtitleLoading && !subtitleDownloading) subtitleDialogOpen = false },
+            onDismissRequest = { subtitleDialogOpen = false },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Surface(
@@ -1236,7 +1235,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             Text("Online subtitles", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             Text("Search and download subtitles from OpenSubtitles", color = Muted, fontSize = 12.sp)
                         }
-                        IconButton(onClick = { if (!subtitleLoading && !subtitleDownloading) subtitleDialogOpen = false }) {
+                        IconButton(onClick = { subtitleDialogOpen = false }) {
                             Icon(Icons.Filled.Close, contentDescription = "Close subtitles", tint = Color.White)
                         }
                     }
