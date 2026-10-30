@@ -801,6 +801,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
+    var subtitleSearchTitle by rememberSaveable(channel.id) { mutableStateOf(channel.name) }
     var subtitleResults by remember(channel.id) { mutableStateOf<List<SubtitleOption>>(emptyList()) }
     var subtitleLoading by remember(channel.id) { mutableStateOf(false) }
     var subtitleError by remember(channel.id) { mutableStateOf<String?>(null) }
@@ -1047,7 +1048,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
             title = { Text("Subtitles") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Search OpenSubtitles using this video title: ${channel.name}", color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(
+                        value = subtitleSearchTitle,
+                        onValueChange = { subtitleSearchTitle = it },
+                        label = { Text("Film or series name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     OutlinedTextField(
                         value = subtitleLanguage,
                         onValueChange = { subtitleLanguage = it.take(8) },
@@ -1063,7 +1070,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 subtitleResults = emptyList()
                                 try {
                                     val results = withContext(Dispatchers.IO) {
-                                        val endpoint = "https://nexvio-web-app.vercel.app/api/subtitles?action=search&title=${Uri.encode(channel.name)}&type=movie&language=${Uri.encode(subtitleLanguage.ifBlank { "en" })}"
+                                        val endpoint = "https://nexvio-web-app.vercel.app/api/subtitles?action=search&title=${Uri.encode(subtitleSearchTitle.trim().ifBlank { channel.name })}&type=movie&language=${Uri.encode(subtitleLanguage.ifBlank { "en" })}"
                                         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                                             connectTimeout = 15000
                                             readTimeout = 20000
