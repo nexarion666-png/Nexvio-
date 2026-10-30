@@ -737,11 +737,11 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         AlertDialog(
             onDismissRequest = { downloadTarget = null },
             title = { Text("Download for offline") },
-            text = { Text("Save " + item.title + (if (item.mediaType == "series") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " (" + target.quality + ")? Only direct media files are supported. HLS/DASH playlists, DRM and provider pages cannot be converted by this downloader.") },
+            text = { Text("Save " + item.title + (if (item.mediaType == "tv") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " (" + target.quality + ")? Only direct media files are supported. HLS/DASH playlists, DRM and provider pages cannot be converted by this downloader.") },
             confirmButton = {
                 TextButton(onClick = {
                     // Use the media title as the filename; series also include SxxExx.
-                    val title = item.title + (if (item.mediaType == "series") " - S" + seasonNumber.toString().padStart(2, '0') + "E" + episodeNumber.toString().padStart(2, '0') else "")
+                    val title = item.title + (if (item.mediaType == "tv") " - S" + seasonNumber.toString().padStart(2, '0') + "E" + episodeNumber.toString().padStart(2, '0') else "")
                     try {
                         enqueueDiscoveredStream(context, title, target.url)
                         downloadMessage = "Download queued. Track it in Library → Offline."
@@ -864,7 +864,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                                 downloadMessage = "This add-on returned a torrent source (info hash), not a direct video URL. Nexvio currently lists it but cannot play torrent-only results until a torrent/debrid resolver is integrated."
                             } else onPlay(TvChannel(
                                 id = "addon-${item.mediaType}-${item.id}-${stream.url.hashCode()}",
-                                name = "${item.title} • ${stream.quality}",
+                                name = "${item.title}" + (if (item.mediaType == "tv") " S${seasonNumber.toString().padStart(2, '0')}E${episodeNumber.toString().padStart(2, '0')}" else "") + " • ${stream.quality}",
                                 streamUrl = stream.url,
                                 logoUrl = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                                 category = stream.addonName,
