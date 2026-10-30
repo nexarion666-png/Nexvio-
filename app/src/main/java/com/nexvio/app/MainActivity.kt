@@ -802,6 +802,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
+    var subtitleSearchMode by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
     // Keep the episode identifier visible in the search field (for example,
     // "The Example Show S02E05"), but send only the series title plus explicit
@@ -1072,6 +1073,26 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             Icon(Icons.Filled.Close, contentDescription = "Close subtitles", tint = Color.White)
                         }
                     }
+                    if (!subtitleSearchMode) {
+                        val embeddedSubtitleGroups = player?.currentTracks?.groups?.count { it.type == C.TRACK_TYPE_TEXT } ?: 0
+                        val downloadedSubtitleFile = java.io.File(context.cacheDir, "nexvio_subtitle_" + channel.id.hashCode() + ".vtt")
+                        Text("AVAILABLE SUBTITLES", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        if (embeddedSubtitleGroups > 0) {
+                            Text("Subtitle tracks are available in this video.", color = Color.White, fontSize = 14.sp)
+                            Button(onClick = { subtitleDialogOpen = false; openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitle tracks", true) }, modifier = Modifier.fillMaxWidth()) { Text("Choose available video subtitles") }
+                        } else {
+                            Text("This video does not provide embedded subtitle tracks.", color = Muted, fontSize = 13.sp)
+                        }
+                        Text("DOWNLOADED SUBTITLES", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        if (downloadedSubtitleFile.exists() && downloadedSubtitleFile.length() > 0L) {
+                            Text("Downloaded subtitle is saved for this video.", color = Color(0xFF80D8A5), fontSize = 14.sp)
+                            Text("It is applied to the player. If it is not visible, check subtitle track settings.", color = Muted, fontSize = 12.sp)
+                        } else {
+                            Text("No downloaded subtitles for this video yet.", color = Muted, fontSize = 13.sp)
+                        }
+                        Button(onClick = { subtitleSearchMode = true; subtitleError = null }, modifier = Modifier.fillMaxWidth(), enabled = !subtitleLoading && !subtitleDownloading) { Text("Search online subtitles") }
+                    } else {
+                        TextButton(onClick = { subtitleSearchMode = false; subtitleError = null }) { Text("Back to available subtitles") }
                     OutlinedTextField(
                         value = subtitleSearchTitle,
                         onValueChange = { subtitleSearchTitle = it },
@@ -1305,17 +1326,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(
-                            onClick = {
-                                subtitleDialogOpen = false
-                                openTrackDialog(C.TRACK_TYPE_TEXT, "Subtitle tracks", true)
-                            },
-                            enabled = !subtitleLoading && !subtitleDownloading
-                        ) { Text("Embedded subtitles") }
-                        TextButton(
-                            onClick = { subtitleDialogOpen = false },
-                            enabled = !subtitleLoading && !subtitleDownloading
-                        ) { Text("Close") }
+                        TextButton(onClick = { subtitleSearchMode = false; subtitleError = null }, enabled = !subtitleLoading && !subtitleDownloading) { Text("Back") }
+                        TextButton(onClick = { subtitleDialogOpen = false }, enabled = !subtitleLoading && !subtitleDownloading) { Text("Close") }
+                    }
                     }
                 }
             }
@@ -1496,7 +1509,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             revealControls()
                         }, size = 23)
                         PlayerIconButton(Icons.Filled.HighQuality, "Video quality", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, size = 25)
-                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { subtitleDialogOpen = true; subtitleError = null; revealControls() }, size = 24)
+                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { subtitleSearchMode = false; subtitleDialogOpen = true; subtitleError = null; revealControls() }, size = 24)
                         PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
                             if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
                             else showPlayerMessage("No playlist is attached to this stream.")
@@ -1518,6 +1531,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 })
                                 DropdownMenuItem(text = { Text("Subtitles") }, onClick = {
                                     moreMenuExpanded = false
+                                    subtitleSearchMode = false
                                     subtitleDialogOpen = true
                                     subtitleError = null
                                     revealControls()
