@@ -803,6 +803,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
+    var subtitleDiagnostic by remember(channel.id) { mutableStateOf("No subtitle diagnostics yet.") }
     var subtitleSearchMode by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
     // Keep the episode identifier visible in the search field (for example,
@@ -940,6 +941,22 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             savedPositionMs = 0L
                         }
                     }
+                }
+
+                override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                    val cueCount = cueGroup.cues.size
+                    val sample = cueGroup.cues.firstOrNull()?.text?.toString()?.take(100).orEmpty()
+                    subtitleDiagnostic = if (cueCount > 0) "Player received $cueCount subtitle cue(s). Example: $sample" else "Player reported no subtitle cues."
+                    Log.i("NexvioSubtitles", "onCues count=$cueCount sample=$sample")
+                }
+
+                override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                    val textTracks = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+                    val details = textTracks.flatMap { group -> (0 until group.length).map { index ->
+                        val format = group.getTrackFormat(index)
+                        "lang=${format.language}, label=${format.label}, mime=${format.sampleMimeType}, selected=${group.isTrackSelected(index)}"
+                    } }
+                    Log.i("NexvioSubtitles", "Text tracks: " + details.joinToString(" | ").ifBlank { "none" })
                 }
 
                 override fun onIsPlayingChanged(playing: Boolean) {
@@ -1088,6 +1105,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         if (downloadedSubtitleFile.exists() && downloadedSubtitleFile.length() > 0L) {
                             Text("Downloaded subtitle is saved for this video.", color = Color(0xFF80D8A5), fontSize = 14.sp)
                             Text("It is applied to the player. If it is not visible, check subtitle track settings.", color = Muted, fontSize = 12.sp)
+                            Text(subtitleDiagnostic, color = Muted, fontSize = 11.sp)
                         } else {
                             Text("No downloaded subtitles for this video yet.", color = Muted, fontSize = 13.sp)
                         }
