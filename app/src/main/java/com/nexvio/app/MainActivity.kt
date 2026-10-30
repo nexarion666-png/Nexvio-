@@ -1086,56 +1086,52 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                             .trim()
                                             .ifBlank { cleanChannelTitle }
                                         val mediaType = if (episodeMatch != null) "tv" else "movie"
+                                        val apiKey = BuildConfig.OPENSUBTITLES_API_KEY
+                                        if (apiKey.isBlank()) throw IllegalStateException("OpenSubtitles API key is missing. Add OPENSUBTITLES_API_KEY to GitHub Actions secrets and rebuild.")
                                         val endpoint = buildString {
-                                            append("https://nexvio-web-app.vercel.app/api/subtitles?action=search")
-                                            append("&title=").append(Uri.encode(searchTitle))
-                                            append("&type=").append(mediaType)
-                                            append("&language=").append(Uri.encode(subtitleLanguage.trim().ifBlank { "en" }))
+                                            append("https://api.opensubtitles.com/api/v1/subtitles?query=")
+                                            append(Uri.encode(searchTitle))
+                                            append("&languages=").append(Uri.encode(subtitleLanguage.trim().ifBlank { "en" }))
+                                            append("&type=").append(if (episodeMatch != null) "episode" else "movie")
                                             if (episodeMatch != null) {
-                                                append("&season=").append(episodeMatch.groupValues[1].toInt())
-                                                append("&episode=").append(episodeMatch.groupValues[2].toInt())
+                                                append("&season_number=").append(episodeMatch.groupValues[1].toInt())
+                                                append("&episode_number=").append(episodeMatch.groupValues[2].toInt())
                                             }
                                         }
                                         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                                             connectTimeout = 15000
                                             readTimeout = 20000
+                                            setRequestProperty("Api-Key", apiKey)
+                                            setRequestProperty("User-Agent", "Nexvio v1.0")
                                             setRequestProperty("Accept", "application/json")
                                         }
                                         try {
                                             val code = connection.responseCode
                                             val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
                                                 ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                                            val responseJson = runCatching { org.json.JSONObject(body) }.getOrNull()
+                                            val json = runCatching { org.json.JSONObject(body) }.getOrNull()
                                             if (code !in 200..299) {
-                                                val serverMessage = responseJson?.optString("error")?.takeIf { it.isNotBlank() && it != "null" }
-                                                throw IllegalStateException(
-                                                    serverMessage ?: if (code == 503)
-                                                        "Subtitle service is not configured. Add OPENSUBTITLES_API_KEY to the Nexvio website's Vercel environment variables."
-                                                    else "Subtitle search failed (HTTP $code)."
-                                                )
+                                                val message = json?.optString("message")?.takeIf { it.isNotBlank() && it != "null" }
+                                                    ?: "OpenSubtitles search failed (HTTP $code)."
+                                                throw IllegalStateException(message)
                                             }
-                                            val array = responseJson?.optJSONArray("subtitles") ?: org.json.JSONArray()
+                                            val data = json?.optJSONArray("data") ?: org.json.JSONArray()
                                             val found = buildList {
-                                                for (i in 0 until array.length()) {
-                                                    val item = array.optJSONObject(i) ?: continue
-                                                    val fileId = item.optString("fileId")
-                                                    if (fileId.isNotBlank() && fileId != "null") add(
-                                                        SubtitleOption(
-                                                            fileId,
-                                                            item.optString("language", subtitleLanguage),
-                                                            item.optString("label", "Subtitle"),
-                                                            item.optString("release", "")
-                                                        )
-                                                    )
+                                                for (i in 0 until data.length()) {
+                                                    val attributes = data.optJSONObject(i)?.optJSONObject("attributes") ?: continue
+                                                    val files = attributes.optJSONArray("files") ?: continue
+                                                    val language = attributes.optString("language", subtitleLanguage)
+                                                    val release = attributes.optString("release", "")
+                                                    for (j in 0 until files.length()) {
+                                                        val fileId = files.optJSONObject(j)?.optString("file_id").orEmpty()
+                                                        if (fileId.isNotBlank() && fileId != "null") {
+                                                            add(SubtitleOption(fileId, language, release.ifBlank { "Subtitle • $language" }, release))
+                                                        }
+                                                    }
                                                 }
                                             }
-                                            val statusMessage = if (found.isEmpty()) {
-                                                responseJson?.optString("message")
-                                                    ?.takeIf { it.isNotBlank() && it != "null" }
-                                                    ?: "The subtitle service returned no matches. Try another language or title."
-                                            } else {
-                                                "Found ${found.size} subtitle option(s)."
-                                            }
+                                            val statusMessage = if (found.isEmpty()) "No subtitles found. Try another title or language."
+                                                else "Found ${found.size} subtitle option(s)."
                                             found to statusMessage
                                         } finally { connection.disconnect() }
                                     }
