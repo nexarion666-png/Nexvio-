@@ -1289,10 +1289,17 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                 val position = active.currentPosition.coerceAtLeast(0L)
                                                 val resume = active.playWhenReady
                                                 active.setMediaItem(updatedItem, position)
+                                                // Prefer the language of the subtitle just downloaded and ensure
+                                                // text tracks are enabled before preparing the updated media item.
+                                                active.trackSelectionParameters = active.trackSelectionParameters
+                                                    .buildUpon()
+                                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                                    .setPreferredTextLanguage(option.language.ifBlank { "en" })
+                                                    .build()
                                                 active.prepare()
                                                 active.playWhenReady = resume
                                                 subtitleDialogOpen = false
-                                                showPlayerMessage("Subtitle downloaded. Open subtitle tracks to select it if it does not appear automatically.")
+                                                showPlayerMessage("Subtitle downloaded. The downloaded subtitle is now selected.")
                                             } catch (e: Exception) {
                                                 subtitleError = e.message ?: "Could not download subtitle."
                                             } finally { subtitleDownloading = false }
