@@ -740,7 +740,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
             text = { Text("Save " + item.title + (if (item.mediaType == "series") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " (" + target.quality + ")? Only direct media files are supported. HLS/DASH playlists, DRM and provider pages cannot be converted by this downloader.") },
             confirmButton = {
                 TextButton(onClick = {
-                    val title = item.title + (if (item.mediaType == "series") " S" + seasonNumber + "E" + episodeNumber else "") + " - " + target.quality + " - " + target.addonName
+                    // Use the media title as the filename; series also include SxxExx.
+                    val title = item.title + (if (item.mediaType == "series") " - S" + seasonNumber.toString().padStart(2, '0') + "E" + episodeNumber.toString().padStart(2, '0') else "")
                     try {
                         enqueueDiscoveredStream(context, title, target.url)
                         downloadMessage = "Download queued. Track it in Library → Offline."
