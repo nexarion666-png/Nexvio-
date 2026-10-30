@@ -34,6 +34,7 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
     var backBuffer by remember { mutableFloatStateOf(prefs.getInt("playback_back_buffer", 10).toFloat()) }
     var preferredAudio by remember { mutableStateOf(prefs.getString("preferred_audio_language", "Device language") ?: "Device language") }
     var preferredSubtitle by remember { mutableStateOf(prefs.getString("preferred_subtitle_language", "Device language") ?: "Device language") }
+    var autoSubtitles by remember { mutableStateOf(prefs.getBoolean("auto_subtitles", true)) }
     var subtitleSize by remember { mutableFloatStateOf(prefs.getFloat("subtitle_size_sp", 18f)) }
     var autoplayNext by remember { mutableStateOf(prefs.getBoolean("playback_autoplay_next", false)) }
     var touchGestures by remember { mutableStateOf(prefs.getBoolean("playback_touch_gestures", false)) }
@@ -104,6 +105,10 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
                 PlaybackSelect("Preferred audio language", preferredAudio, onClick = { dialog = "Preferred audio language" })
                 PlaybackDivider()
                 PlaybackSelect("Preferred subtitle language", preferredSubtitle, onClick = { dialog = "Preferred subtitle language" })
+                PlaybackDivider()
+                PlaybackToggle("Automatic subtitles", "When a movie or episode starts, find and apply the best subtitle in your preferred language.", autoSubtitles) {
+                    autoSubtitles = it; prefs.edit().putBoolean("auto_subtitles", it).apply()
+                }
                 PlaybackDivider()
                 PlaybackUnavailable("Secondary languages / forced subtitles / SDH filtering", "Track preference rules are not wired to Media3 track-selection parameters yet.")
                 PlaybackUnavailable("Subtitle timing sync", "Automatic subtitle timing correction is not available in the current player.")
