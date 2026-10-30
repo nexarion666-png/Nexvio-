@@ -1287,8 +1287,11 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                         val text = rawBytes.toString(Charsets.UTF_8).trimStart('\uFEFF')
                                                         val normalized = text.replace("\r\n", "\n").replace('\r', '\n')
                                                         val vtt = if (normalized.startsWith("WEBVTT")) normalized else {
-                                                            val converted = Regex("""(?m)^(\d{2}:\d{2}:\d{2}),(\d{3})\s+-->""")
-                                                                .replace(normalized) { match -> "${match.groupValues[1]}.${match.groupValues[2]} -->" }
+                                                            // SRT uses commas in BOTH timestamps ("00:00:01,000 --> 00:00:03,500").
+                                                            // WebVTT needs dots in both, otherwise Media3 silently drops every cue.
+                                                            val converted = normalized.lines().joinToString("\n") { line ->
+                                                                if (line.contains("-->")) line.replace(',', '.') else line
+                                                            }
                                                             "WEBVTT\n\n$converted"
                                                         }
                                                         java.io.File(context.cacheDir, "nexvio_subtitle_${channel.id.hashCode()}.vtt").apply {
@@ -1300,6 +1303,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                 val currentItem = active.currentMediaItem ?: throw IllegalStateException("No video is loaded.")
                                                 val subtitle = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
                                                     .setMimeType(MimeTypes.TEXT_VTT)
+                                                    .setId("nexvio-downloaded-subtitle")
                                                     .setLanguage(option.language.ifBlank { "en" })
                                                     .setLabel(option.label)
                                                     .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
@@ -1323,6 +1327,10 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                     val textGroup = active.currentTracks.groups
                                                         .firstOrNull { group ->
                                                             group.type == C.TRACK_TYPE_TEXT &&
+                                                                (0 until group.length).any { group.getTrackFormat(it).id == "nexvio-downloaded-subtitle" }
+                                                        } ?: active.currentTracks.groups
+                                                        .firstOrNull { group ->
+                                                            group.type == C.TRACK_TYPE_TEXT &&
                                                                 (0 until group.length).any { index ->
                                                                     val language = group.getTrackFormat(index).language.orEmpty()
                                                                     language.equals(option.language, ignoreCase = true) ||
@@ -1332,6 +1340,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                         }
                                                     if (textGroup != null) {
                                                         val matchingIndex = (0 until textGroup.length).firstOrNull { index ->
+                                                            textGroup.getTrackFormat(index).id == "nexvio-downloaded-subtitle"
+                                                        } ?: (0 until textGroup.length).firstOrNull { index ->
                                                             val language = textGroup.getTrackFormat(index).language.orEmpty()
                                                             language.equals(option.language, ignoreCase = true) ||
                                                                 language.equals("und", ignoreCase = true) ||
