@@ -1074,7 +1074,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 subtitleError = null
                                 subtitleResults = emptyList()
                                 try {
-                                    val results = withContext(Dispatchers.IO) {
+                                    val (results, statusMessage) = withContext(Dispatchers.IO) {
                                         val visibleTitle = subtitleSearchTitle.trim()
                                         val episodeMatch = Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b")
                                             .find(visibleTitle) ?: Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b").find(channel.name)
@@ -1115,7 +1115,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                 )
                                             }
                                             val array = responseJson?.optJSONArray("subtitles") ?: org.json.JSONArray()
-                                            buildList {
+                                            val found = buildList {
                                                 for (i in 0 until array.length()) {
                                                     val item = array.optJSONObject(i) ?: continue
                                                     val fileId = item.optString("fileId")
@@ -1128,19 +1128,19 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                         )
                                                     )
                                                 }
-                                            }.also { found ->
-                                                if (found.isEmpty()) {
-                                                    val providerMessage = responseJson?.optString("message")
-                                                        ?.takeIf { it.isNotBlank() && it != "null" }
-                                                    subtitleError = providerMessage
-                                                        ?: "The subtitle service returned no matches. Try another language or title."
-                                                } else {
-                                                    subtitleError = "Found ${found.size} subtitle option(s)."
-                                                }
                                             }
+                                            val statusMessage = if (found.isEmpty()) {
+                                                responseJson?.optString("message")
+                                                    ?.takeIf { it.isNotBlank() && it != "null" }
+                                                    ?: "The subtitle service returned no matches. Try another language or title."
+                                            } else {
+                                                "Found ${found.size} subtitle option(s)."
+                                            }
+                                            found to statusMessage
                                         } finally { connection.disconnect() }
                                     }
                                     subtitleResults = results
+                                    subtitleError = statusMessage
                                 } catch (e: Exception) {
                                     subtitleError = e.message ?: "Could not search subtitles."
                                 } finally { subtitleLoading = false }
