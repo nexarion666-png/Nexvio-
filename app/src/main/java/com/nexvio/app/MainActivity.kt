@@ -1128,11 +1128,19 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                         )
                                                     )
                                                 }
+                                            }.also { found ->
+                                                if (found.isEmpty()) {
+                                                    val providerMessage = responseJson?.optString("message")
+                                                        ?.takeIf { it.isNotBlank() && it != "null" }
+                                                    subtitleError = providerMessage
+                                                        ?: "The subtitle service returned no matches. Try another language or title."
+                                                } else {
+                                                    subtitleError = "Found ${found.size} subtitle option(s)."
+                                                }
                                             }
                                         } finally { connection.disconnect() }
                                     }
                                     subtitleResults = results
-                                    if (results.isEmpty()) subtitleError = "No subtitles found. Try another language or a more specific title."
                                 } catch (e: Exception) {
                                     subtitleError = e.message ?: "Could not search subtitles."
                                 } finally { subtitleLoading = false }
