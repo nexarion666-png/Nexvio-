@@ -69,6 +69,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
@@ -1289,17 +1290,53 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                                 val position = active.currentPosition.coerceAtLeast(0L)
                                                 val resume = active.playWhenReady
                                                 active.setMediaItem(updatedItem, position)
-                                                // Prefer the language of the subtitle just downloaded and ensure
-                                                // text tracks are enabled before preparing the updated media item.
                                                 active.trackSelectionParameters = active.trackSelectionParameters
                                                     .buildUpon()
                                                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                                    .setPreferredTextLanguage(option.language.ifBlank { "en" })
+                                                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                                                     .build()
                                                 active.prepare()
+
+                                                // Wait for Media3 to discover the external subtitle, then
+                                                // explicitly select that track instead of relying on language
+                                                // preference or the stream's embedded subtitle tracks.
+                                                var downloadedTrackSelected = false
+                                                repeat(50) {
+                                                    val textGroup = active.currentTracks.groups
+                                                        .firstOrNull { group ->
+                                                            group.type == C.TRACK_TYPE_TEXT &&
+                                                                (0 until group.length).any { index ->
+                                                                    val language = group.getTrackFormat(index).language.orEmpty()
+                                                                    language.equals(option.language, ignoreCase = true) ||
+                                                                        language.equals("und", ignoreCase = true) ||
+                                                                        language.isBlank()
+                                                                }
+                                                        }
+                                                    if (textGroup != null) {
+                                                        val matchingIndex = (0 until textGroup.length).firstOrNull { index ->
+                                                            val language = textGroup.getTrackFormat(index).language.orEmpty()
+                                                            language.equals(option.language, ignoreCase = true) ||
+                                                                language.equals("und", ignoreCase = true) ||
+                                                                language.isBlank()
+                                                        } ?: 0
+                                                        active.trackSelectionParameters = active.trackSelectionParameters
+                                                            .buildUpon()
+                                                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                                            .setOverrideForType(
+                                                                TrackSelectionOverride(textGroup.mediaTrackGroup, listOf(matchingIndex))
+                                                            )
+                                                            .build()
+                                                        downloadedTrackSelected = true
+                                                        return@repeat
+                                                    }
+                                                    delay(200)
+                                                }
+                                                if (!downloadedTrackSelected) {
+                                                    throw IllegalStateException("Subtitle downloaded, but the video player did not load its subtitle track. Please try another subtitle.")
+                                                }
                                                 active.playWhenReady = resume
                                                 subtitleDialogOpen = false
-                                                showPlayerMessage("Subtitle downloaded. The downloaded subtitle is now selected.")
+                                                showPlayerMessage("Subtitle downloaded and selected.")
                                             } catch (e: Exception) {
                                                 subtitleError = e.message ?: "Could not download subtitle."
                                             } finally { subtitleDownloading = false }
