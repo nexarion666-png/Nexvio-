@@ -26,14 +26,41 @@ export default async function handler(req, res) {
         if (!Number.isInteger(season) || season < 1 || season > 99 || !Number.isInteger(episode) || episode < 1 || episode > 999) return json(res, 400, { error: "A valid season and episode are required." });
         params.set("season_number", String(season)); params.set("episode_number", String(episode));
       }
-      const response = await fetch(API + "/subtitles?" + params, { headers, signal: AbortSignal.timeout(15000) });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) return json(res, response.status === 429 ? 429 : 502, { error: data?.message || "Subtitle provider search failed." });
-      const subtitles = (Array.isArray(data?.data) ? data.data : []).flatMap(entry => {
+      const requestSearch = async searchParams => {
+        const response = await fetch(API + "/subtitles?" + searchParams, { headers, signal: AbortSignal.timeout(15000) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(data?.message || "Subtitle provider search failed.");
+          error.status = response.status;
+          throw error;
+        }
+        return Array.isArray(data?.data) ? data.data : [];
+      };
+      // First try the precise episode search. If OpenSubtitles has incomplete
+      // season/episode metadata, retry by series title and episode type.
+      let entries = await requestSearch(params);
+      let searchMode = type === "tv" ? "exact_episode" : "movie";
+      if (type === "tv" && entries.length === 0) {
+        const fallbackParams = new URLSearchParams({
+          query: title.toLowerCase(),
+          languages: language,
+          type: "episode",
+          no_guessit: "1"
+        });
+        entries = await requestSearch(fallbackParams);
+        searchMode = "series_fallback";
+      }
+      const subtitles = entries.flatMap(entry => {
         const a = entry?.attributes || {}, files = Array.isArray(a.files) ? a.files : [];
         return files.filter(f => Number.isFinite(Number(f.file_id))).map(f => ({ id: String(f.file_id), fileId: Number(f.file_id), language: lang(a.language || language), label: clean(a.language || language, 24).toUpperCase() + " · " + clean(a.release || a.feature_details?.title || title, 120), release: clean(a.release, 100), downloads: Number(a.download_count || 0) }));
       }).slice(0, 15);
-      return json(res, 200, { subtitles, message: subtitles.length ? "" : "No matching subtitles found for this title, language, season, and episode." });
+      return json(res, 200, {
+        subtitles,
+        searchMode,
+        message: subtitles.length ? "" : type === "tv"
+          ? "OpenSubtitles returned no episode subtitles for this series and language, including the broader series search. Try another language or check the series title."
+          : "OpenSubtitles returned no movie subtitles for this title and language. Try another language or a shorter title."
+      });
     }
     if (action === "file") {
       const fileId = Number(q.fileId);
