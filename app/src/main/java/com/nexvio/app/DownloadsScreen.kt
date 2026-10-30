@@ -33,7 +33,7 @@ internal class OfflineDownloads(private val context: Context, private val profil
     private val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private val prefs = context.getSharedPreferences(if (profileId == "primary") "nexvio_downloads" else "nexvio_downloads_$profileId", Context.MODE_PRIVATE)
     fun ids(): List<Long> = prefs.getString("ids", "").orEmpty().split(",").mapNotNull { it.toLongOrNull() }
-    fun enqueue(rawUrl: String, rawTitle: String): Long {
+    fun enqueue(rawUrl: String, rawTitle: String, groupTitle: String = rawTitle, mediaType: String = "movie", posterUrl: String? = null): Long {
         val parsed = URI(rawUrl.trim())
         require((parsed.scheme.equals("https", true) || parsed.scheme.equals("http", true)) && !parsed.host.isNullOrBlank()) { "This source does not provide a valid HTTP/HTTPS media URL." }
         val path = parsed.path.orEmpty().lowercase()
@@ -54,6 +54,13 @@ internal class OfflineDownloads(private val context: Context, private val profil
             .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_MOVIES, if (profileId == "primary") "Nexvio/$title" else "Nexvio/$profileId/$title")
         val id = manager.enqueue(request)
         prefs.edit().putString("ids", (ids() + id).distinct().joinToString(",")).apply()
+        val metadataKey = "metadata_$id"
+        val metadata = org.json.JSONObject()
+            .put("groupTitle", groupTitle)
+            .put("mediaType", mediaType)
+            .put("posterUrl", posterUrl.orEmpty())
+            .put("downloadTitle", title)
+        prefs.edit().putString(metadataKey, metadata.toString()).apply()
         return id
     }
     fun rows(): List<Triple<Long, String, Int>> {
@@ -121,13 +128,16 @@ internal class OfflineDownloads(private val context: Context, private val profil
         }
         return null
     }
-    fun removeRecord(id: Long) { prefs.edit().putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
+    fun metadata(id: Long): org.json.JSONObject = runCatching {
+        org.json.JSONObject(prefs.getString("metadata_$id", "{}").orEmpty())
+    }.getOrElse { org.json.JSONObject() }
+    fun removeRecord(id: Long) { prefs.edit().remove("metadata_$id").putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
     fun files(): List<File> { val base = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); val root = if (profileId == "primary") base else base.resolve(profileId); return root.walkTopDown().filter { it.isFile && it.length() > 0 }.sortedByDescending { it.lastModified() }.toList() }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
 
-internal fun enqueueDiscoveredStream(context: Context, title: String, url: String, profileId: String = NexvioProfileStore.active(context).id): Long =
-    OfflineDownloads(context.applicationContext, profileId).enqueue(url, title)
+internal fun enqueueDiscoveredStream(context: Context, title: String, url: String, profileId: String = NexvioProfileStore.active(context).id, groupTitle: String = title, mediaType: String = "movie", posterUrl: String? = null): Long =
+    OfflineDownloads(context.applicationContext, profileId).enqueue(url, title, groupTitle, mediaType, posterUrl)
 
 @Composable
 fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
@@ -136,52 +146,83 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
     var rows by remember { mutableStateOf(store.rows()) }
     var error by remember { mutableStateOf<String?>(null) }
     var progressRefresh by remember { mutableIntStateOf(0) }
+    var openedFolder by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressRefresh++; delay(1000) } }
-    // Read this state so the screen recomposes even when queue status/title stay unchanged.
-    val currentProgressRefresh = progressRefresh
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Downloads", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold); Text("Save supported direct media files for offline playback.", color = Color(0xFF9A9DA6)) }
-        item { Text("Download queue", fontSize = 20.sp, fontWeight = FontWeight.Bold); error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
-        if (rows.isEmpty()) item { Text("No downloads yet.", color = Color(0xFF9A9DA6)) }
-        items(rows, key = { it.first }) { row ->
-            
-            Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(row.second, fontWeight = FontWeight.SemiBold)
-                val transfer = remember(row.first, progressRefresh) { store.progress(row.first) }
-                val downloadedBytes = transfer?.first ?: 0L
-                val totalBytes = transfer?.second ?: -1L
-                Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; DownloadManager.STATUS_SUCCESSFUL -> "Downloaded"; DownloadManager.STATUS_FAILED -> "Failed"; else -> "Checking status" }, color = Color(0xFF9A9DA6))
-                if (row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED || row.third == DownloadManager.STATUS_PENDING) {
-                    if (totalBytes > 0L) {
-                        LinearProgressIndicator(progress = { (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Color(0xFF8B7CFF))
-                        Text("${downloadedBytes / (1024 * 1024)} MB / ${totalBytes / (1024 * 1024)} MB • ${(downloadedBytes * 100 / totalBytes).coerceIn(0L, 100L)}%", color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                    } else {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFFB7F36B))
-                        Text("${downloadedBytes / (1024 * 1024)} MB downloaded • total size unknown", color = Color(0xFF9A9DA6), fontSize = 12.sp)
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (row.third == DownloadManager.STATUS_SUCCESSFUL) Text("Play", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
-                        val uri = store.open(row.first)
-                        if (uri == null) {
-                            error = "The downloaded file could not be opened. It may have been removed."
-                        } else {
-                            // Play local content in the same Media3 player used by streams and live TV.
-                            onPlay(TvChannel(
-                                id = "offline-download-${row.first}",
-                                name = row.second,
-                                streamUrl = uri.toString(),
-                                category = "offline",
-                                tvgName = row.second
-                            ))
+    val groups = remember(rows, progressRefresh) {
+        rows.groupBy { row ->
+            val meta = store.metadata(row.first)
+            val type = meta.optString("mediaType", "movie")
+            val title = meta.optString("groupTitle").takeIf { it.isNotBlank() }
+                ?: row.second.replace(Regex("(?i)\\s+-\\s+S\\d{1,2}E\\d{1,3}.*$"), "").trim()
+            (if (type == "tv") "tv:" else "movie:") + title.lowercase()
+        }
+    }
+    val selectedRows = openedFolder?.let { groups[it] }
+    if (openedFolder != null && selectedRows != null) {
+        val first = selectedRows.firstOrNull()
+        val title = first?.let { store.metadata(it.first).optString("groupTitle").takeIf(String::isNotBlank) } ?: first?.second ?: "Downloads"
+        Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { openedFolder = null }.padding(end = 14.dp))
+                Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            }
+            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(selectedRows, key = { it.first }) { row ->
+                    Column(Modifier.fillMaxWidth().background(Color(0xFF1B1D22), RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(row.second, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        val transfer = store.progress(row.first)
+                        Text(when (row.third) { DownloadManager.STATUS_PENDING -> "Waiting"; DownloadManager.STATUS_RUNNING -> "Downloading"; DownloadManager.STATUS_PAUSED -> "Paused"; DownloadManager.STATUS_SUCCESSFUL -> "Downloaded"; DownloadManager.STATUS_FAILED -> "Failed"; else -> "Checking status" }, color = Color(0xFF9A9DA6))
+                        if (row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED || row.third == DownloadManager.STATUS_PENDING) {
+                            val done = transfer?.first ?: 0L; val total = transfer?.second ?: -1L
+                            if (total > 0) LinearProgressIndicator(progress = { (done.toFloat()/total).coerceIn(0f,1f) }, modifier = Modifier.fillMaxWidth())
+                            Text(if (total > 0) "${done/(1024*1024)} MB / ${total/(1024*1024)} MB" else "${done/(1024*1024)} MB downloaded", color = Color(0xFF9A9DA6), fontSize = 12.sp)
                         }
-                    })
-                    if (row.third == DownloadManager.STATUS_PENDING || row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED) Text("Cancel", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { store.cancel(row.first); rows = store.rows() })
-                    else Text("Remove from list", color = Color(0xFF9A9DA6), modifier = Modifier.clickable { store.removeRecord(row.first); rows = store.rows() })
+                        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                            if (row.third == DownloadManager.STATUS_SUCCESSFUL) Text("Play", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
+                                val uri = store.open(row.first)
+                                if (uri == null) error = "The downloaded file could not be opened."
+                                else onPlay(TvChannel(id="offline-download-${row.first}", name=row.second, streamUrl=uri.toString(), category="offline", tvgName=row.second))
+                            })
+                            if (row.third == DownloadManager.STATUS_PENDING || row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED)
+                                Text("Cancel", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { store.cancel(row.first); rows = store.rows() })
+                            else Text("Remove", color = Color(0xFF9A9DA6), modifier = Modifier.clickable { store.removeRecord(row.first); rows = store.rows() })
+                        }
+                    }
                 }
             }
         }
-        item { Text("Android's Download Manager handles transfers and system notifications. Files are stored in Nexvio's app-managed Movies folder.", color = Color(0xFF9A9DA6), fontSize = 12.sp) }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        return
+    }
+    LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Text("Downloads", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Your movies and TV shows, organized by title.", color = Color(0xFF9A9DA6))
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+        if (groups.isEmpty()) item { Text("No downloads yet.", color = Color(0xFF9A9DA6)) }
+        items(groups.entries.toList(), key = { it.key }) { entry ->
+            val groupRows = entry.value
+            val meta = store.metadata(groupRows.first().first)
+            val title = meta.optString("groupTitle").takeIf { it.isNotBlank() }
+                ?: groupRows.first().second.replace(Regex("(?i)\\s+-\\s+S\\d{1,2}E\\d{1,3}.*$"), "").trim()
+            val poster = meta.optString("posterUrl").takeIf { it.startsWith("https://") }
+            val isShow = entry.key.startsWith("tv:")
+            Row(Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF1B1D22)).clickable { openedFolder = entry.key }) {
+                Box(Modifier.width(126.dp).fillMaxHeight().background(Color(0xFF292B31))) {
+                    if (poster != null) AsyncImage(model=poster, contentDescription=title, contentScale=androidx.compose.ui.layout.ContentScale.Crop, modifier=Modifier.fillMaxSize())
+                    else Box(Modifier.fillMaxSize(), contentAlignment=Alignment.Center) { Text("▣", color=Color(0xFF777B86), fontSize=42.sp) }
+                }
+                Column(Modifier.weight(1f).fillMaxHeight().padding(14.dp), verticalArrangement=Arrangement.Center) {
+                    Text(title, color=Color.White, fontSize=18.sp, fontWeight=FontWeight.Bold, maxLines=2)
+                    Spacer(Modifier.height(8.dp))
+                    Text(if (isShow) "${groupRows.size} downloaded episode${if (groupRows.size == 1) "" else "s"}" else "Movie", color=Color(0xFF9A9DA6), fontSize=13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Open folder  ›", color=Color(0xFFB7F36B), fontWeight=FontWeight.SemiBold)
+                }
+            }
+        }
+        item { Text("Downloads are stored in Nexvio's app-managed Movies folder.", color=Color(0xFF9A9DA6), fontSize=12.sp) }
     }
 }
 
