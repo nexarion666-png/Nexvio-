@@ -867,6 +867,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
+
+    // Keep the display awake for the entire playback session. ExoPlayer can continue
+    // decoding audio/video while Android turns the display off if this window flag is absent.
+    DisposableEffect(activity) {
+        val window = activity?.window
+        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     LaunchedEffect(fullscreen, activity) {
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -1109,44 +1119,39 @@ private fun formatPlayerTime(milliseconds: Long): String {
         // explicitly select that track instead of relying on language
         // preference or the stream's embedded subtitle tracks.
         var downloadedTrackSelected = false
-        for (attempt in 0 until 50) {
-            val textGroup = active.currentTracks.groups
-                .firstOrNull { group ->
+        // setMediaItem() resets the track list asynchronously. Wait for the replacement
+        // media item to become READY and require the unique ID assigned to our external
+        // subtitle; never mistake an unrelated embedded track for the downloaded file.
+        for (attempt in 0 until 100) {
+            if (active.playerError != null) {
+                throw IllegalStateException("The video player failed while loading the downloaded subtitle.")
+            }
+            if (active.playbackState == Player.STATE_READY) {
+                val textGroup = active.currentTracks.groups.firstOrNull { group ->
                     group.type == C.TRACK_TYPE_TEXT &&
-                        (0 until group.length).any { group.getTrackFormat(it).id == "nexvio-downloaded-subtitle" }
-                } ?: active.currentTracks.groups
-                .firstOrNull { group ->
-                    group.type == C.TRACK_TYPE_TEXT &&
-                        (0 until group.length).any { index ->
-                            val language = group.getTrackFormat(index).language.orEmpty()
-                            language.equals(option.language, ignoreCase = true) ||
-                                language.equals("und", ignoreCase = true) ||
-                                language.isBlank()
+                        (0 until group.length).any {
+                            group.getTrackFormat(it).id == "nexvio-downloaded-subtitle"
                         }
                 }
-            if (textGroup != null) {
-                val matchingIndex = (0 until textGroup.length).firstOrNull { index ->
-                    textGroup.getTrackFormat(index).id == "nexvio-downloaded-subtitle"
-                } ?: (0 until textGroup.length).firstOrNull { index ->
-                    val language = textGroup.getTrackFormat(index).language.orEmpty()
-                    language.equals(option.language, ignoreCase = true) ||
-                        language.equals("und", ignoreCase = true) ||
-                        language.isBlank()
-                } ?: 0
-                active.trackSelectionParameters = active.trackSelectionParameters
-                    .buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .setOverrideForType(
-                        TrackSelectionOverride(textGroup.mediaTrackGroup, listOf(matchingIndex))
-                    )
-                    .build()
-                downloadedTrackSelected = true
-                break
+                if (textGroup != null) {
+                    val matchingIndex = (0 until textGroup.length).first {
+                        textGroup.getTrackFormat(it).id == "nexvio-downloaded-subtitle"
+                    }
+                    active.trackSelectionParameters = active.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(
+                            TrackSelectionOverride(textGroup.mediaTrackGroup, listOf(matchingIndex))
+                        )
+                        .build()
+                    downloadedTrackSelected = true
+                    break
+                }
             }
             delay(200)
         }
         if (!downloadedTrackSelected) {
-            throw IllegalStateException("Subtitle downloaded, but the video player did not load its subtitle track. Please try another subtitle.")
+            throw IllegalStateException("Subtitle downloaded, but the player did not expose its subtitle track. Please try another subtitle.")
         }
         active.playWhenReady = resume
     }
@@ -1162,10 +1167,22 @@ private fun formatPlayerTime(milliseconds: Long): String {
         while (active.playbackState != Player.STATE_READY && waited < 300) { delay(200); waited++ }
         if (active.playbackState != Player.STATE_READY || active.isCurrentMediaItemLive) return@LaunchedEffect
         val textGroups = active.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-        if (textGroups.any { it.isSelected }) return@LaunchedEffect
-        // 1) Prefer an embedded track in the preferred language.
+        // Only skip downloading when the currently selected embedded subtitle is already
+        // in the requested language. A selected subtitle in another language must not block
+        // automatic selection/download of the user's preferred language.
+        val preferredEmbeddedTrackSelected = textGroups.any { group ->
+            (0 until group.length).any { index ->
+                group.isTrackSelected(index) &&
+                    group.getTrackFormat(index).language.orEmpty().startsWith(code, ignoreCase = true)
+            }
+        }
+        if (preferredEmbeddedTrackSelected) return@LaunchedEffect
+        // 1) Prefer an embedded track in the preferred language, even if another language
+        // was selected automatically by the stream.
         for (group in textGroups) {
-            val index = (0 until group.length).firstOrNull { group.getTrackFormat(it).language.orEmpty().startsWith(code, ignoreCase = true) }
+            val index = (0 until group.length).firstOrNull {
+                group.getTrackFormat(it).language.orEmpty().startsWith(code, ignoreCase = true)
+            }
             if (index != null) {
                 active.trackSelectionParameters = active.trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
