@@ -1194,18 +1194,23 @@ private fun formatPlayerTime(milliseconds: Long): String {
         val cached = java.io.File(context.cacheDir, "nexvio_subtitle_" + channel.id.hashCode() + ".vtt")
         try {
             if (cached.exists() && cached.length() > 0L) {
+                validateSubtitleDuration(cached, active.duration)
                 applySubtitleFile(cached, SubtitleOption("cached", code, "Subtitle", ""))
                 return@LaunchedEffect
             }
-        } catch (e: Exception) { Log.w("NexvioSubtitles", "Cached subtitle failed: ${e.message}") }
+        } catch (e: Exception) {
+            Log.w("NexvioSubtitles", "Cached subtitle failed validation: ${e.message}")
+            cached.delete()
+        }
         // 3) Search online and apply the best match (try up to 3 candidates).
         val apiKey = BuildConfig.OPENSUBTITLES_API_KEY
         if (apiKey.isBlank()) return@LaunchedEffect
         try {
             val candidates = withContext(Dispatchers.IO) { searchBestSubtitles(apiKey, channel.name, code) }
-            for (option in candidates.take(3)) {
+            for (option in candidates.take(8)) {
                 try {
                     val file = withContext(Dispatchers.IO) { downloadSubtitleVtt(context.cacheDir, channel.id, option.fileId) }
+                    validateSubtitleDuration(file, active.duration)
                     applySubtitleFile(file, option)
                     showPlayerMessage("Subtitles loaded (${code.uppercase()})")
                     return@LaunchedEffect
@@ -1991,6 +1996,42 @@ private fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, fileI
         if (!vtt.contains("-->")) throw IllegalStateException("Subtitle file contained no cues.")
         return java.io.File(cacheDir, "nexvio_subtitle_${channelId.hashCode()}.vtt").apply { writeText(vtt, Charsets.UTF_8) }
     } finally { fileConnection.disconnect() }
+}
+
+/** Returns the final cue end time in milliseconds, or null when it cannot be read. */
+private fun subtitleEndTimeMs(file: java.io.File): Long? {
+    val timestamp = Regex("(?:^|\\s)(\\d{1,2}:\\d{2}:\\d{2}[.,]\\d{3}|\\d{2}:\\d{2}[.,]\\d{3})\\s*$")
+    var last: Long? = null
+    file.useLines { lines ->
+        lines.forEach { line ->
+            if ("-->" in line) {
+                val end = line.substringAfter("-->").trim().substringBefore(' ')
+                if (timestamp.matches(end)) {
+                    val parts = end.replace(',', '.').split(':')
+                    val millis = parts.last().substringAfter('.').toLongOrNull() ?: 0L
+                    val seconds = parts.last().substringBefore('.').toLongOrNull() ?: return@forEach
+                    val totalSeconds = if (parts.size == 3) {
+                        (parts[0].toLongOrNull() ?: return@forEach) * 3600L +
+                            (parts[1].toLongOrNull() ?: return@forEach) * 60L + seconds
+                    } else {
+                        (parts[0].toLongOrNull() ?: return@forEach) * 60L + seconds
+                    }
+                    last = totalSeconds * 1000L + millis
+                }
+            }
+        }
+    }
+    return last
+}
+
+/** Rejects obvious wrong-edition/episode subtitle files; it cannot detect dialogue-level sync drift. */
+private fun validateSubtitleDuration(file: java.io.File, videoDurationMs: Long) {
+    if (videoDurationMs <= 0L) return
+    val subtitleDuration = subtitleEndTimeMs(file) ?: return
+    val ratio = subtitleDuration.toDouble() / videoDurationMs.toDouble()
+    if (ratio < 0.55 || ratio > 1.35) {
+        throw IllegalStateException("Subtitle duration does not match this video; trying another result.")
+    }
 }
 
 private data class PlaybackFailure(val message: String, val details: String)
