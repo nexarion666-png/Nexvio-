@@ -286,7 +286,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
 }
 
  @Composable
-fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id, onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null, onTitleSelected: ((TmdbTitle) -> Unit)? = null) {
+internal fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id, onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null, onTitleSelected: ((TmdbTitle) -> Unit)? = null) {
     val context = LocalContext.current
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var saved by remember { mutableStateOf(watchlist.all()) }
