@@ -177,6 +177,48 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
     titles
 }
 
+
+/** Loads a popularity-sorted movie or TV discovery list for a home-screen genre. */
+internal suspend fun fetchTmdbHomeGenre(mediaType: String, genreIds: String, originCountry: String? = null): List<TmdbTitle> = withContext(Dispatchers.IO) {
+    require(mediaType == "movie" || mediaType == "tv")
+    val params = buildList {
+        add("with_genres=${URLEncoder.encode(genreIds, "UTF-8")}")
+        add("sort_by=popularity.desc")
+        add("include_adult=false")
+        add("page=1")
+        if (!originCountry.isNullOrBlank()) add("with_origin_country=${URLEncoder.encode(originCountry, "UTF-8")}")
+    }.joinToString("&")
+    val endpoint = "https://api.themoviedb.org/3/discover/$mediaType?$params"
+    val cacheKey = "home-genre|$mediaType|$genreIds|$originCountry"
+    val fresh = try {
+        val connection = URL("$endpoint&api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 12000
+            connection.readTimeout = 15000
+            connection.setRequestProperty("Accept", "application/json")
+            val code = connection.responseCode
+            if (code !in 200..299) throw IllegalStateException("TMDB returned HTTP $code")
+            connection.inputStream.bufferedReader().use { it.readText() }.also { TmdbOfflineCache.put(cacheKey, it) }
+        } finally {
+            connection.disconnect()
+        }
+    } catch (e: Exception) {
+        TmdbOfflineCache.get(cacheKey) ?: throw e
+    }
+    parseTmdbTitles(fresh, mediaType).take(20)
+}
+
+/** Combines movie and TV results while keeping the most popular titles first. */
+internal suspend fun fetchTmdbHomeCategory(genreIds: String, includeMovies: Boolean = true, includeTv: Boolean = true, originCountry: String? = null): List<TmdbTitle> = kotlinx.coroutines.coroutineScope {
+    val movieTask = if (includeMovies) async { fetchTmdbHomeGenre("movie", genreIds, originCountry) } else null
+    val tvTask = if (includeTv) async { fetchTmdbHomeGenre("tv", genreIds, originCountry) } else null
+    (movieTask?.await().orEmpty() + tvTask?.await().orEmpty())
+        .distinctBy { it.mediaType + "-" + it.id }
+        .sortedByDescending { it.rating }
+        .take(20)
+}
+
 internal fun parseTmdbTitles(body: String, mediaType: String): List<TmdbTitle> {
     val results = JSONObject(body).optJSONArray("results") ?: return emptyList()
     return (0 until results.length()).mapNotNull { index ->
