@@ -1,10 +1,13 @@
 package com.nexvio.app
 
 import android.app.DownloadManager
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -177,17 +180,35 @@ fun NexvioUpdateChecker() {
                             Text("Download complete. The update is ready to install.", color = Color(0xFF9FE3B1), fontSize = 12.sp)
                             Button(
                                 onClick = {
-                                    runCatching {
-                                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                                            setDataAndType(downloadedUri, "application/vnd.android.package-archive")
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    val apkUri = downloadedUri
+                                    if (apkUri == null) {
+                                        downloadError = "The downloaded APK could not be found. Please download it again."
+                                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                        !context.packageManager.canRequestPackageInstalls()
+                                    ) {
+                                        val settingsIntent = Intent(
+                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                            Uri.parse("package:${context.packageName}")
+                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        runCatching { context.startActivity(settingsIntent) }
+                                            .onFailure { downloadError = "Please allow Nexvio to install unknown apps in Android Settings." }
+                                    } else {
+                                        runCatching {
+                                            val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                                                data = apkUri
+                                                clipData = ClipData.newRawUri("Nexvio APK update", apkUri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(installIntent)
+                                        }.onFailure {
+                                            downloadError = "Android couldn't open the installer. Check that Nexvio is allowed to install unknown apps, then try again."
                                         }
-                                        context.startActivity(intent)
-                                    }.onFailure { downloadError = "Android couldn't open the installer. Please try downloading again." }
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A36A))
                             ) { Text("Install update") }
+                            downloadError?.let { Text(it, color = Color(0xFFFFB4AB), fontSize = 12.sp) }
                         }
                         else -> {
                             downloadError?.let { Text(it, color = Color(0xFFFFB4AB), fontSize = 12.sp) }
