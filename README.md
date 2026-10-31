@@ -1,5 +1,7 @@
 # Nexvio
 
+# Nexvio
+
 **Movies • Series • Live TV** — a native Android app (Kotlin, Jetpack Compose, Material 3).
 
 Nexvio is built phone-first: code lives on GitHub, GitHub Actions builds the APK, and the website/update feed deploy from the same repository.
@@ -100,4 +102,4 @@ See `THIRD_PARTY_NOTICES.md`.
 
 ## In-app updater verification
 
-The 1.0.452 build is a test-only version bump used to verify the persistent in-app update banner, in-app APK download progress, and install handoff. It does not introduce a user-facing feature change.
+This test-only marker prepares a fresh build to verify the in-app update banner, APK download progress, and Android installer handoff after the installation-button fix. It does not change app functionality.
