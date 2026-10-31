@@ -1,6 +1,6 @@
 {
-  "version": "1.0.444",
-  "versionCode": 444,
-  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.444/app-debug.apk",
-  "releaseNotes": "Updated Nexvio build with the latest app improvements."
+  "version": "1.0.448",
+  "versionCode": 448,
+  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.448/app-debug.apk",
+  "releaseNotes": "Nexvio 1.0.448 brings improved home-screen discovery with new categories:\r\n\r\n- Trending Movies\r\n- Popular Series\r\n- Hot Animes\r\n- For Kids\r\n- Mystery\r\n- Adventure\r\n- Sci-Fi\r\n- Family Drama"
 }
