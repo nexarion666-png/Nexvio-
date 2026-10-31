@@ -73,6 +73,15 @@ internal object NexvioCloudSync {
         val accountId = user.optString("id").takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Your account session is no longer valid. Sign in again.")
 
+        // Local Android preferences are device-wide, not account-owned. If a DIFFERENT account signs
+        // in on this phone, discard the old account's local cache so it is never merged into the new
+        // account. Only do this when a previous owner is actually recorded: the first sync after an
+        // update has no recorded owner, and wiping then would throw away data that was never uploaded.
+        val ownerPrefs = context.getSharedPreferences("nexvio_local_account_owner", Context.MODE_PRIVATE)
+        val previousOwner = ownerPrefs.getString("account_id", null)
+        if (previousOwner != null && previousOwner != accountId) wipeLocalAccountData(context)
+        if (previousOwner != accountId) ownerPrefs.edit().putString("account_id", accountId).commit()
+
         fun profileJson(p: NexvioProfile) = JSONObject()
             .put("id", p.id).put("name", p.name).put("avatar", p.avatarId)
             .put("customAvatar", p.customAvatarUrl).put("primary", p.isPrimary)
@@ -268,6 +277,7 @@ internal object NexvioCloudSync {
         // Only touch local preferences when the selected snapshot actually differs.
         // Preserve device-specific IPTV document URI fields; they cannot be restored on another phone.
         if (canonicalJson(chosen) != canonicalJson(local)) {
+            val localTypes = prefs.all.toMap()
             val editor = prefs.edit().clear()
             if (keepLocalIptvFields) {
                 when (localIptvSource) {
@@ -286,7 +296,7 @@ internal object NexvioCloudSync {
                 if (skipDeviceLocalIptv && key in setOf("source", "label", "local") &&
                     (prefs.getBoolean("local", false) || remote.optBoolean("local", false))) continue
                 val value = chosen.opt(key)
-                if (value != JSONObject.NULL) applyBucketValue(editor, key, value)
+                if (value != JSONObject.NULL) applyBucketValue(editor, key, value, localTypes[key])
             }
             editor.commit()
         }
@@ -308,6 +318,29 @@ internal object NexvioCloudSync {
         }
         baselinePrefs.edit().putString(baselineKey, canonicalJson(chosen)).commit()
     }
+
+    /**
+     * Clears this device's cached copy of the previous account. The sync baselines are cleared too:
+     * a leftover baseline would make the now-empty local data look like a deliberate "delete
+     * everything" edit and would upload that emptiness over the account's real cloud data.
+     */
+    private fun wipeLocalAccountData(context: Context) {
+        val otherProfileIds = runCatching { NexvioProfileStore.all(context).map { it.id } }.getOrDefault(emptyList())
+            .filter { it != "primary" }
+        fun clear(name: String) { context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit() }
+        listOf(
+            "nexvio_profiles", "nexvio_watch_history", "nexvio_watchlist", "nexvio_settings",
+            "nexvio_addons", "nexvio_plugin_repositories", "nexvio_iptv", "nexvio_sync_baselines"
+        ).forEach(::clear)
+        otherProfileIds.forEach { id ->
+            clear("nexvio_settings_profile_$id")
+            clear("nexvio_watchlist_$id")
+            clear("nexvio_watch_history_$id")
+        }
+    }
+
+    /** These settings are stored as Float on the phone but travel through JSON as plain numbers. */
+    private val FLOAT_SETTING_KEYS = setOf("poster_card_width", "poster_corner_radius", "subtitle_size_sp")
 
     /** Stable key ordering prevents JSON object order from looking like a data change. */
     private fun canonicalJson(value: JSONObject): String {
@@ -400,14 +433,20 @@ internal object NexvioCloudSync {
         return if (isEmptyBucketValue(local)) remote else local
     }
 
-    private fun applyBucketValue(editor: SharedPreferences.Editor, key: String, value: Any?) {
+    private fun applyBucketValue(editor: SharedPreferences.Editor, key: String, value: Any?, existing: Any? = null) {
         when (value) {
             null, JSONObject.NULL -> Unit
             is String -> editor.putString(key, value)
             is Boolean -> editor.putBoolean(key, value)
-            is Int -> editor.putInt(key, value)
-            is Long -> editor.putLong(key, value)
-            is Double -> editor.putFloat(key, value.toFloat())
+            // JSON has one number type, but SharedPreferences is strict: reading a value with the wrong
+            // getter (e.g. getFloat on an Int) throws. Keep each key in the type the app reads it as.
+            is Int -> when {
+                existing is Float || key in FLOAT_SETTING_KEYS -> editor.putFloat(key, value.toFloat())
+                existing is Long -> editor.putLong(key, value.toLong())
+                else -> editor.putInt(key, value)
+            }
+            is Long -> if (existing is Float || key in FLOAT_SETTING_KEYS) editor.putFloat(key, value.toFloat()) else editor.putLong(key, value)
+            is Double -> if (existing is Long) editor.putLong(key, value.toLong()) else editor.putFloat(key, value.toFloat())
             is JSONArray -> if (key == "favorites") editor.putStringSet(key, (0 until value.length()).map { value.optString(it) }.toSet()) else editor.putString(key, value.toString())
             is JSONObject -> editor.putString(key, value.toString())
             is Set<*> -> editor.putStringSet(key, value.map { it.toString() }.toSet())

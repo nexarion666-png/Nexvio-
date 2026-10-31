@@ -143,6 +143,9 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+/** Outlives the activity so the final sync can finish after the screen goes away. */
+private val exitSyncScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
 class MainActivity : ComponentActivity() {
     private var foregroundSyncJob: Job? = null
 
@@ -168,6 +171,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         foregroundSyncJob?.cancel()
         foregroundSyncJob = null
+        // The loop above only runs while the app is on screen, so anything changed in the last few
+        // seconds would otherwise wait until the next time this device is opened before reaching
+        // the other devices. Push one last sync as the app goes to the background.
+        val appContext = applicationContext
+        exitSyncScope.launch { syncNexvioAccountAutomatically(appContext) }
         super.onStop()
     }
 }
