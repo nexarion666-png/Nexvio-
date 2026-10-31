@@ -66,10 +66,10 @@ fun NexvioUpdateChecker() {
                 val version = json.optString("version").removePrefix("v").trim()
                 val url = json.optString("downloadUrl").trim()
                 val remoteCode = json.optInt("versionCode", 0)
-                val hasNewerVersion = if (remoteCode > 0) {
-                    remoteCode > BuildConfig.VERSION_CODE
+                val hasNewerVersion = if (version.isNotBlank()) {
+                    isNewerVersion(version, BuildConfig.VERSION_NAME)
                 } else {
-                    version.isNotBlank() && isNewerVersion(version, BuildConfig.VERSION_NAME)
+                    remoteCode > 0 && remoteCode > BuildConfig.VERSION_CODE
                 }
                 if (version.isNotBlank() && url.startsWith("https://") && hasNewerVersion) {
                     NexvioAvailableUpdate(
