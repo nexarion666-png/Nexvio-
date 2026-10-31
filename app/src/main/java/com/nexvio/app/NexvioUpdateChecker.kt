@@ -23,7 +23,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site.vercel.app/latest.json"
+private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site-phi.vercel.app/latest.json"
 
 private data class NexvioAvailableUpdate(
     val version: String,

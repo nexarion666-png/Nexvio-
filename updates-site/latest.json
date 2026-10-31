@@ -1,6 +1,6 @@
 {
-  "version": "1.0.1",
-  "versionCode": 10001,
-  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/v1.0.1/app-debug.apk",
-  "releaseNotes": "First public Nexvio release with IPTV streaming, movie and series discovery, episode selection, and stream quality filtering."
+  "version": "1.0.442",
+  "versionCode": 442,
+  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.442/app-debug.apk",
+  "releaseNotes": "Updated Nexvio build with the current launcher icon and app improvements."
 }
