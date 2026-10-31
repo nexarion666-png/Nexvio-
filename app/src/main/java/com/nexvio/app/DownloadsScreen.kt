@@ -46,7 +46,12 @@ private suspend fun findDownloadPoster(title: String, mediaType: String): String
         connection.readTimeout = 8000
         if (connection.responseCode !in 200..299) return@withContext null
         val results = org.json.JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optJSONArray("results") ?: return@withContext null
-        val path = results.optJSONObject(0)?.optString("poster_path").orEmpty()
+        val candidates = (0 until results.length()).mapNotNull { results.optJSONObject(it) }
+            .filter { it.optString("poster_path").startsWith("/") }
+        val exact = candidates.firstOrNull {
+            it.optString(if (type == "tv") "name" else "title").trim().equals(title.trim(), ignoreCase = true)
+        }
+        val path = (exact ?: candidates.firstOrNull())?.optString("poster_path").orEmpty()
         if (path.startsWith("/")) DOWNLOADS_TMDB_IMAGE_BASE + path else null
     } catch (_: Exception) { null } finally { connection.disconnect() }
 }
@@ -176,9 +181,11 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
             if (meta.optString("posterUrl").startsWith("https://")) continue
             val title = meta.optString("groupTitle").takeIf { it.isNotBlank() }
                 ?: row.second.replace(Regex("(?i)\\s+-\\s+S\\d{1,2}E\\d{1,3}.*$"), "").trim()
-            val key = title.lowercase()
+            val isEpisode = Regex("(?i)\\bS\\d{1,3}\\s*E\\d{1,4}\\b").containsMatchIn(row.second)
+            val lookupType = if (isEpisode || meta.optString("mediaType") == "tv") "tv" else "movie"
+            val key = lookupType + ":" + title.lowercase()
             if (!posterOverrides.containsKey(key)) {
-                val poster = findDownloadPoster(title, meta.optString("mediaType", "movie"))
+                val poster = findDownloadPoster(title, lookupType)
                 if (poster != null) posterOverrides = posterOverrides + (key to poster)
             }
         }
@@ -258,7 +265,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
             val meta = store.metadata(groupRows.first().first)
             val title = meta.optString("groupTitle").takeIf { it.isNotBlank() }
                 ?: groupRows.first().second.replace(Regex("(?i)\\s+-\\s+S\\d{1,2}E\\d{1,3}.*$"), "").trim()
-            val poster = meta.optString("posterUrl").takeIf { it.startsWith("https://") } ?: posterOverrides[title.lowercase()]
+            val poster = meta.optString("posterUrl").takeIf { it.startsWith("https://") } ?: posterOverrides[(if (entry.key.startsWith("tv:")) "tv:" else "movie:") + title.lowercase()]
             val isShow = entry.key.startsWith("tv:")
             Row(Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF1B1D22)).clickable { openedFolder = entry.key }) {
                 Box(Modifier.width(126.dp).fillMaxHeight().background(Color(0xFF292B31))) {
@@ -279,7 +286,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
 }
 
  @Composable
-fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id, onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null) {
+fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id, onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null, onTitleSelected: ((TmdbTitle) -> Unit)? = null) {
     val context = LocalContext.current
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var saved by remember { mutableStateOf(watchlist.all()) }
@@ -326,7 +333,7 @@ fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = Nexvio
             } } else if (gridMode) {
                 LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     items(titles, key = { it.mediaType + "-" + it.id }) { item ->
-                        Column(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().clickable { onTitleSelected?.invoke(item) }) {
                             AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(248.dp).background(Color(0xFF19191D), RoundedCornerShape(12.dp)))
                             Spacer(Modifier.height(8.dp)); Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2)
                             Text((if (item.mediaType == "movie") "Movie" else "Series") + if (item.year.isNotBlank()) " • " + item.year else "", color = Color(0xFF9A9DA6), fontSize = 12.sp)
@@ -336,7 +343,7 @@ fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = Nexvio
                 }
             } else LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(titles, key = { it.mediaType + "-" + it.id }) { item ->
-                    Row(Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp)).clickable { onTitleSelected?.invoke(item) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.size(width = 68.dp, height = 96.dp).background(Color(0xFF26262A), RoundedCornerShape(8.dp)))
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) { Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold); Text(if (item.mediaType == "movie") "Movie" else "Series", color = Color(0xFF9A9DA6), fontSize = 12.sp) }
                         Text("▣", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() })
