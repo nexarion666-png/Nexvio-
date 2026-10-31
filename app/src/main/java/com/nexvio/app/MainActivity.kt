@@ -201,6 +201,10 @@ class MainActivity : ComponentActivity() {
     var selectedTitle by remember { mutableStateOf<TmdbTitle?>(null) }
     var streamSearch by remember { mutableStateOf<Triple<TmdbTitle, Int, Int>?>(null) }
     var playing by rememberSaveable(stateSaver = tvChannelSaver) { mutableStateOf<TvChannel?>(null) }
+    var playbackQueue by remember { mutableStateOf<List<TvChannel>>(emptyList()) }
+    var playbackQueueIndex by remember { mutableIntStateOf(0) }
+    fun playDownloadQueue(queue: List<TvChannel>, index: Int) { playbackQueue = queue; playbackQueueIndex = index.coerceIn(queue.indices); playing = queue[playbackQueueIndex] }
+    fun moveDownloadQueue(index: Int) { if (index in playbackQueue.indices) { playbackQueueIndex = index; playing = playbackQueue[index] } }
 
     // If another device permanently deletes the active profile, switch this device to a
     // remaining profile as soon as the background account sync has removed it locally.
@@ -301,7 +305,7 @@ class MainActivity : ComponentActivity() {
                     requireSelection = profileGate
                 )
             } else if (playing != null) {
-                PlayerScreen(channel = playing!!, profileId = activeProfileId, onBack = { playing = null })
+                PlayerScreen(channel = playing!!, profileId = activeProfileId, queue = playbackQueue, queueIndex = playbackQueueIndex, onQueueMove = { moveDownloadQueue(it) }, onBack = { playing = null; playbackQueue = emptyList(); playbackQueueIndex = 0 })
             } else Column {
                 Box(Modifier.weight(1f)) {
                     if (streamSearch != null) {
@@ -359,7 +363,7 @@ class MainActivity : ComponentActivity() {
                                 Text("‹  Back", color=Accent, modifier=Modifier.clickable { detail=null })
                                 Spacer(Modifier.width(18.dp)); Text(detail!!, fontSize=20.sp, fontWeight=FontWeight.Bold)
                             }
-                            if (detail == "Downloads") DownloadsScreen(onPlay = { playing = it }, profileId = activeProfileId) else InfoPage(detail!!)
+                            if (detail == "Downloads") DownloadsScreen(onPlay = { playbackQueue = emptyList(); playing = it }, profileId = activeProfileId, onPlayQueue = { queue, index -> playDownloadQueue(queue, index) }) else InfoPage(detail!!)
                         }
                     } else when(current) {
                         "Home" -> HomeScreen(profileId = activeProfileId, onOpen={ item -> searchKind = if (item == "Series") "tv" else "movie"; current = if (item == "Live TV") "Live TV" else "Search" }, onDetail={detail=it}, onPlay={ playing=it }, onTitleSelected={ selectedTitle = it })
@@ -777,7 +781,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(totalSeconds / 60, seconds)
 }
 
-@Composable private fun PlayerScreen(channel: TvChannel, profileId: String, onBack:()->Unit) {
+@Composable private fun PlayerScreen(channel: TvChannel, profileId: String, queue: List<TvChannel> = emptyList(), queueIndex: Int = 0, onQueueMove: (Int) -> Unit = {}, onBack:()->Unit) {
     val context = LocalContext.current
     val playerPrefs = remember(context) { settingsPrefs(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -949,6 +953,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
             var initialResumeHandled = false
             instance.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_ENDED && queue.size > 1 && queueIndex < queue.lastIndex) onQueueMove(queueIndex + 1)
                     isBuffering = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_READY) {
                         playbackError = null
@@ -1587,6 +1592,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             horizontalArrangement = Arrangement.spacedBy(24.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            if (queue.size > 1) PlayerIconButton(Icons.Filled.SkipPrevious, "Previous episode", { onQueueMove((queueIndex - 1).coerceAtLeast(0)); revealControls() }, size = 30, enabled = queueIndex > 0)
                             PlayerIconButton(
                                 Icons.Filled.Replay10,
                                 "Rewind 10 seconds",
@@ -1635,6 +1641,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 size = 34,
                                 enabled = player?.isCurrentMediaItemSeekable == true
                             )
+                            if (queue.size > 1) PlayerIconButton(Icons.Filled.SkipNext, "Next episode", { if (queueIndex < queue.lastIndex) onQueueMove(queueIndex + 1); revealControls() }, size = 30, enabled = queueIndex < queue.lastIndex)
                         }
                         Column(
                     Modifier.align(Alignment.TopCenter).fillMaxWidth()

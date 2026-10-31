@@ -162,7 +162,7 @@ internal fun enqueueDiscoveredStream(context: Context, title: String, url: Strin
     OfflineDownloads(context.applicationContext, profileId).enqueue(url, title, groupTitle, mediaType, posterUrl)
 
 @Composable
-fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
+fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id, onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null) {
     val context = LocalContext.current
     val store = remember(context, profileId) { OfflineDownloads(context.applicationContext, profileId) }
     var rows by remember { mutableStateOf(store.rows()) }
@@ -215,9 +215,24 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                             if (row.third == DownloadManager.STATUS_SUCCESSFUL) Text("Play", color = Color(0xFFB7F36B), modifier = Modifier.clickable {
-                                val uri = store.open(row.first)
-                                if (uri == null) error = "The downloaded file could not be opened."
-                                else onPlay(TvChannel(id="offline-download-${row.first}", name=row.second, streamUrl=uri.toString(), category="offline", tvgName=row.second))
+                                val isTvFolder = openedFolder?.startsWith("tv:") == true
+                                val orderedRows = if (isTvFolder) selectedRows.filter { it.third == DownloadManager.STATUS_SUCCESSFUL }.sortedWith(
+                                    compareBy<Triple<Long, String, Int>>(
+                                        { Regex("(?i)S(\\d{1,3})E(\\d{1,4})").find(it.second)?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE },
+                                        { Regex("(?i)S(\\d{1,3})E(\\d{1,4})").find(it.second)?.groupValues?.get(2)?.toIntOrNull() ?: Int.MAX_VALUE },
+                                        { it.second.lowercase() }
+                                    )
+                                ) else listOf(row)
+                                val queue = orderedRows.mapNotNull { episode ->
+                                    store.open(episode.first)?.let { uri ->
+                                        TvChannel(id="offline-download-${episode.first}", name=episode.second, streamUrl=uri.toString(), category="offline", tvgName=episode.second)
+                                    }
+                                }
+                                if (queue.isEmpty()) error = "The downloaded file could not be opened."
+                                else {
+                                    val index = queue.indexOfFirst { it.id == "offline-download-${row.first}" }.coerceAtLeast(0)
+                                    if (isTvFolder && onPlayQueue != null) onPlayQueue(queue, index) else onPlay(queue[index])
+                                }
                             })
                             if (row.third == DownloadManager.STATUS_PENDING || row.third == DownloadManager.STATUS_RUNNING || row.third == DownloadManager.STATUS_PAUSED)
                                 Text("Cancel", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { store.cancel(row.first); rows = store.rows() })
