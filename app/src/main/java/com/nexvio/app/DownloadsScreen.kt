@@ -278,7 +278,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
 }
 
  @Composable
-fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id) {
+fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id, onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null) {
     val context = LocalContext.current
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var saved by remember { mutableStateOf(watchlist.all()) }
@@ -293,7 +293,7 @@ fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String = Nexvio
                 Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { showDownloads = false }.padding(end = 14.dp))
                 Text("Downloads", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
-            DownloadsScreen(onPlay = onPlay, profileId = profileId)
+            DownloadsScreen(onPlay = onPlay, profileId = profileId, onPlayQueue = onPlayQueue)
         }
         return
     }
