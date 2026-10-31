@@ -226,7 +226,14 @@ internal object ResumableDownloads {
 
     private suspend fun transfer(url: String, part: File, prefs: SharedPreferences, id: Long) {
         val existing = if (part.exists()) part.length() else 0L
-        val conn = openFollowingRedirects(url, existing)
+        var conn = openFollowingRedirects(url, existing, 0)
+        var profile = 0
+        // Some servers reject unfamiliar headers (e.g. HTTP 428/403). Retry with other header sets before giving up.
+        while (conn.responseCode in RETRY_WITH_OTHER_HEADERS && profile < 2) {
+            conn.disconnect()
+            profile++
+            conn = openFollowingRedirects(url, existing, profile)
+        }
         connections[id] = conn
         try {
             currentCoroutineContext().ensureActive()
@@ -263,16 +270,29 @@ internal object ResumableDownloads {
         }
     }
 
-    private fun openFollowingRedirects(startUrl: String, from: Long): HttpURLConnection {
+    private val RETRY_WITH_OTHER_HEADERS = setOf(400, 401, 403, 405, 406, 415, 428, 429)
+    private const val DM_USER_AGENT = "AndroidDownloadManager/14 (Linux; U; Android 14; Nexvio)"
+    private const val CHROME_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+
+    /**
+     * [profile] 0 = same headers Android's DownloadManager sends (what worked before),
+     * 1 = Chrome user agent + Referer, 2 = Chrome + an explicit Range header (some servers insist on one).
+     */
+    private fun openFollowingRedirects(startUrl: String, from: Long, profile: Int): HttpURLConnection {
         var current = startUrl
         repeat(6) {
             val conn = URL(current).openConnection() as HttpURLConnection
             conn.instanceFollowRedirects = false
             conn.connectTimeout = 15_000
             conn.readTimeout = 20_000
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Nexvio")
+            conn.setRequestProperty("User-Agent", if (profile == 0) DM_USER_AGENT else CHROME_USER_AGENT)
             conn.setRequestProperty("Accept-Encoding", "identity")
+            if (profile >= 1) {
+                conn.setRequestProperty("Accept", "*/*")
+                runCatching { URL(current).let { "${it.protocol}://${it.host}/" } }.getOrNull()?.let { conn.setRequestProperty("Referer", it) }
+            }
             if (from > 0) conn.setRequestProperty("Range", "bytes=$from-")
+            else if (profile >= 2) conn.setRequestProperty("Range", "bytes=0-")
             val code = conn.responseCode
             if (code in 300..399 && code != 304) {
                 val location = conn.getHeaderField("Location")
