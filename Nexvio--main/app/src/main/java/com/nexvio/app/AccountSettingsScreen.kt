@@ -81,12 +81,14 @@ private object NexvioSupabaseAuth {
     }
 
     fun signUp(context: Context, email: String, password: String): String {
+        // Do not let a previous user's cached session survive a new-account flow.
+        clearSession(context)
         val result = request("auth/v1/signup", "POST", JSONObject().put("email", email).put("password", password))
         if (result.has("access_token")) {
             save(context, result, email)
             return "Account created and signed in."
         }
-        return "Account created. Check your email for the confirmation link, then sign in."
+        return "Account created. Sign in to continue."
     }
 
     fun signIn(context: Context, email: String, password: String): String {

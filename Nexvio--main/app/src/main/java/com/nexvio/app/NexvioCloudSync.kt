@@ -78,6 +78,23 @@ internal object NexvioCloudSync {
             .put("customAvatar", p.customAvatarUrl).put("primary", p.isPrimary)
             .put("primaryAddons", p.usePrimaryAddons).put("createdAt", p.createdAt).put("updatedAt", p.updatedAt)
 
+        // Local Android preferences are device-wide, not account-owned. Never merge them
+        // into a different Supabase account. When the authenticated user changes, discard
+        // only the device cache; each account's cloud rows remain untouched and are restored
+        // below from rows filtered by the authenticated accountId.
+        val ownerPrefs = context.getSharedPreferences("nexvio_local_account_owner", Context.MODE_PRIVATE)
+        val previousOwner = ownerPrefs.getString("account_id", null)
+        if (previousOwner != accountId) {
+            context.getSharedPreferences("nexvio_profiles", Context.MODE_PRIVATE).edit().clear().apply()
+            context.getSharedPreferences("nexvio_watch_history", Context.MODE_PRIVATE).edit().clear().apply()
+            context.getSharedPreferences("nexvio_watchlist", Context.MODE_PRIVATE).edit().clear().apply()
+            context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE).edit().clear().apply()
+            context.getSharedPreferences("nexvio_addons", Context.MODE_PRIVATE).edit().clear().apply()
+            context.getSharedPreferences("nexvio_plugin_repositories", Context.MODE_PRIVATE).edit().clear().apply()
+            context.getSharedPreferences("nexvio_iptv", Context.MODE_PRIVATE).edit().clear().apply()
+            ownerPrefs.edit().putString("account_id", accountId).apply()
+        }
+
         val localProfiles = NexvioProfileStore.all(context)
         val remoteRows = JSONArray(request("rest/v1/nexvio_profiles?select=profile_id,profile_data&account_id=eq.$accountId"))
         val tombstonePrefs = context.getSharedPreferences("nexvio_profile_tombstones", Context.MODE_PRIVATE)
