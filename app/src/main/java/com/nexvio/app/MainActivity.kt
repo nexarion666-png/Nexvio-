@@ -953,7 +953,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
             var initialResumeHandled = false
             instance.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_ENDED && queue.size > 1 && queueIndex < queue.lastIndex) onQueueMove(queueIndex + 1)
+                    if (playbackState == Player.STATE_ENDED) {
+                        // Mark the finished episode as watched, then move to the next one in the folder.
+                        val endedDuration = instance.duration
+                        if (endedDuration > 0L && endedDuration != C.TIME_UNSET && !instance.isCurrentMediaItemLive) {
+                            watchHistory.record(channel, endedDuration, endedDuration)
+                        }
+                        if (playerPrefs.getBoolean("playback_autoplay_next", true) && queue.size > 1 && queueIndex < queue.lastIndex) {
+                            onQueueMove(queueIndex + 1)
+                        }
+                    }
                     isBuffering = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_READY) {
                         playbackError = null
@@ -962,7 +971,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         // seek live IPTV streams away from their default live position.
                         if (!initialResumeHandled) {
                             initialResumeHandled = true
-                            if (playerPrefs.getBoolean("playback_resume", true) && savedPositionMs > 0L && !instance.isCurrentMediaItemLive) {
+                            val readyDuration = instance.duration
+                            val nearlyFinished = readyDuration > 0L && readyDuration != C.TIME_UNSET && savedPositionMs >= readyDuration * 0.92f
+                            if (playerPrefs.getBoolean("playback_resume", true) && savedPositionMs > 0L && !nearlyFinished && !instance.isCurrentMediaItemLive) {
                                 instance.seekTo(savedPositionMs)
                                 savedPositionMs = 0L
                             }
@@ -1657,7 +1668,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             onBack()
                         }, size = 26)
                         Text(
-                            channel.name,
+                            if (queue.size > 1) channel.name + "  (" + (queueIndex + 1) + "/" + queue.size + ")" else channel.name,
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,

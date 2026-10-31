@@ -25,7 +25,8 @@ import kotlinx.coroutines.delay
 internal fun OfflineLibraryScreen(
     onPlay: (TvChannel) -> Unit,
     onTitleSelected: (TmdbTitle) -> Unit,
-    profileId: String = NexvioProfileStore.active(LocalContext.current).id
+    profileId: String = NexvioProfileStore.active(LocalContext.current).id,
+    onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
@@ -55,7 +56,7 @@ internal fun OfflineLibraryScreen(
                 )
                 Text("Downloads", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
-            DownloadsScreen(onPlay = onPlay, profileId = profileId)
+            DownloadsScreen(onPlay = onPlay, profileId = profileId, onPlayQueue = onPlayQueue)
         }
         return
     }

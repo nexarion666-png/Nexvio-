@@ -187,7 +187,8 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
     val groups = remember(rows, progressRefresh) {
         rows.groupBy { row ->
             val meta = store.metadata(row.first)
-            val type = meta.optString("mediaType", "movie")
+            val looksLikeEpisode = Regex("(?i)\\bS\\d{1,3}\\s*E\\d{1,4}\\b").containsMatchIn(row.second)
+            val type = if (looksLikeEpisode) "tv" else meta.optString("mediaType", "movie")
             val title = meta.optString("groupTitle").takeIf { it.isNotBlank() }
                 ?: row.second.replace(Regex("(?i)\\s+-\\s+S\\d{1,2}E\\d{1,3}.*$"), "").trim()
             (if (type == "tv") "tv:" else "movie:") + title.lowercase()

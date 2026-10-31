@@ -36,7 +36,7 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
     var preferredSubtitle by remember { mutableStateOf(prefs.getString("preferred_subtitle_language", "Device language") ?: "Device language") }
     var autoSubtitles by remember { mutableStateOf(prefs.getBoolean("auto_subtitles", true)) }
     var subtitleSize by remember { mutableFloatStateOf(prefs.getFloat("subtitle_size_sp", 18f)) }
-    var autoplayNext by remember { mutableStateOf(prefs.getBoolean("playback_autoplay_next", false)) }
+    var autoplayNext by remember { mutableStateOf(prefs.getBoolean("playback_autoplay_next", true)) }
     var touchGestures by remember { mutableStateOf(prefs.getBoolean("playback_touch_gestures", false)) }
     var dialog by remember { mutableStateOf<String?>(null) }
 
@@ -136,7 +136,7 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
         }
         item {
             PlaybackSection("NEXT EPISODE") {
-                PlaybackToggle("Auto-play next episode", "Preference only; the current player handles live TV and has no episode progression manager.", autoplayNext, enabled = false) {
+                PlaybackToggle("Auto-play next episode", "When an episode finishes, play the next one in the same TV show folder.", autoplayNext) {
                     autoplayNext = it; prefs.edit().putBoolean("playback_autoplay_next", it).apply()
                 }
                 PlaybackUnavailable("Episode thresholds / binge group / preload sources", "Series episode progression and source preloading are not implemented in this build.")
