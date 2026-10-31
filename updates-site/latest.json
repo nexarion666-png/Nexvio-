@@ -1,6 +1,6 @@
 {
-  "version": "1.0.451",
-  "versionCode": 451,
-  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.451/app-debug.apk",
-  "releaseNotes": "Nexvio 1.0.451 introduces an improved in-app update experience.\r\n\r\n- Persistent update banner at the top of the app.\r\n- Download APK updates directly inside Nexvio.\r\n- Live download progress.\r\n- Install Update button when downloading finishes.\r\n- Update reminder remains visible until dismissed."
+  "version": "1.0.454",
+  "versionCode": 454,
+  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.454/app-debug.apk",
+  "releaseNotes": "Nexvio 1.0.454 update."
 }
