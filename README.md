@@ -97,3 +97,7 @@ The TMDB key is currently written directly in `TmdbCatalogueScreen.kt` and `Down
 
 ## Third-party notices
 See `THIRD_PARTY_NOTICES.md`.
+
+## In-app updater verification
+
+The 1.0.452 build is a test-only version bump used to verify the persistent in-app update banner, in-app APK download progress, and install handoff. It does not introduce a user-facing feature change.
