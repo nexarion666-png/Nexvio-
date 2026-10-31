@@ -1,6 +1,6 @@
 {
-  "version": "1.0.448",
-  "versionCode": 448,
-  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.448/app-debug.apk",
-  "releaseNotes": "Nexvio 1.0.448 brings improved home-screen discovery with new categories:\r\n\r\n- Trending Movies\r\n- Popular Series\r\n- Hot Animes\r\n- For Kids\r\n- Mystery\r\n- Adventure\r\n- Sci-Fi\r\n- Family Drama"
+  "version": "1.0.451",
+  "versionCode": 451,
+  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.451/app-debug.apk",
+  "releaseNotes": "Nexvio 1.0.451 introduces an improved in-app update experience.\r\n\r\n- Persistent update banner at the top of the app.\r\n- Download APK updates directly inside Nexvio.\r\n- Live download progress.\r\n- Install Update button when downloading finishes.\r\n- Update reminder remains visible until dismissed."
 }
