@@ -290,6 +290,7 @@ internal fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String
     val context = LocalContext.current
     val watchlist = remember(context, profileId) { WatchlistStore(context, profileId) }
     var saved by remember { mutableStateOf(watchlist.all()) }
+    LaunchedEffect(saved) { TmdbOfflineCache.prefetchPosters(saved.mapNotNull { it.posterPath }) }
     var showDownloads by remember { mutableStateOf(false) }
     var cloudSelected by remember { mutableStateOf(false) }
     var gridMode by remember { mutableStateOf(true) }

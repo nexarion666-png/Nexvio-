@@ -2,6 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
+        android:name=".NexvioApplication"
         android:allowBackup="true"
         android:label="Nexvio"
         android:icon="@mipmap/ic_launcher"

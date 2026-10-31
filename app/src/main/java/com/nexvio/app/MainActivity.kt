@@ -21,12 +21,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -146,6 +148,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent { NexvioApp(); NexvioUpdateChecker() }
     }
 
@@ -240,7 +243,13 @@ class MainActivity : ComponentActivity() {
     }
 
     MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
-        Surface(Modifier.fillMaxSize(), color=Ink) {
+        val homeFullBleed = !restoringAccountProfiles && !showingWelcome && !profileGate && !showingProfilePicker &&
+            playing == null && streamSearch == null && selectedTitle == null && detail == null && current == "Home"
+        Surface(
+            Modifier.fillMaxSize().navigationBarsPadding().imePadding()
+                .then(if (homeFullBleed) Modifier else Modifier.statusBarsPadding()),
+            color = Ink
+        ) {
             if (restoringAccountProfiles) {
                 Column(
                     Modifier.fillMaxSize().background(Ink).padding(32.dp),
@@ -448,46 +457,36 @@ class MainActivity : ComponentActivity() {
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var featuredIndex by remember { mutableIntStateOf(0) }
-    val featuredTitles = remember(movies, series) { (movies + series).distinctBy { it.mediaType + "-" + it.id } }
+    val featuredTitles = remember(movies, series) { (movies.take(4) + series.take(4)).distinctBy { it.mediaType + "-" + it.id } }
     LaunchedEffect(Unit) {
         while (true) { watchEntries = historyStore.all(); delay(1500) }
     }
     LaunchedEffect(Unit) {
         try { movies = fetchTmdbTitles("movie", "").take(10); series = fetchTmdbTitles("tv", "").take(10) } catch (_: Exception) { }
     }
-    LaunchedEffect(featuredTitles.size) {
+    LaunchedEffect(featuredTitles.size, featuredIndex) {
         if (featuredTitles.size > 1) {
-            while (true) {
-                delay(5000)
-                featuredIndex = (featuredIndex + 1) % featuredTitles.size
-            }
+            delay(5000)
+            featuredIndex = (featuredIndex + 1) % featuredTitles.size
         }
+    }
+    LaunchedEffect(featuredTitles) {
+        // Save the big hero posters too, so Home still looks right offline.
+        TmdbOfflineCache.prefetchPosters(featuredTitles.mapNotNull { it.posterPath }, "w780")
     }
     LazyColumn(contentPadding=PaddingValues(bottom=22.dp), verticalArrangement=Arrangement.spacedBy(20.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().padding(horizontal=18.dp).padding(top=20.dp), verticalAlignment=Alignment.CenterVertically) {
-                Brand()
-            }
-        }
-        item {
-            val featured = featuredTitles.getOrNull(if (featuredTitles.isEmpty()) 0 else featuredIndex % featuredTitles.size)
-            if (homeStyle != "Grid") Box(Modifier.fillMaxWidth().padding(horizontal=18.dp).height(if (homeStyle == "Compact") 240.dp else 380.dp).background(Panel,RoundedCornerShape(24.dp)).clickable { featured?.let(onTitleSelected) }) {
-                if (featured?.posterPath != null) AsyncImage(model="https://image.tmdb.org/t/p/w780${featured.posterPath}",contentDescription=featured.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
-                Box(Modifier.fillMaxSize().background(Color(0xCC101114),RoundedCornerShape(24.dp)))
-                Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
-                    Text("FEATURED TODAY",color=Accent,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(featured?.title ?: "Find your next favourite",color=Color.White,fontSize=29.sp,lineHeight=34.sp,fontWeight=FontWeight.ExtraBold,maxLines=2)
-                    Spacer(Modifier.height(8.dp))
-                    if (showDescriptions && homeStyle != "Compact") {
-                        Text(featured?.overview?.takeIf{it.isNotBlank()} ?: "Discover trending movies, popular series and live TV.",color=Color.White.copy(alpha=.82f),fontSize=13.sp,lineHeight=19.sp,maxLines=3)
-                        Spacer(Modifier.height(15.dp))
-                    }
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                        Text("▶  Explore movies",color=Color.White,fontWeight=FontWeight.Bold,modifier=Modifier.background(Accent,RoundedCornerShape(11.dp)).clickable { onOpen("Movies") }.padding(horizontal=14.dp,vertical=11.dp))
-                        Text("Series",color=Color.White,fontWeight=FontWeight.Bold,modifier=Modifier.background(Panel,RoundedCornerShape(11.dp)).clickable { onOpen("Series") }.padding(horizontal=14.dp,vertical=11.dp))
-                    }
-                }
+            if (homeStyle != "Grid") {
+                FeaturedHero(
+                    titles = featuredTitles,
+                    index = featuredIndex,
+                    compact = homeStyle == "Compact",
+                    showDescription = showDescriptions,
+                    onIndexChange = { featuredIndex = it },
+                    onOpen = onTitleSelected
+                )
+            } else {
+                Spacer(Modifier.statusBarsPadding().height(16.dp))
             }
         }
         item { HomeTitleRow("Trending Movies","See all") { onOpen("Movies") } }
@@ -548,6 +547,114 @@ class MainActivity : ComponentActivity() {
             }
         }
         item { Column(Modifier.padding(horizontal=18.dp)) { WatchHistorySection("Recently watched",watchEntries.take(5),onPlay,onSeeAll={onDetail("Watch history")}) } }
+    }
+}
+
+@Composable private fun FeaturedHero(
+    titles: List<TmdbTitle>,
+    index: Int,
+    compact: Boolean,
+    showDescription: Boolean,
+    onIndexChange: (Int) -> Unit,
+    onOpen: (TmdbTitle) -> Unit
+) {
+    val featured = titles.getOrNull(if (titles.isEmpty()) 0 else index % titles.size)
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val heroHeight = screenHeight * (if (compact) 0.46f else 0.66f) + statusBarTop
+    val dragTotal = remember { FloatArray(1) }
+    val currentIndex by rememberUpdatedState(index)
+    val changeIndex by rememberUpdatedState(onIndexChange)
+    Box(
+        Modifier.fillMaxWidth().height(heroHeight)
+            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            .background(Panel)
+            .pointerInput(titles.size) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragTotal[0] = 0f },
+                    onDragEnd = {
+                        if (titles.size > 1) {
+                            if (dragTotal[0] < -80f) changeIndex((currentIndex + 1) % titles.size)
+                            else if (dragTotal[0] > 80f) changeIndex((currentIndex - 1 + titles.size) % titles.size)
+                        }
+                    },
+                    onHorizontalDrag = { _, amount -> dragTotal[0] += amount }
+                )
+            }
+            .clickable(enabled = featured != null) { featured?.let(onOpen) }
+    ) {
+        Crossfade(targetState = featured, animationSpec = tween(600)) { item ->
+            val path = item?.posterPath
+            if (path != null) {
+                AsyncImage(
+                    model = "https://image.tmdb.org/t/p/w780$path",
+                    contentDescription = item?.title,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        // Light scrims only at the very top (status bar icons) and the bottom (text), so the poster stays bright.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color(0x80000000),
+                    0.2f to Color.Transparent,
+                    0.5f to Color.Transparent,
+                    0.82f to Ink.copy(alpha = 0.85f),
+                    1f to Ink.copy(alpha = 0.97f)
+                )
+            )
+        )
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                featured?.title ?: "Find your next favourite",
+                color = Color.White, fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold,
+                maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            if (featured != null) {
+                Spacer(Modifier.height(8.dp))
+                val meta = listOfNotNull(
+                    if (featured.mediaType == "movie") "Movie" else "Series",
+                    featured.year.takeIf { it.isNotBlank() },
+                    featured.rating.takeIf { it > 0.0 }?.let { "★ " + "%.1f".format(it) }
+                ).joinToString("  •  ")
+                Text(meta, color = Color.White.copy(alpha = 0.92f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                if (showDescription && !compact && featured.overview.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        featured.overview,
+                        color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 19.sp,
+                        maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "View Details",
+                color = Color(0xFF101114), fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.White)
+                    .clickable(enabled = featured != null) { featured?.let(onOpen) }
+                    .padding(horizontal = 34.dp, vertical = 13.dp)
+            )
+            if (titles.size > 1) {
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val active = index % titles.size
+                    titles.indices.forEach { dot ->
+                        Box(
+                            Modifier.height(8.dp).width(if (dot == active) 26.dp else 8.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(if (dot == active) Color.White else Color.White.copy(alpha = 0.45f))
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

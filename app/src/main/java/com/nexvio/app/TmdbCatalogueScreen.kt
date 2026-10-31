@@ -144,36 +144,57 @@ internal suspend fun fetchTmdbTitles(mediaType: String, query: String): List<Tmd
         val searchEndpoint = if (mediaType == "multi") "multi" else mediaType
         "https://api.themoviedb.org/3/search/$searchEndpoint?query=${URLEncoder.encode(query, "UTF-8")}&include_adult=false"
     }
+    val cacheKey = "$mediaType|$endpoint"
     val separator = if (endpoint.contains("?")) "&" else "?"
-    val connection = URL("$endpoint${separator}api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
-        .openConnection() as HttpURLConnection
-    try {
-        connection.connectTimeout = 12000
-        connection.readTimeout = 15000
-        connection.setRequestProperty("Accept", "application/json")
-        val code = connection.responseCode
-        if (code !in 200..299) throw IllegalStateException("TMDB returned HTTP $code. Check the API key and internet connection.")
-        val body = connection.inputStream.bufferedReader().use { it.readText() }
-        val results = JSONObject(body).optJSONArray("results") ?: return@withContext emptyList()
-        (0 until results.length()).mapNotNull { index ->
-            val item = results.optJSONObject(index) ?: return@mapNotNull null
-            val id = item.optInt("id", 0)
-            if (id == 0) return@mapNotNull null
-            val resultType = if (mediaType == "multi") item.optString("media_type") else mediaType
-            if (resultType != "movie" && resultType != "tv") return@mapNotNull null
-            val rawTitle = if (resultType == "movie") item.optString("title") else item.optString("name")
-            TmdbTitle(
-                id = id,
-                title = rawTitle.ifBlank { "Untitled" },
-                overview = item.optString("overview"),
-                posterPath = item.optString("poster_path").takeIf { it.isNotBlank() && it != "null" },
-                year = (if (resultType == "movie") item.optString("release_date") else item.optString("first_air_date")).take(4),
-                rating = item.optDouble("vote_average", 0.0),
-                mediaType = resultType
-            )
+    var networkError: Exception? = null
+    val fresh: String? = try {
+        val connection = URL("$endpoint${separator}api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 12000
+            connection.readTimeout = 15000
+            connection.setRequestProperty("Accept", "application/json")
+            val code = connection.responseCode
+            if (code !in 200..299) throw IllegalStateException("TMDB returned HTTP $code. Check the API key and internet connection.")
+            val text = connection.inputStream.bufferedReader().use { it.readText() }
+            TmdbOfflineCache.put(cacheKey, text)
+            text
+        } finally {
+            connection.disconnect()
         }
-    } finally {
-        connection.disconnect()
+    } catch (e: Exception) {
+        networkError = e
+        null
+    }
+    // Offline (or TMDB unreachable): fall back to the last saved copy of this exact list.
+    val body = fresh ?: TmdbOfflineCache.get(cacheKey)
+    if (body == null) {
+        if (query.isNotBlank()) return@withContext TmdbOfflineCache.searchOffline(mediaType, query)
+        throw networkError ?: IllegalStateException("No saved titles yet. Connect to the internet once to load them.")
+    }
+    val titles = parseTmdbTitles(body, mediaType)
+    if (fresh != null) TmdbOfflineCache.prefetchPosters(titles.mapNotNull { it.posterPath })
+    titles
+}
+
+internal fun parseTmdbTitles(body: String, mediaType: String): List<TmdbTitle> {
+    val results = JSONObject(body).optJSONArray("results") ?: return emptyList()
+    return (0 until results.length()).mapNotNull { index ->
+        val item = results.optJSONObject(index) ?: return@mapNotNull null
+        val id = item.optInt("id", 0)
+        if (id == 0) return@mapNotNull null
+        val resultType = if (mediaType == "multi") item.optString("media_type") else mediaType
+        if (resultType != "movie" && resultType != "tv") return@mapNotNull null
+        val rawTitle = if (resultType == "movie") item.optString("title") else item.optString("name")
+        TmdbTitle(
+            id = id,
+            title = rawTitle.ifBlank { "Untitled" },
+            overview = item.optString("overview"),
+            posterPath = item.optString("poster_path").takeIf { it.isNotBlank() && it != "null" },
+            year = (if (resultType == "movie") item.optString("release_date") else item.optString("first_air_date")).take(4),
+            rating = item.optDouble("vote_average", 0.0),
+            mediaType = resultType
+        )
     }
 }
 
@@ -425,13 +446,9 @@ private data class TmdbEpisode(val number: Int, val name: String)
 
 private suspend fun fetchTmdbSeasons(item: TmdbTitle): List<TmdbSeason> = withContext(Dispatchers.IO) {
     if (item.mediaType != "tv") return@withContext emptyList()
-    val connection = URL("https://api.themoviedb.org/3/tv/${item.id}?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
-        .openConnection() as HttpURLConnection
-    try {
-        connection.connectTimeout = 10000
-        connection.readTimeout = 12000
-        if (connection.responseCode !in 200..299) throw IllegalStateException("Could not load seasons from TMDB.")
-        val seasons = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optJSONArray("seasons")
+    val seasonsBody = tmdbBodyWithOfflineCopy("seasons|${item.id}", "https://api.themoviedb.org/3/tv/${item.id}", "Could not load seasons from TMDB.")
+    run {
+        val seasons = JSONObject(seasonsBody).optJSONArray("seasons")
             ?: return@withContext emptyList()
         (0 until seasons.length()).mapNotNull { i ->
             val season = seasons.optJSONObject(i) ?: return@mapNotNull null
@@ -439,24 +456,37 @@ private suspend fun fetchTmdbSeasons(item: TmdbTitle): List<TmdbSeason> = withCo
             if (number < 0 || season.optInt("episode_count", 0) <= 0) null
             else TmdbSeason(number, season.optString("name").ifBlank { "Season $number" }, season.optInt("episode_count"))
         }
-    } finally { connection.disconnect() }
+    }
 }
 
 private suspend fun fetchTmdbEpisodes(item: TmdbTitle, seasonNumber: Int): List<TmdbEpisode> = withContext(Dispatchers.IO) {
-    val connection = URL("https://api.themoviedb.org/3/tv/${item.id}/season/$seasonNumber?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
-        .openConnection() as HttpURLConnection
-    try {
-        connection.connectTimeout = 10000
-        connection.readTimeout = 12000
-        if (connection.responseCode !in 200..299) throw IllegalStateException("Could not load episodes from TMDB.")
-        val episodes = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).optJSONArray("episodes")
+    val episodesBody = tmdbBodyWithOfflineCopy("episodes|${item.id}|$seasonNumber", "https://api.themoviedb.org/3/tv/${item.id}/season/$seasonNumber", "Could not load episodes from TMDB.")
+    run {
+        val episodes = JSONObject(episodesBody).optJSONArray("episodes")
             ?: return@withContext emptyList()
         (0 until episodes.length()).mapNotNull { i ->
             val episode = episodes.optJSONObject(i) ?: return@mapNotNull null
             val number = episode.optInt("episode_number", 0)
             if (number <= 0) null else TmdbEpisode(number, episode.optString("name").ifBlank { "Episode $number" })
         }
-    } finally { connection.disconnect() }
+    }
+}
+
+/** GET a TMDB endpoint; remember the answer, and reuse the saved copy when offline. */
+private fun tmdbBodyWithOfflineCopy(cacheKey: String, endpoint: String, errorMessage: String): String {
+    try {
+        val connection = URL("$endpoint?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}").openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 10000
+            connection.readTimeout = 12000
+            if (connection.responseCode !in 200..299) throw IllegalStateException(errorMessage)
+            val text = connection.inputStream.bufferedReader().use { it.readText() }
+            TmdbOfflineCache.put(cacheKey, text)
+            return text
+        } finally { connection.disconnect() }
+    } catch (e: Exception) {
+        return TmdbOfflineCache.get(cacheKey) ?: throw e
+    }
 }
 
 @Composable
