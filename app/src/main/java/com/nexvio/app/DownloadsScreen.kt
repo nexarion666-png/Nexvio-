@@ -211,7 +211,16 @@ internal class OfflineDownloads(private val context: Context, private val profil
     /** Copies a completed Nexvio download into the public Movies/Nexvio gallery folder. */
     fun saveToGallery(id: Long): Boolean {
         val source = open(id)?.path?.let(::File)?.takeIf { it.isFile && it.canRead() } ?: return false
-        val mime = when (source.extension.lowercase()) {
+
+        // ResumableDownloads stores files using the display title, which often has no
+        // extension. MediaStore rejects wildcard MIME types such as "video/*", so
+        // determine a concrete media type and give extensionless movie files .mp4.
+        val originalExtension = source.extension.lowercase()
+        val extension = when (originalExtension) {
+            "mp4", "m4v", "mkv", "webm", "mov", "avi", "mp3", "aac" -> originalExtension
+            else -> "mp4"
+        }
+        val mime = when (extension) {
             "mp4", "m4v" -> "video/mp4"
             "mkv" -> "video/x-matroska"
             "webm" -> "video/webm"
@@ -219,12 +228,14 @@ internal class OfflineDownloads(private val context: Context, private val profil
             "avi" -> "video/x-msvideo"
             "mp3" -> "audio/mpeg"
             "aac" -> "audio/aac"
-            else -> "video/*"
+            else -> "video/mp4"
         }
+        val displayName = if (originalExtension.isBlank()) "${source.name}.$extension" else source.name
+
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
                     put(MediaStore.MediaColumns.MIME_TYPE, mime)
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Nexvio")
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
@@ -234,9 +245,13 @@ internal class OfflineDownloads(private val context: Context, private val profil
                     else MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
                 val destination = resolver.insert(collection, values) ?: return false
                 try {
-                    resolver.openOutputStream(destination)?.use { output -> source.inputStream().use { it.copyTo(output) } }
+                    val output = resolver.openOutputStream(destination)
                         ?: throw java.io.IOException("Could not open gallery destination")
-                    resolver.update(destination, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+                    output.use { stream -> source.inputStream().use { input -> input.copyTo(stream) } }
+                    val updated = resolver.update(destination, ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    }, null, null)
+                    if (updated <= 0) throw java.io.IOException("Could not finish saving to gallery")
                     true
                 } catch (e: Exception) {
                     resolver.delete(destination, null, null)
@@ -245,12 +260,15 @@ internal class OfflineDownloads(private val context: Context, private val profil
             } else {
                 val folder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).resolve("Nexvio")
                 if (!folder.exists() && !folder.mkdirs()) return false
-                val destination = File(folder, source.name)
+                val destination = File(folder, displayName)
                 source.copyTo(destination, overwrite = true)
                 MediaScannerConnection.scanFile(context, arrayOf(destination.absolutePath), arrayOf(mime), null)
                 true
             }
-        } catch (_: Exception) { false }
+        } catch (e: Exception) {
+            android.util.Log.e("NexvioDownloads", "Failed to copy download $id to gallery", e)
+            false
+        }
     }
     fun metadata(id: Long): org.json.JSONObject = runCatching {
         org.json.JSONObject(prefs.getString("metadata_$id", "{}").orEmpty())
