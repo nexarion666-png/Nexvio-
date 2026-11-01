@@ -1,6 +1,6 @@
 {
-  "version": "1.0.475",
-  "versionCode": 475,
-  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.475/app-debug.apk",
-  "releaseNotes": "Nexvio 1.0.475 update."
+  "version": "1.0.478",
+  "versionCode": 478,
+  "downloadUrl": "https://github.com/nexarion666-png/Nexvio-Downloads/releases/download/V1.0.478/app-debug.apk",
+  "releaseNotes": "Nexvio 1.0.478 — Test release for the in-app update notification banner and download/install flow."
 }
