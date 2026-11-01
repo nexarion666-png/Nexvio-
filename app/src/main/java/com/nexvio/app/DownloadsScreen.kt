@@ -2,6 +2,11 @@ package com.nexvio.app
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.ContentValues
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.provider.MediaStore
+import android.widget.Toast
 import android.net.Uri
 import android.os.Environment
 import androidx.compose.foundation.background
@@ -203,6 +208,50 @@ internal class OfflineDownloads(private val context: Context, private val profil
         }
         return null
     }
+    /** Copies a completed Nexvio download into the public Movies/Nexvio gallery folder. */
+    fun saveToGallery(id: Long): Boolean {
+        val source = open(id)?.path?.let(::File)?.takeIf { it.isFile && it.canRead() } ?: return false
+        val mime = when (source.extension.lowercase()) {
+            "mp4", "m4v" -> "video/mp4"
+            "mkv" -> "video/x-matroska"
+            "webm" -> "video/webm"
+            "mov" -> "video/quicktime"
+            "avi" -> "video/x-msvideo"
+            "mp3" -> "audio/mpeg"
+            "aac" -> "audio/aac"
+            else -> "video/*"
+        }
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Nexvio")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val collection = if (mime.startsWith("audio/")) MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    else MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val destination = resolver.insert(collection, values) ?: return false
+                try {
+                    resolver.openOutputStream(destination)?.use { output -> source.inputStream().use { it.copyTo(output) } }
+                        ?: throw java.io.IOException("Could not open gallery destination")
+                    resolver.update(destination, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+                    true
+                } catch (e: Exception) {
+                    resolver.delete(destination, null, null)
+                    throw e
+                }
+            } else {
+                val folder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).resolve("Nexvio")
+                if (!folder.exists() && !folder.mkdirs()) return false
+                val destination = File(folder, source.name)
+                source.copyTo(destination, overwrite = true)
+                MediaScannerConnection.scanFile(context, arrayOf(destination.absolutePath), arrayOf(mime), null)
+                true
+            }
+        } catch (_: Exception) { false }
+    }
     fun metadata(id: Long): org.json.JSONObject = runCatching {
         org.json.JSONObject(prefs.getString("metadata_$id", "{}").orEmpty())
     }.getOrElse { org.json.JSONObject() }
@@ -242,6 +291,7 @@ private fun DownloadItemCard(
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
+    onSaveToGallery: () -> Unit,
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -293,6 +343,10 @@ private fun DownloadItemCard(
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            if (finished) DropdownMenuItem(
+                text = { Text("Save to gallery") },
+                onClick = { menuOpen = false; onSaveToGallery() }
+            )
             DropdownMenuItem(
                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                 onClick = { menuOpen = false; onDelete() }
@@ -307,6 +361,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
     val store = remember(context, profileId) { OfflineDownloads(context.applicationContext, profileId) }
     var rows by remember { mutableStateOf(store.rows()) }
     var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     var progressRefresh by remember { mutableIntStateOf(0) }
     var openedFolder by remember { mutableStateOf<String?>(null) }
     // Bumped whenever a poster file has just been saved, so the screen re-reads it from disk.
@@ -378,7 +433,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
                 Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { openedFolder = null }.padding(end = 14.dp))
                 Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
             }
-            Text("Tap to play • Hold to delete", color = Color(0xFF777B86), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+            Text("Tap to play • Hold for options", color = Color(0xFF777B86), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(selectedRows, key = { it.first }) { row ->
@@ -392,6 +447,12 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
                         onPlay = { playRow(row) },
                         onPause = { store.pause(row.first); rows = store.rows() },
                         onResume = { store.resume(row.first); rows = store.rows() },
+                        onSaveToGallery = {
+                            scope.launch {
+                                val saved = withContext(Dispatchers.IO) { store.saveToGallery(row.first) }
+                                Toast.makeText(context, if (saved) "Saved to Movies/Nexvio in your gallery" else "Could not save this download to your gallery", Toast.LENGTH_LONG).show()
+                            }
+                        },
                         onDelete = {
                             store.deleteDownload(row.first)
                             if (selectedRows.size <= 1) DownloadPosterStore.delete(context, folderKey)
