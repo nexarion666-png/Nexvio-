@@ -958,6 +958,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
+    var subtitlesEnabled by rememberSaveable(channel.id) { mutableStateOf(true) }
     var subtitleDiagnostic by remember(channel.id) { mutableStateOf("No subtitle diagnostics yet.") }
     var subtitleSearchMode by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
@@ -1097,6 +1098,14 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 .setSeekForwardIncrementMs(10_000L)
                 .build()
             createdPlayer = instance
+            // Automatic subtitle mode starts with text tracks disabled. Nexvio then
+            // chooses one explicit track (embedded or downloaded) and pins it, rather
+            // than letting adaptive streams silently switch tracks as manifests refresh.
+            if (playerPrefs.getBoolean("auto_subtitles", true)) {
+                instance.trackSelectionParameters = instance.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+            }
             player = instance
             // Restore the saved position only on the FIRST ready state. Without this, every
             // buffering->ready transition (including after a seek) jumped back to the stale
@@ -1324,8 +1333,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 
     // Automatically picks and applies the best online subtitle for movies/episodes.
-    LaunchedEffect(player, channel.id) {
+    LaunchedEffect(player, channel.id, subtitlesEnabled) {
         val active = player ?: return@LaunchedEffect
+        if (!subtitlesEnabled) return@LaunchedEffect
         if (!playerPrefs.getBoolean("auto_subtitles", true)) return@LaunchedEffect
         val code = subtitleLanguageCode(playerPrefs.getString("preferred_subtitle_language", "Device language") ?: "Device language")
             ?: return@LaunchedEffect
@@ -1837,7 +1847,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             revealControls()
                         }, size = 23)
                         PlayerIconButton(Icons.Filled.HighQuality, "Video quality", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, size = 25)
-                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { subtitleSearchMode = false; subtitleDialogOpen = true; subtitleError = null; revealControls() }, size = 24)
+                        PlayerIconButton(Icons.Filled.ClosedCaption, if (subtitlesEnabled) "Turn subtitles off" else "Turn subtitles on", {
+                            subtitlesEnabled = !subtitlesEnabled
+                            player?.let { active ->
+                                active.trackSelectionParameters = active.trackSelectionParameters.buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
+                                    .build()
+                            }
+                            showPlayerMessage(if (subtitlesEnabled) "Subtitles on" else "Subtitles off")
+                            revealControls()
+                        }, size = 24, enabled = subtitlesEnabled)
                         PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
                             if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
                             else showPlayerMessage("No playlist is attached to this stream.")
