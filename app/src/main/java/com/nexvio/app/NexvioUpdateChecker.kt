@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.content.FileProvider
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,10 +47,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.File
+import java.util.zip.ZipFile
 
 private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site-phi.vercel.app/latest.json"
 private const val UPDATE_PREFS = "nexvio_update_state"
@@ -66,6 +70,7 @@ private data class NexvioAvailableUpdate(
 fun NexvioUpdateChecker() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
     val prefs = remember(context) { context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE) }
     var checkTrigger by remember { mutableIntStateOf(0) }
     var update by remember { mutableStateOf<NexvioAvailableUpdate?>(null) }
@@ -193,15 +198,38 @@ fun NexvioUpdateChecker() {
                                         runCatching { context.startActivity(settingsIntent) }
                                             .onFailure { downloadError = "Please allow Nexvio to install unknown apps in Android Settings." }
                                     } else {
-                                        runCatching {
-                                            val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-                                                data = apkUri
-                                                clipData = ClipData.newRawUri("Nexvio APK update", apkUri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        scope.launch {
+                                            try {
+                                                // Copy the completed DownloadManager file into app cache and
+                                                // expose it through our FileProvider for the package installer.
+                                                val installerUri = withContext(Dispatchers.IO) {
+                                                    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                                    val apkFile = File(context.cacheDir, "updates/nexvio-${available.version}.apk")
+                                                    apkFile.parentFile?.mkdirs()
+                                                    manager.openDownloadedFile(downloadId).use { input ->
+                                                        apkFile.outputStream().use { output -> input.copyTo(output) }
+                                                    }
+                                                    ZipFile(apkFile).use { archive ->
+                                                        require(archive.getEntry("AndroidManifest.xml") != null) {
+                                                            "The downloaded file is not a valid APK archive."
+                                                        }
+                                                    }
+                                                    FileProvider.getUriForFile(
+                                                        context,
+                                                        "${context.packageName}.fileprovider",
+                                                        apkFile
+                                                    )
+                                                }
+                                                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                                    setDataAndType(installerUri, "application/vnd.android.package-archive")
+                                                    clipData = ClipData.newRawUri("Nexvio APK update", installerUri)
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                context.startActivity(installIntent)
+                                            } catch (error: Exception) {
+                                                downloadError = error.message
+                                                    ?: "Android couldn't open the downloaded APK. Please download it again."
                                             }
-                                            context.startActivity(installIntent)
-                                        }.onFailure {
-                                            downloadError = "Android couldn't open the installer. Check that Nexvio is allowed to install unknown apps, then try again."
                                         }
                                     }
                                 },
