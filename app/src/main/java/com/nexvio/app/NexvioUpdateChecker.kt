@@ -53,6 +53,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.io.File
+import java.io.FileInputStream
 import java.util.zip.ZipFile
 
 private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site-phi.vercel.app/latest.json"
@@ -206,8 +207,10 @@ fun NexvioUpdateChecker() {
                                                     val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                                                     val apkFile = File(context.cacheDir, "updates/nexvio-${available.version}.apk")
                                                     apkFile.parentFile?.mkdirs()
-                                                    manager.openDownloadedFile(downloadId).use { input ->
-                                                        apkFile.outputStream().use { output -> input.copyTo(output) }
+                                                    manager.openDownloadedFile(downloadId).use { descriptor ->
+                                                        FileInputStream(descriptor.fileDescriptor).use { input ->
+                                                            apkFile.outputStream().use { output -> input.copyTo(output) }
+                                                        }
                                                     }
                                                     ZipFile(apkFile).use { archive ->
                                                         require(archive.getEntry("AndroidManifest.xml") != null) {
