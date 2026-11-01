@@ -102,4 +102,4 @@ See `THIRD_PARTY_NOTICES.md`.
 
 ## In-app updater verification
 
-This test-only marker prepares a fresh build to verify the in-app update banner, APK download progress, and Android installer handoff after the installation-button fix. It does not change app functionality.
+This test-only marker prepares a fresh build specifically to verify that the in-app app-update notification banner appears when a newer version is available, stays visible until dismissed with Later, and opens the in-app download/install flow. It does not change app functionality.
