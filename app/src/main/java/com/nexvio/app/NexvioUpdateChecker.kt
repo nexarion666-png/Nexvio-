@@ -4,6 +4,9 @@ import android.app.DownloadManager
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -35,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,15 +58,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.File
 import java.io.FileInputStream
-import java.util.zip.ZipFile
+import java.security.MessageDigest
 
 private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site-phi.vercel.app/latest.json"
 private const val UPDATE_PREFS = "nexvio_update_state"
 private const val UPDATE_DOWNLOAD_ID = "download_id"
+private const val UPDATE_DOWNLOAD_VERSION = "download_version"
 private const val UPDATE_DISMISSED_VERSION = "dismissed_version"
 
 private data class NexvioAvailableUpdate(
     val version: String,
+    val versionCode: Long,
     val releaseNotes: String,
     val downloadUrl: String
 )
@@ -75,7 +81,7 @@ fun NexvioUpdateChecker() {
     val prefs = remember(context) { context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE) }
     var checkTrigger by remember { mutableIntStateOf(0) }
     var update by remember { mutableStateOf<NexvioAvailableUpdate?>(null) }
-    var downloadId by remember { mutableLongStateOf(prefs.getLong(UPDATE_DOWNLOAD_ID, -1L)) }
+    var downloadId by remember { mutableLongStateOf(-1L) }
     var downloadProgress by remember { mutableIntStateOf(0) }
     var downloading by remember { mutableStateOf(false) }
     var downloadedUri by remember { mutableStateOf<Uri?>(null) }
@@ -105,10 +111,13 @@ fun NexvioUpdateChecker() {
                 val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                 val version = json.optString("version").removePrefix("v").trim()
                 val url = json.optString("downloadUrl").trim()
-                if (version.isNotBlank() && url.startsWith("https://") &&
-                    isNewerVersion(version, BuildConfig.VERSION_NAME)
-                ) {
-                    NexvioAvailableUpdate(version, json.optString("releaseNotes"), url)
+                val remoteCode = json.optLong("versionCode", 0L)
+                // Android refuses any APK whose versionCode is not higher than the installed one,
+                // so when the feed supplies versionCode it decides; otherwise fall back to the name.
+                val newer = if (remoteCode > 0L) remoteCode > BuildConfig.VERSION_CODE.toLong()
+                            else isNewerVersion(version, BuildConfig.VERSION_NAME)
+                if (version.isNotBlank() && url.startsWith("https://") && newer) {
+                    NexvioAvailableUpdate(version, remoteCode, json.optString("releaseNotes"), url)
                 } else null
             } catch (_: Exception) {
                 null
@@ -117,37 +126,81 @@ fun NexvioUpdateChecker() {
             }
         }
         update = latest
+        if (latest != null) {
+            // A saved download id is only valid for the exact version it was started for.
+            // Without this, an old finished download is reported as "complete" for the new
+            // update and the old APK gets installed without anything being downloaded.
+            val savedVersion = prefs.getString(UPDATE_DOWNLOAD_VERSION, null)
+            val savedId = prefs.getLong(UPDATE_DOWNLOAD_ID, -1L)
+            if (savedId > 0L && savedVersion == latest.version) {
+                if (downloadId != savedId) downloadId = savedId
+            } else if (savedId > 0L) {
+                withContext(Dispatchers.IO) {
+                    runCatching { (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).remove(savedId) }
+                }
+                prefs.edit().remove(UPDATE_DOWNLOAD_ID).remove(UPDATE_DOWNLOAD_VERSION).apply()
+                downloadId = -1L
+                downloadedUri = null
+                downloading = false
+                downloadError = null
+            }
+        }
     }
 
     val available = update
     LaunchedEffect(available?.version, downloadId) {
         val target = available ?: return@LaunchedEffect
-        if (downloadId <= 0L) return@LaunchedEffect
+        val id = downloadId
+        if (id <= 0L) return@LaunchedEffect
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        fun discardDownload() {
+            runCatching { manager.remove(id) }
+            prefs.edit().remove(UPDATE_DOWNLOAD_ID).remove(UPDATE_DOWNLOAD_VERSION).apply()
+            downloadId = -1L
+        }
         while (true) {
             val state = withContext(Dispatchers.IO) {
-                val cursor = manager.query(DownloadManager.Query().setFilterById(downloadId))
+                val cursor = manager.query(DownloadManager.Query().setFilterById(id))
                 cursor?.use {
-                    if (!it.moveToFirst()) return@withContext Triple(-1, 0, null as Uri?)
+                    if (!it.moveToFirst()) return@withContext Pair(-1, 0)
                     val status = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
                     val total = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
                     val done = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                    val percent = if (total > 0) ((done * 100) / total).toInt() else 0
-                    val uri = if (status == DownloadManager.STATUS_SUCCESSFUL) manager.getUriForDownloadedFile(downloadId) else null
-                    Triple(status, percent, uri)
-                } ?: Triple(-1, 0, null)
+                    Pair(status, if (total > 0) ((done * 100) / total).toInt() else 0)
+                } ?: Pair(-1, 0)
             }
             downloadProgress = state.second
             when (state.first) {
                 DownloadManager.STATUS_SUCCESSFUL -> {
-                    downloadedUri = state.third
+                    // Validate the file BEFORE offering "Install": right package, higher
+                    // versionCode, compatible signing certificate.
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching { prepareUpdateApk(context, manager, id, target) }
+                    }
                     downloading = false
-                    downloadError = if (state.third == null) "Download finished, but Android couldn't open the APK." else null
+                    val uri = result.getOrNull()
+                    if (uri != null) {
+                        downloadedUri = uri
+                        downloadError = null
+                    } else {
+                        downloadedUri = null
+                        downloadError = result.exceptionOrNull()?.message
+                            ?: "Android couldn't open the downloaded APK. Please download it again."
+                        discardDownload()
+                    }
                     break
                 }
-                DownloadManager.STATUS_FAILED, -1 -> {
+                DownloadManager.STATUS_FAILED -> {
                     downloading = false
                     downloadError = "The download failed. Please try again."
+                    discardDownload()
+                    break
+                }
+                -1 -> {
+                    // Download record no longer exists (cleared by the user/system): start clean.
+                    downloading = false
+                    downloadedUri = null
+                    discardDownload()
                     break
                 }
                 else -> {
@@ -199,41 +252,16 @@ fun NexvioUpdateChecker() {
                                         runCatching { context.startActivity(settingsIntent) }
                                             .onFailure { downloadError = "Please allow Nexvio to install unknown apps in Android Settings." }
                                     } else {
-                                        scope.launch {
-                                            try {
-                                                // Copy the completed DownloadManager file into app cache and
-                                                // expose it through our FileProvider for the package installer.
-                                                val installerUri = withContext(Dispatchers.IO) {
-                                                    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                                    val apkFile = File(context.cacheDir, "updates/nexvio-${available.version}.apk")
-                                                    apkFile.parentFile?.mkdirs()
-                                                    manager.openDownloadedFile(downloadId).use { descriptor ->
-                                                        FileInputStream(descriptor.fileDescriptor).use { input ->
-                                                            apkFile.outputStream().use { output -> input.copyTo(output) }
-                                                        }
-                                                    }
-                                                    ZipFile(apkFile).use { archive ->
-                                                        require(archive.getEntry("AndroidManifest.xml") != null) {
-                                                            "The downloaded file is not a valid APK archive."
-                                                        }
-                                                    }
-                                                    FileProvider.getUriForFile(
-                                                        context,
-                                                        "${context.packageName}.fileprovider",
-                                                        apkFile
-                                                    )
-                                                }
-                                                val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                                                    setDataAndType(installerUri, "application/vnd.android.package-archive")
-                                                    clipData = ClipData.newRawUri("Nexvio APK update", installerUri)
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                }
-                                                context.startActivity(installIntent)
-                                            } catch (error: Exception) {
-                                                downloadError = error.message
-                                                    ?: "Android couldn't open the downloaded APK. Please download it again."
-                                            }
+                                        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(apkUri, "application/vnd.android.package-archive")
+                                            clipData = ClipData.newRawUri("Nexvio APK update", apkUri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                                         }
+                                        runCatching { context.startActivity(installIntent) }
+                                            .onFailure {
+                                                downloadError = it.message
+                                                    ?: "Android couldn't open the installer. Please download the update again."
+                                            }
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -247,16 +275,28 @@ fun NexvioUpdateChecker() {
                                 onClick = {
                                     downloadError = null
                                     downloadedUri = null
+                                    downloadProgress = 0
                                     val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                    // Remove any previous update download and leftover files first.
+                                    val oldId = prefs.getLong(UPDATE_DOWNLOAD_ID, -1L)
+                                    if (oldId > 0L) runCatching { manager.remove(oldId) }
+                                    context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                                        ?.listFiles()
+                                        ?.filter { it.name.startsWith("nexvio-update-") }
+                                        ?.forEach { it.delete() }
                                     val request = DownloadManager.Request(Uri.parse(available.downloadUrl))
                                         .setTitle("Nexvio ${available.version}")
                                         .setDescription("Downloading Nexvio update")
                                         .setMimeType("application/vnd.android.package-archive")
                                         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
                                         .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "nexvio-update-${available.version}.apk")
-                                    downloadId = manager.enqueue(request)
-                                    prefs.edit().putLong(UPDATE_DOWNLOAD_ID, downloadId).apply()
+                                    val newId = manager.enqueue(request)
+                                    prefs.edit()
+                                        .putLong(UPDATE_DOWNLOAD_ID, newId)
+                                        .putString(UPDATE_DOWNLOAD_VERSION, available.version)
+                                        .apply()
                                     downloading = true
+                                    downloadId = newId
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A36A))
@@ -279,4 +319,69 @@ private fun isNewerVersion(latest: String, current: String): Boolean {
         if (av != bv) return av > bv
     }
     return false
+}
+
+/**
+ * Copies the finished download into cache/updates (served by our FileProvider) and checks that
+ * Android will actually accept it as an update. Throws with a human-readable message if not.
+ */
+private fun prepareUpdateApk(
+    context: Context,
+    manager: DownloadManager,
+    downloadId: Long,
+    target: NexvioAvailableUpdate
+): Uri {
+    val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+    val apkFile = File(dir, "nexvio-${target.version}.apk")
+    dir.listFiles()?.forEach { if (it != apkFile) it.delete() }
+    manager.openDownloadedFile(downloadId).use { descriptor ->
+        FileInputStream(descriptor.fileDescriptor).use { input ->
+            apkFile.outputStream().use { output -> input.copyTo(output) }
+        }
+    }
+
+    val pm = context.packageManager
+    val flags = signingFlags()
+    val archive = pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
+        ?: throw IllegalStateException("The downloaded file is not a valid APK. Please download it again.")
+    archive.applicationInfo?.let {
+        it.sourceDir = apkFile.absolutePath
+        it.publicSourceDir = apkFile.absolutePath
+    }
+    check(archive.packageName == context.packageName) {
+        "The downloaded APK is for ${archive.packageName}, not ${context.packageName}."
+    }
+    val installed = pm.getPackageInfo(context.packageName, flags)
+    val newCode = PackageInfoCompat.getLongVersionCode(archive)
+    val oldCode = PackageInfoCompat.getLongVersionCode(installed)
+    check(newCode > oldCode) {
+        "Android won't install this update: its version code ($newCode) is not higher than the installed one ($oldCode)."
+    }
+    val newSigners = signerHashes(archive)
+    val oldSigners = signerHashes(installed)
+    if (newSigners.isNotEmpty() && oldSigners.isNotEmpty() && newSigners.intersect(oldSigners).isEmpty()) {
+        throw IllegalStateException(
+            "This update is signed with a different key than the installed app, so Android refuses to " +
+                "install it over the top. Uninstall Nexvio once and install the new APK."
+        )
+    }
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
+}
+
+@Suppress("DEPRECATION")
+private fun signingFlags(): Int =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES
+    else PackageManager.GET_SIGNATURES
+
+@Suppress("DEPRECATION")
+private fun signerHashes(info: PackageInfo): Set<String> {
+    val signatures: Array<Signature>? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.let {
+                if (it.hasMultipleSigners()) it.apkContentsSigners else it.signingCertificateHistory
+            }
+        } else info.signatures
+    return signatures.orEmpty().map { sig ->
+        MessageDigest.getInstance("SHA-256").digest(sig.toByteArray()).joinToString("") { "%02x".format(it) }
+    }.toSet()
 }
