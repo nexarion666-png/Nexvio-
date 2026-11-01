@@ -1856,7 +1856,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             }
                             showPlayerMessage(if (subtitlesEnabled) "Subtitles on" else "Subtitles off")
                             revealControls()
-                        }, size = 24, enabled = subtitlesEnabled)
+                        }, size = 24)
                         PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
                             if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
                             else showPlayerMessage("No playlist is attached to this stream.")
