@@ -3,7 +3,7 @@ create table if not exists public.nexvio_analytics_events (
     id bigint generated always as identity primary key,
     installation_id uuid not null,
     event_type text not null check (event_type = 'app_open'),
-    app_version text not null check (app_version ~ '^[0-9]+(\\.[0-9]+){0,3}$'),
+    app_version text not null check (app_version ~ '^[0-9]+(\.[0-9]+){0,3}$'),
     occurred_at timestamptz not null,
     received_at timestamptz not null default now(),
     constraint nexvio_analytics_event_time_reasonable
@@ -30,7 +30,7 @@ create policy "Allow validated anonymous Nexvio app-open events"
     to anon
     with check (
         event_type = 'app_open'
-        and app_version ~ '^[0-9]+(\\.[0-9]+){0,3}$'
+        and app_version ~ '^[0-9]+(\.[0-9]+){0,3}$'
         and occurred_at >= now() - interval '10 minutes'
         and occurred_at <= now() + interval '2 minutes'
     );
