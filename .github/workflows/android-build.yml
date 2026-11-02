@@ -89,12 +89,16 @@ jobs:
           OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
         run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest
 
+      - name: Rename distributable APK
+        if: success() && startsWith(github.ref, 'refs/heads/')
+        run: cp app/build/outputs/apk/debug/app-debug.apk Nexvio.apk
+
       - name: Upload debug APK artifact
         if: success() && startsWith(github.ref, 'refs/heads/')
         uses: actions/upload-artifact@v4
         with:
-          name: Nexvio-debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Nexvio-APK
+          path: Nexvio.apk
           retention-days: 14
 
       - name: Validate release secrets
