@@ -18,6 +18,7 @@ class NexvioApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         appContext = applicationContext
+        NexvioAnalytics.trackAppOpen(applicationContext)
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
