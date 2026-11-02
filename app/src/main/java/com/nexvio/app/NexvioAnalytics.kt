@@ -4,7 +4,10 @@ import android.content.Context
 import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL
-import java.time.Instant
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 /**
@@ -32,6 +35,10 @@ internal object NexvioAnalytics {
             ?.takeIf { it.isNotBlank() }
             ?: "1.0"
 
+        val occurredAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date())
+
         Thread({
             var connection: HttpURLConnection? = null
             try {
@@ -47,7 +54,7 @@ internal object NexvioAnalytics {
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Prefer", "return=minimal")
                 }
-                val payload = """[{"installation_id":"$installationId","event_type":"app_open","app_version":"$version","occurred_at":"${Instant.now()}"}]"""
+                val payload = """[{"installation_id":"$installationId","event_type":"app_open","app_version":"$version","occurred_at":"$occurredAt"}]"""
                 connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
                 if (status !in 200..299) Log.w(TAG, "App-open event was not accepted (HTTP $status).")
