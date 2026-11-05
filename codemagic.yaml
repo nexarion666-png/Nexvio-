@@ -1,0 +1,46 @@
+workflows:
+  nexvio-android:
+    name: Nexvio Android APK
+    instance_type: linux_x2
+    max_build_duration: 60
+
+    environment:
+      groups:
+        - nexvio-signing
+      vars:
+        ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT
+      java: 17
+
+    scripts:
+      - name: Build signed Nexvio APK
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/Nexvio--main"
+
+          # The repository's wrapper JAR is not committed, so generate it with Gradle 8.9.
+          gradle wrapper --gradle-version 8.9
+          chmod +x ./gradlew
+
+          # Reuse Nexvio's existing signing certificate.
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$CM_BUILD_DIR/nexvio-release.jks"
+          export ANDROID_KEYSTORE_PATH="$CM_BUILD_DIR/nexvio-release.jks"
+          export ANDROID_KEYSTORE_PASSWORD
+          export ANDROID_KEY_ALIAS
+          export ANDROID_KEY_PASSWORD
+          export OPENSUBTITLES_API_KEY
+
+          # Keep versionCode above previous GitHub Actions builds.
+          export NEXVIO_VERSION_CODE="$((10000 + CM_BUILD_NUMBER))"
+          export NEXVIO_VERSION_NAME="1.1.$CM_BUILD_NUMBER"
+
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "$CM_BUILD_DIR/Nexvio.apk"
+
+    artifacts:
+      - Nexvio.apk
+      - Nexvio--main/app/build/outputs/apk/release/*.apk
+
+    publishing:
+      email:
+        recipients: []
