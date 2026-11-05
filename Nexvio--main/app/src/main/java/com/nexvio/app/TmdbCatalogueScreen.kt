@@ -491,26 +491,45 @@ private fun tmdbBodyWithOfflineCopy(cacheKey: String, endpoint: String, errorMes
 
 @Composable
 private fun SeriesEpisodePicker(item: TmdbTitle, onSelection: (Int, Int) -> Unit) {
+    val context = LocalContext.current
+    val memory = remember(context) { context.getSharedPreferences("nexvio_episode_memory", Context.MODE_PRIVATE) }
+    val seasonKey = "series_${item.id}_season"
+    val episodeKey = "series_${item.id}_episode"
     var seasons by remember(item.id) { mutableStateOf<List<TmdbSeason>>(emptyList()) }
     var episodes by remember(item.id) { mutableStateOf<List<TmdbEpisode>>(emptyList()) }
-    var selectedSeason by remember(item.id) { mutableIntStateOf(1) }
-    var selectedEpisode by remember(item.id) { mutableIntStateOf(1) }
+    var selectedSeason by remember(item.id) { mutableIntStateOf(memory.getInt(seasonKey, 1)) }
+    var selectedEpisode by remember(item.id) { mutableIntStateOf(memory.getInt(episodeKey, 1)) }
     var seasonMenu by remember { mutableStateOf(false) }
     var episodeMenu by remember { mutableStateOf(false) }
     var loadingEpisodes by remember { mutableStateOf(false) }
     var pickerError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun selectEpisode(season: Int, episode: Int) {
+        selectedSeason = season
+        selectedEpisode = episode
+        memory.edit().putInt(seasonKey, season).putInt(episodeKey, episode).apply()
+        onSelection(season, episode)
+    }
 
     LaunchedEffect(item.id) {
         try {
             seasons = fetchTmdbSeasons(item)
-            selectedSeason = seasons.firstOrNull { it.number == 1 }?.number ?: seasons.firstOrNull()?.number ?: 1
+            val savedSeason = memory.getInt(seasonKey, 1)
+            selectedSeason = seasons.firstOrNull { it.number == savedSeason }?.number
+                ?: seasons.firstOrNull { it.number == 1 }?.number
+                ?: seasons.firstOrNull()?.number ?: 1
         } catch (e: Exception) { pickerError = e.message ?: "Could not load seasons." }
     }
     LaunchedEffect(item.id, selectedSeason) {
         loadingEpisodes = true
         try {
             episodes = fetchTmdbEpisodes(item, selectedSeason)
-            selectedEpisode = episodes.firstOrNull()?.number ?: 1
+            val savedSeason = memory.getInt(seasonKey, -1)
+            val preferredEpisode = if (savedSeason == selectedSeason) memory.getInt(episodeKey, 1) else 1
+            selectedEpisode = episodes.firstOrNull { it.number == preferredEpisode }?.number
+                ?: episodes.firstOrNull()?.number ?: 1
+            memory.edit().putInt(seasonKey, selectedSeason).putInt(episodeKey, selectedEpisode).apply()
             onSelection(selectedSeason, selectedEpisode)
             pickerError = if (episodes.isEmpty()) "No episode list is available for this season." else null
         } catch (e: Exception) {
@@ -519,43 +538,91 @@ private fun SeriesEpisodePicker(item: TmdbTitle, onSelection: (Int, Int) -> Unit
         } finally { loadingEpisodes = false }
     }
 
-    Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp)) {
-        Text("Choose episode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                OutlinedButton(onClick = { seasonMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(seasons.firstOrNull { it.number == selectedSeason }?.name ?: "Season $selectedSeason", maxLines = 1)
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp)) {
+            Text("Choose episode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { seasonMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(seasons.firstOrNull { it.number == selectedSeason }?.name ?: "Season $selectedSeason", maxLines = 1)
+                    }
+                    DropdownMenu(expanded = seasonMenu, onDismissRequest = { seasonMenu = false }) {
+                        seasons.forEach { season ->
+                            DropdownMenuItem(text = { Text(season.name) }, onClick = {
+                                seasonMenu = false
+                                if (selectedSeason != season.number) {
+                                    selectedEpisode = 1
+                                    selectedSeason = season.number
+                                }
+                            })
+                        }
+                    }
                 }
-                DropdownMenu(expanded = seasonMenu, onDismissRequest = { seasonMenu = false }) {
-                    seasons.forEach { season ->
-                        DropdownMenuItem(text = { Text(season.name) }, onClick = {
-                            seasonMenu = false
-                            if (selectedSeason != season.number) selectedSeason = season.number
-                        })
+                Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { episodeMenu = true }, enabled = episodes.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                        Text(episodes.firstOrNull { it.number == selectedEpisode }?.let { "E${it.number}: ${it.name}" } ?: "Episode $selectedEpisode", maxLines = 1)
+                    }
+                    DropdownMenu(expanded = episodeMenu, onDismissRequest = { episodeMenu = false }) {
+                        episodes.forEach { episode ->
+                            DropdownMenuItem(text = { Text("E${episode.number}: ${episode.name}") }, onClick = {
+                                episodeMenu = false
+                                selectEpisode(selectedSeason, episode.number)
+                            })
+                        }
                     }
                 }
             }
-            Box(Modifier.weight(1f)) {
-                OutlinedButton(onClick = { episodeMenu = true }, enabled = episodes.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
-                    Text(episodes.firstOrNull { it.number == selectedEpisode }?.let { "E${it.number}: ${it.name}" } ?: "Episode $selectedEpisode", maxLines = 1)
-                }
-                DropdownMenu(expanded = episodeMenu, onDismissRequest = { episodeMenu = false }) {
-                    episodes.forEach { episode ->
-                        DropdownMenuItem(text = { Text("E${episode.number}: ${episode.name}") }, onClick = {
-                            episodeMenu = false
-                            selectedEpisode = episode.number
-                            onSelection(selectedSeason, selectedEpisode)
-                        })
-                    }
-                }
-            }
+            if (loadingEpisodes) LinearProgressIndicator(Modifier.fillMaxWidth(), color = CatalogueAccent)
+            if (pickerError != null) Text(pickerError.orEmpty(), color = CatalogueMuted, fontSize = 11.sp)
         }
-        if (loadingEpisodes) LinearProgressIndicator(Modifier.fillMaxWidth(), color = CatalogueAccent)
-        if (pickerError != null) Text(pickerError.orEmpty(), color = CatalogueMuted, fontSize = 11.sp)
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = {
+                    if (loadingEpisodes) return@OutlinedButton
+                    val currentIndex = episodes.indexOfFirst { it.number == selectedEpisode }
+                    if (currentIndex > 0) {
+                        selectEpisode(selectedSeason, episodes[currentIndex - 1].number)
+                    } else {
+                        val previousSeason = seasons.lastOrNull { it.number < selectedSeason }
+                        if (previousSeason != null) scope.launch {
+                            loadingEpisodes = true
+                            try {
+                                val previousEpisodes = fetchTmdbEpisodes(item, previousSeason.number)
+                                val lastEpisode = previousEpisodes.lastOrNull()
+                                if (lastEpisode != null) {
+                                    episodes = previousEpisodes
+                                    selectEpisode(previousSeason.number, lastEpisode.number)
+                                }
+                            } catch (e: Exception) { pickerError = e.message ?: "Could not load previous season." }
+                            finally { loadingEpisodes = false }
+                        }
+                    }
+                },
+                enabled = !loadingEpisodes && seasons.isNotEmpty() &&
+                    (episodes.indexOfFirst { it.number == selectedEpisode } > 0 || seasons.any { it.number < selectedSeason }),
+                modifier = Modifier.weight(1f)
+            ) { Text("← Previous", maxLines = 1) }
+            OutlinedButton(
+                onClick = {
+                    if (loadingEpisodes) return@OutlinedButton
+                    val currentIndex = episodes.indexOfFirst { it.number == selectedEpisode }
+                    if (currentIndex >= 0 && currentIndex < episodes.lastIndex) {
+                        selectEpisode(selectedSeason, episodes[currentIndex + 1].number)
+                    } else {
+                        val nextSeason = seasons.firstOrNull { it.number > selectedSeason }
+                        if (nextSeason != null) selectEpisode(nextSeason.number, 1)
+                    }
+                },
+                enabled = !loadingEpisodes && episodes.isNotEmpty() &&
+                    (episodes.indexOfFirst { it.number == selectedEpisode } in 0 until (episodes.lastIndex.coerceAtLeast(0)) ||
+                        seasons.any { it.number > selectedSeason }),
+                modifier = Modifier.weight(1f)
+            ) { Text("Next →", maxLines = 1) }
+        }
     }
 }
-
 private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispatchers.IO) {
     val typePath = if (item.mediaType == "movie") "movie" else "tv"
     val connection = URL("https://api.themoviedb.org/3/$typePath/${item.id}/external_ids?api_key=${URLEncoder.encode(TMDB_API_KEY, "UTF-8")}")
