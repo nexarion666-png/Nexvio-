@@ -17,11 +17,11 @@ workflows:
           set -euo pipefail
           cd "$CM_BUILD_DIR/Nexvio--main"
 
-          # The repository's wrapper JAR is not committed, so generate it with Gradle 8.9.
+          # Generate the missing Gradle wrapper using Gradle 8.9.
           gradle wrapper --gradle-version 8.9
           chmod +x ./gradlew
 
-          # Decode the keystore using the macOS base64 option.
+          # Decode the Android signing keystore.
           test -n "$ANDROID_KEYSTORE_BASE64"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -D > "$CM_BUILD_DIR/nexvio-release.jks"
           export ANDROID_KEYSTORE_PATH="$CM_BUILD_DIR/nexvio-release.jks"
@@ -30,9 +30,9 @@ workflows:
           export ANDROID_KEY_PASSWORD
           export OPENSUBTITLES_API_KEY
 
-          # Keep versionCode above previous GitHub Actions builds.
-          export NEXVIO_VERSION_CODE="$((10000 + CM_BUILD_NUMBER))"
-          export NEXVIO_VERSION_NAME="1.1.$CM_BUILD_NUMBER"
+          # Codemagic provides BUILD_NUMBER (not CM_BUILD_NUMBER).
+          export NEXVIO_VERSION_CODE="$((10000 + BUILD_NUMBER))"
+          export NEXVIO_VERSION_NAME="1.1.$BUILD_NUMBER"
 
           ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease
           cp app/build/outputs/apk/release/app-release.apk "$CM_BUILD_DIR/Nexvio.apk"
