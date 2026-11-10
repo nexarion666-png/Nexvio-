@@ -40,7 +40,3 @@ workflows:
     artifacts:
       - Nexvio.apk
       - Nexvio--main/app/build/outputs/apk/release/*.apk
-
-    publishing:
-      email:
-        recipients: []
