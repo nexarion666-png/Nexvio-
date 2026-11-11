@@ -45,10 +45,10 @@ import java.net.URLEncoder
 
 private const val TMDB_API_KEY = "df35ad7483eaf39d05d6b534109453bb"
 private const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
-private val CatalogueInk = Color(0xFF101114)
-private val CataloguePanel = Color(0xFF1B1D22)
-private val CatalogueAccent = Color(0xFF8B7CFF)
-private val CatalogueMuted = Color(0xFF9A9DA6)
+private val CatalogueInk: Color get() = AppAppearanceState.background
+private val CataloguePanel: Color get() = AppAppearanceState.panel
+private val CatalogueAccent: Color get() = AppAppearanceState.accent
+private val CatalogueMuted: Color get() = AppAppearanceState.muted
 
 internal data class TmdbTitle(
     val id: Int,

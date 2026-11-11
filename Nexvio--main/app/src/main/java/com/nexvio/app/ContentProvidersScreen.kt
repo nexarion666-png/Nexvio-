@@ -25,16 +25,16 @@ fun ContentProvidersScreen(
     onOpenRepositories: () -> Unit,
     onBack: () -> Unit
 ) {
-    val accent = Color(0xFF8B7CFF)
-    val muted = Color(0xFF9A9DA6)
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    val accent = AppAppearanceState.accent
+    val muted = AppAppearanceState.muted
+    Column(Modifier.fillMaxSize().background(AppAppearanceState.background).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(Modifier.fillMaxWidth()) {
             Text("‹  Back", color = accent, modifier = Modifier.clickable(onClick = onBack))
         }
         Text("Content providers", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
         Text("Manage installed add-ons or register a plugin repository.", color = muted, fontSize = 14.sp)
         Surface(
-            color = Color(0xFF1B1D22),
+            color = AppAppearanceState.panel,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenAddons)
         ) {
@@ -45,7 +45,7 @@ fun ContentProvidersScreen(
             }
         }
         Surface(
-            color = Color(0xFF1B1D22),
+            color = AppAppearanceState.panel,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenRepositories)
         ) {

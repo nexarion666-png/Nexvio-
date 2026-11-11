@@ -52,18 +52,18 @@ fun PluginRepositoryScreen(onBack: () -> Unit) {
 
     fun refresh() { repositories = store.all() }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(AppAppearanceState.background)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("‹  Back", color = Color(0xFF8B7CFF), modifier = Modifier.clickable(onClick = onBack))
+            Text("‹  Back", color = AppAppearanceState.accent, modifier = Modifier.clickable(onClick = onBack))
             Spacer(Modifier.weight(1f))
             Text("Plugin repositories", fontSize = 21.sp, fontWeight = FontWeight.Bold)
         }
         Text(
             "Add an HTTPS Nuvio-compatible manifest. Enabled providers are tried when you use Find streams; providers requiring unsupported Node modules may not work.",
-            color = Color(0xFF9A9DA6),
+            color = AppAppearanceState.muted,
             fontSize = 13.sp,
             lineHeight = 19.sp,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
@@ -74,7 +74,7 @@ fun PluginRepositoryScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)
         ) { Text("＋  Add repository") }
 
-        message?.let { Text(it, color = Color(0xFF8B7CFF), modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
+        message?.let { Text(it, color = AppAppearanceState.accent, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
 
         if (busy) {
             Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.Center) {
@@ -87,7 +87,7 @@ fun PluginRepositoryScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("No repositories added", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("Tap “Add repository” and paste the HTTPS URL of a compatible JSON manifest.", color = Color(0xFF9A9DA6))
+                Text("Tap “Add repository” and paste the HTTPS URL of a compatible JSON manifest.", color = AppAppearanceState.muted)
             }
         } else {
             LazyColumn(
@@ -96,20 +96,20 @@ fun PluginRepositoryScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(repositories, key = { it.manifestUrl }) { repository ->
-                    Surface(color = Color(0xFF1B1D22), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = AppAppearanceState.panel, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text(repository.name, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                            if (repository.version.isNotBlank()) Text("Version ${repository.version}", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                            if (repository.version.isNotBlank()) Text("Version ${repository.version}", color = AppAppearanceState.muted, fontSize = 12.sp)
                             if (repository.description.isNotBlank()) {
                                 Spacer(Modifier.height(4.dp))
-                                Text(repository.description, color = Color(0xFF9A9DA6), fontSize = 13.sp)
+                                Text(repository.description, color = AppAppearanceState.muted, fontSize = 13.sp)
                             }
                             Spacer(Modifier.height(6.dp))
-                            Text(repository.manifestUrl, color = Color(0xFF8B7CFF), fontSize = 11.sp)
+                            Text(repository.manifestUrl, color = AppAppearanceState.accent, fontSize = 11.sp)
                             Spacer(Modifier.height(8.dp))
                             Text("${repository.providers.size} provider(s) listed", color = Color.White, fontSize = 12.sp)
                             repository.providers.forEach { provider ->
-                                Text("• ${provider.name}", color = Color(0xFF9A9DA6), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                                Text("• ${provider.name}", color = AppAppearanceState.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
                             }
                             Spacer(Modifier.height(10.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

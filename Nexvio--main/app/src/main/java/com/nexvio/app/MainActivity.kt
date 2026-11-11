@@ -97,9 +97,9 @@ import java.net.URI
 import java.net.URL
 
 private val Ink: Color get() = AppAppearanceState.background
-private val Panel = Color(0xFF1B1D22)
+private val Panel: Color get() = AppAppearanceState.panel
 private val Accent: Color get() = AppAppearanceState.accent
-private val Muted = Color(0xFF9A9DA6)
+private val Muted: Color get() = AppAppearanceState.muted
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
 private const val PLAYBACK_TAG = "NexvioPlayback"
 
@@ -2250,7 +2250,7 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 
 private fun activeProfileIdForSettings(context: Context): String = NexvioProfileStore.active(context).id
 
-private fun settingsPrefs(context: Context): android.content.SharedPreferences {
+internal fun settingsPrefs(context: Context): android.content.SharedPreferences {
     val profile = NexvioProfileStore.active(context)
     val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
     return context.getSharedPreferences(name, Context.MODE_PRIVATE)

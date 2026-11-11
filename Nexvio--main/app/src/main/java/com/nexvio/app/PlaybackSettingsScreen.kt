@@ -16,9 +16,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val playbackPanel = Color(0xFF1B1D22)
-private val playbackMuted = Color(0xFF9A9DA6)
-private fun playbackPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+private val playbackPanel: Color get() = AppAppearanceState.panel
+private val playbackMuted: Color get() = AppAppearanceState.muted
+private fun playbackPrefs(context: Context) = settingsPrefs(context)
 
 @Composable
 fun PlaybackSettingsScreenV2(onBack: () -> Unit) {

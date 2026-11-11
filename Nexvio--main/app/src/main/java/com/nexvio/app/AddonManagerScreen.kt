@@ -27,9 +27,9 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
-private val AddonPanel = Color(0xFF1B1D22)
-private val AddonLime = Color(0xFFB7F36B)
-private val AddonMuted = Color(0xFF9A9DA6)
+private val AddonPanel: Color get() = AppAppearanceState.panel
+private val AddonLime: Color get() = AppAppearanceState.accent
+private val AddonMuted: Color get() = AppAppearanceState.muted
 private const val ADDON_MAX_BYTES = 1024 * 1024
 
 data class NexvioAddon(

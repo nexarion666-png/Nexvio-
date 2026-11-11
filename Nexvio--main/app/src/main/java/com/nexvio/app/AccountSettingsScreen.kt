@@ -27,9 +27,9 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-private val AccountAccent = Color(0xFFB7F36B)
-private val AccountPanel = Color(0xFF171D23)
-private val AccountMuted = Color(0xFF9AA4AE)
+private val AccountAccent: Color get() = AppAppearanceState.accent
+private val AccountPanel: Color get() = AppAppearanceState.panel
+private val AccountMuted: Color get() = AppAppearanceState.muted
 private val nexvioAccountSyncMutex = Mutex()
 
 /**
@@ -298,7 +298,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit =
     }
 
     Column(
-        Modifier.fillMaxSize().background(Color(0xFF090D12)).verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().background(AppAppearanceState.background).verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {

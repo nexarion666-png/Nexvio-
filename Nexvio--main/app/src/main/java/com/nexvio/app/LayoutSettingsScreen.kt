@@ -29,6 +29,10 @@ internal object AppAppearanceState {
         get() = themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
     val background: Color
         get() = if (amoledBlack) Color.Black else Color(0xFF101114)
+    val panel: Color
+        get() = if (amoledBlack) Color(0xFF111318) else Color(0xFF1B1D22)
+    val muted: Color
+        get() = Color(0xFF9A9DA6)
 }
 
 private data class LayoutTheme(val name: String, val color: Color)
@@ -43,9 +47,9 @@ private val themeColors = listOf(
     LayoutTheme("Rose", Color(0xFFE85D9E))
 )
 
-private val layoutPanel = Color(0xFF1B1D22)
-private val layoutMuted = Color(0xFF9A9DA6)
-private fun layoutPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+private val layoutPanel: Color get() = AppAppearanceState.panel
+private val layoutMuted: Color get() = AppAppearanceState.muted
+private fun layoutPrefs(context: Context) = settingsPrefs(context)
 
 // Preferences can survive app upgrades. Guard typed reads so an older value stored
 // with a different type cannot crash the Layout screen during composition.
@@ -164,7 +168,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                         }
                     }
                 }
-                Text("Your accent is applied to Nexvio's Material controls and selected navigation state.", color = layoutMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                Text("Your selected theme is applied consistently across Nexvio's screens and controls.", color = layoutMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp))
             }
         }
         item {
