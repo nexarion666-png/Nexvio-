@@ -222,14 +222,13 @@ internal object NexvioCloudSync {
         // that account's cloud state. The marker prevents a user's later Clear action
         // from causing the default source to be re-added on every sync.
         val iptvPrefs = context.getSharedPreferences("nexvio_iptv", Context.MODE_PRIVATE)
-        if (!iptvPrefs.getBoolean("default_playlist_initialized", false)) {
-            val editor = iptvPrefs.edit()
-            if (iptvPrefs.getString("source", null).isNullOrBlank()) {
-                editor.putString("source", "http://108.175.13.7/playlist.m3u")
-                    .putString("label", "Nexvio IPTV")
-                    .putBoolean("local", false)
-            }
-            editor.putBoolean("default_playlist_initialized", true).commit()
+        if (iptvPrefs.getString("source", null).isNullOrBlank()) {
+            iptvPrefs.edit()
+                .putString("source", "http://108.175.13.7/playlist.m3u")
+                .putString("label", "Nexvio IPTV")
+                .putBoolean("local", false)
+                .putBoolean("default_playlist_initialized", true)
+                .commit()
         }
 
         Result(merged.size, syncedSettings, "Cloud sync complete: profiles, settings, add-ons, plugins, IPTV URL/favorites, watchlists, and watch history synced.")
