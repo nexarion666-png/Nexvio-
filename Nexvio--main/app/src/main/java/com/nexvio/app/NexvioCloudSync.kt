@@ -211,11 +211,12 @@ internal object NexvioCloudSync {
 
         // Installed add-ons, plugin repositories, and IPTV URL/favorites are shared app-wide.
         // A local SAF document URI is device-specific, so never upload or restore it.
-        syncPreferenceBucket(context, accountId, "primary", "shared_addons", "nexvio_addons", ::request,
-)
-        syncPreferenceBucket(context, accountId, "primary", "shared_plugin_repositories", "nexvio_plugin_repositories", ::request,
-)
-        syncPreferenceBucket(context, accountId, "primary", "shared_iptv", "nexvio_iptv", ::request,
+        // Use an existing account-owned profile ID to satisfy the profile_state foreign key.
+        val sharedStateProfileId = merged.values.firstOrNull { it.isPrimary }?.id
+            ?: merged.values.first().id
+        syncPreferenceBucket(context, accountId, sharedStateProfileId, "shared_addons", "nexvio_addons", ::request)
+        syncPreferenceBucket(context, accountId, sharedStateProfileId, "shared_plugin_repositories", "nexvio_plugin_repositories", ::request)
+        syncPreferenceBucket(context, accountId, sharedStateProfileId, "shared_iptv", "nexvio_iptv", ::request,
             skipDeviceLocalIptv = true)
 
         // Seed the built-in IPTV playlist once per signed-in account, after restoring
