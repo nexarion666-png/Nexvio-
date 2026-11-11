@@ -456,6 +456,7 @@ class MainActivity : ComponentActivity() {
     var watchEntries by remember { mutableStateOf(historyStore.all()) }
     var movies by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
     var series by remember { mutableStateOf<List<TmdbTitle>>(emptyList()) }
+    var homeCategories by remember { mutableStateOf<Map<String, List<TmdbTitle>>>(emptyMap()) }
     var featuredIndex by remember { mutableIntStateOf(0) }
     val featuredTitles = remember(movies, series) { (movies.take(4) + series.take(4)).distinctBy { it.mediaType + "-" + it.id } }
     LaunchedEffect(Unit) {
@@ -463,6 +464,25 @@ class MainActivity : ComponentActivity() {
     }
     LaunchedEffect(Unit) {
         try { movies = fetchTmdbTitles("movie", "").take(10); series = fetchTmdbTitles("tv", "").take(10) } catch (_: Exception) { }
+        val categorySpecs = listOf(
+            "Hot Animes" to ("16" to "JP"),
+            "For Kids" to ("10751|16" to null),
+            "Mystery" to ("9648" to null),
+            "Adventure" to ("12" to null),
+            "Sci-Fi" to ("878" to null),
+            "Family Drama" to ("10751|18" to null)
+        )
+        categorySpecs.forEach { (name, spec) ->
+            runCatching {
+                val titles = fetchTmdbHomeCategory(
+                    genreIds = spec.first,
+                    includeMovies = name != "Mystery",
+                    includeTv = name != "Mystery",
+                    originCountry = spec.second
+                )
+                homeCategories = homeCategories + (name to titles)
+            }
+        }
     }
     LaunchedEffect(featuredTitles.size, featuredIndex) {
         if (featuredTitles.size > 1) {
@@ -510,6 +530,22 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             item { HomePosterRow(series, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+        }
+        listOf("Hot Animes", "For Kids", "Mystery", "Adventure", "Sci-Fi", "Family Drama").forEach { categoryName ->
+            val categoryTitles = homeCategories[categoryName].orEmpty()
+            item { HomeTitleRow(categoryName, "See all") { onOpen(if (categoryName == "Mystery") "Movies" else "Search") } }
+            if (homeStyle == "Grid") {
+                items(categoryTitles.chunked(2).size) { index ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        categoryTitles.chunked(2)[index].forEach { title ->
+                            HomePosterCard(title, onTitleSelected, posterWidth, posterRadius, showDescriptions, Modifier.weight(1f), fillCell = true)
+                        }
+                        if (categoryTitles.chunked(2)[index].size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            } else if (categoryTitles.isNotEmpty()) {
+                item { HomePosterRow(categoryTitles, onTitleSelected, posterWidth, posterRadius, showDescriptions) }
+            }
         }
         customCollections.forEach { (collectionName, collectionTitles) ->
             item { HomeTitleRow(collectionName, "Edit") { onDetail("Layout") } }
