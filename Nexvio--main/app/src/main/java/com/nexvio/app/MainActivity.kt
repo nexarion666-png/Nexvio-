@@ -827,6 +827,18 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
 
     LaunchedEffect(Unit) {
         if (!loadedOnce) {
+            // Also seed the built-in playlist for users who choose Continue without account.
+            // Signed-in users are seeded during cloud sync; this fallback covers local-only use.
+            val playlistPrefs = context.getSharedPreferences("nexvio_iptv", Context.MODE_PRIVATE)
+            if (!playlistPrefs.getBoolean("default_playlist_initialized", false)) {
+                val editor = playlistPrefs.edit()
+                if (playlistPrefs.getString("source", null).isNullOrBlank()) {
+                    editor.putString("source", "http://108.175.13.7/playlist.m3u")
+                        .putString("label", "Nexvio IPTV")
+                        .putBoolean("local", false)
+                }
+                editor.putBoolean("default_playlist_initialized", true).commit()
+            }
             val saved = store.source()
             if (saved != null) {
                 loading = true
