@@ -17,7 +17,7 @@ data class TvChannel(
 data class ParsedPlaylist(val channels: List<TvChannel>, val error: String? = null)
 
 object M3uParser {
-    private val attributeRegex = Regex("""([\\w-]+)\\s*=\\s*"([^"]*)"""")
+    private val attributeRegex = Regex("""([\w-]+)\s*=\s*"([^"]*)"""")
 
     fun parse(text: String): ParsedPlaylist {
         if (text.isBlank()) return ParsedPlaylist(emptyList(), "The playlist is empty.")
