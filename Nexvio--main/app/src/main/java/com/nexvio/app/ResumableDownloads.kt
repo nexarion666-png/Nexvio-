@@ -232,7 +232,16 @@ internal object ResumableDownloads {
             currentCoroutineContext().ensureActive()
             val code = conn.responseCode
             if (code == 416 && existing > 0) return // We already have every byte.
-            if (code != 200 && code != 206) throw DownloadHttpException("The server refused the download (HTTP $code).")
+            if (code != 200 && code != 206) {
+                val message = when (code) {
+                    401, 403 -> "The source did not authorize this download (HTTP $code). Try playing it in Nexvio or choose another source."
+                    404, 410 -> "This download link is no longer available (HTTP $code). Reopen the title and try a fresh source."
+                    428 -> "VidLink refused this download request (HTTP 428). This stream is not currently available as a direct download through Nexvio. You can still try playing it in-app or choose another source."
+                    429 -> "The source is receiving too many requests (HTTP 429). Wait a while before trying again."
+                    else -> "The server refused the download (HTTP $code). Try another source."
+                }
+                throw DownloadHttpException(message)
+            }
             if (conn.contentType?.startsWith("text/", ignoreCase = true) == true) {
                 throw DownloadHttpException("The server returned a web page, not a media file.")
             }
