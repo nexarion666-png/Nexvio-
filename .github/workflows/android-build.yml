@@ -104,8 +104,8 @@ jobs:
         working-directory: Nexvio--main
         run: cp app/build/outputs/apk/debug/app-debug.apk ../Nexvio.apk
 
-      # Publish main/master builds directly as prereleases; no Actions artifact upload.
-      - name: Publish main-branch APK to GitHub Release
+      # Keep the private repository's own build release.
+      - name: Publish main-branch APK to private source repository release
         if: success() && startsWith(github.ref, 'refs/heads/')
         uses: softprops/action-gh-release@v2
         with:
@@ -116,6 +116,24 @@ jobs:
           make_latest: false
           generate_release_notes: false
           files: Nexvio.apk
+
+      # Mirror the successful APK to the public repository used by the website.
+      # Add NEXVIO_DOWNLOADS_TOKEN as a repository Actions secret before merging.
+      - name: Publish APK to public Nexvio Downloads repository
+        if: success() && startsWith(github.ref, 'refs/heads/')
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: nexarion666-png/Nexvio-Downloads
+          token: ${{ secrets.NEXVIO_DOWNLOADS_TOKEN }}
+          tag_name: main-build-${{ github.run_number }}
+          target_commitish: main
+          name: Nexvio build #${{ github.run_number }}
+          body: Automatically published from the private Nexvio source repository after a successful build.
+          prerelease: true
+          make_latest: false
+          generate_release_notes: false
+          files: Nexvio.apk
+          fail_on_unmatched_files: true
 
       - name: Validate release secrets
         if: startsWith(github.ref, 'refs/tags/')
