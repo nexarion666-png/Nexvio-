@@ -237,7 +237,7 @@ internal object ResumableDownloads {
         var conn = openFollowingRedirects(url, existing, 0, extra)
         var profile = 0
         // Some servers reject unfamiliar headers (e.g. HTTP 428/403). Retry with other header sets before giving up.
-        while (conn.responseCode in RETRY_WITH_OTHER_HEADERS && profile < 2) {
+        while (conn.responseCode in RETRY_WITH_OTHER_HEADERS && profile < LAST_PROFILE) {
             conn.disconnect()
             profile++
             conn = openFollowingRedirects(url, existing, profile, extra)
@@ -279,12 +279,18 @@ internal object ResumableDownloads {
     }
 
     private val RETRY_WITH_OTHER_HEADERS = setOf(400, 401, 403, 405, 406, 415, 428, 429)
+    private const val LAST_PROFILE = 4
+    private const val WEB_USER_AGENT = "Nexvio/1.0"
     private const val DM_USER_AGENT = "AndroidDownloadManager/14 (Linux; U; Android 14; Nexvio)"
     private const val CHROME_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
     /**
-     * [profile] 0 = same headers Android's DownloadManager sends (what worked before),
-     * 1 = Chrome user agent + Referer, 2 = Chrome + an explicit Range header (some servers insist on one).
+     * Header sets, tried in order when the server answers 400/401/403/428/etc:
+     * 0 = exactly what the Nexvio web app's download proxy sends (bare "Nexvio/1.0" user agent, nothing else) - works for vidlink,
+     * 1 = the provider's own headers (Referer/Origin/User-Agent from the scraper),
+     * 2 = Android DownloadManager style user agent,
+     * 3 = Chrome user agent + Referer of the stream host,
+     * 4 = same as 3 plus an explicit Range header (some servers insist on one).
      */
     private fun openFollowingRedirects(startUrl: String, from: Long, profile: Int, extra: Map<String, String> = emptyMap()): HttpURLConnection {
         var current = startUrl
@@ -293,19 +299,24 @@ internal object ResumableDownloads {
             conn.instanceFollowRedirects = false
             conn.connectTimeout = 15_000
             conn.readTimeout = 20_000
-            conn.setRequestProperty("User-Agent", if (profile == 0) DM_USER_AGENT else CHROME_USER_AGENT)
+            conn.setRequestProperty("User-Agent", when (profile) { 0 -> WEB_USER_AGENT; 2 -> DM_USER_AGENT; else -> CHROME_USER_AGENT })
             conn.setRequestProperty("Accept-Encoding", "identity")
-            if (profile >= 1) {
+            if (profile == 0) {
+                conn.setRequestProperty("Accept", "*/*")
+            }
+            if (profile == 1) {
+                extra.forEach { (k, v) ->
+                    if (!k.equals("host", true) && !k.equals("content-length", true) && !k.equals("range", true) && !k.equals("accept-encoding", true)) {
+                        conn.setRequestProperty(k, v)
+                    }
+                }
+            }
+            if (profile >= 3) {
                 conn.setRequestProperty("Accept", "*/*")
                 runCatching { URL(current).let { "${it.protocol}://${it.host}/" } }.getOrNull()?.let { conn.setRequestProperty("Referer", it) }
             }
-            extra.forEach { (k, v) ->
-                if (!k.equals("host", true) && !k.equals("content-length", true) && !k.equals("range", true) && !k.equals("accept-encoding", true)) {
-                    conn.setRequestProperty(k, v)
-                }
-            }
             if (from > 0) conn.setRequestProperty("Range", "bytes=$from-")
-            else if (profile >= 2) conn.setRequestProperty("Range", "bytes=0-")
+            else if (profile >= 4) conn.setRequestProperty("Range", "bytes=0-")
             val code = conn.responseCode
             if (code in 300..399 && code != 304) {
                 val location = conn.getHeaderField("Location")
