@@ -1,0 +1,46 @@
+name: Nexvio native Windows build
+
+on:
+  push:
+    branches: ["windows-kotlin-port", "main"]
+    paths:
+      - "Nexvio--main/**"
+      - ".github/workflows/windows-kotlin.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Nexvio--main
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build native Windows installers
+        run: gradle :desktop:packageMsi :desktop:packageExe
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexvio-Native-Windows
+          path: |
+            Nexvio--main/desktop/build/compose/binaries/main/msi/*.msi
+            Nexvio--main/desktop/build/compose/binaries/main/exe/*.exe
+          if-no-files-found: error
+          retention-days: 30
