@@ -91,7 +91,7 @@ internal class OfflineDownloads(private val context: Context, private val profil
     private val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private val prefs = ResumableDownloads.prefs(context, profileId)
     fun ids(): List<Long> = prefs.getString("ids", "").orEmpty().split(",").mapNotNull { it.toLongOrNull() }
-    fun enqueue(rawUrl: String, rawTitle: String, groupTitle: String = rawTitle, mediaType: String = "movie", posterUrl: String? = null): Long {
+    fun enqueue(rawUrl: String, rawTitle: String, groupTitle: String = rawTitle, mediaType: String = "movie", posterUrl: String? = null, headers: Map<String, String> = emptyMap()): Long {
         val parsed = URI(rawUrl.trim())
         require((parsed.scheme.equals("https", true) || parsed.scheme.equals("http", true)) && !parsed.host.isNullOrBlank()) { "This source does not provide a valid HTTP/HTTPS media URL." }
         val path = parsed.path.orEmpty().lowercase()
@@ -104,7 +104,7 @@ internal class OfflineDownloads(private val context: Context, private val profil
         val title = rawTitle.trim().ifBlank { parsed.path?.substringAfterLast('/')?.ifBlank { "Nexvio media" } ?: "Nexvio media" }
             .replace("/", "_").replace("\\", "_").take(100)
         // New downloads use the resumable engine so they can be paused and resumed.
-        val id = ResumableDownloads.enqueue(context, profileId, parsed.toString(), title)
+        val id = ResumableDownloads.enqueue(context, profileId, parsed.toString(), title, headers)
         prefs.edit().putString("ids", (ids() + id).distinct().joinToString(",")).apply()
         val metadata = org.json.JSONObject()
             .put("groupTitle", groupTitle)
@@ -278,8 +278,8 @@ internal class OfflineDownloads(private val context: Context, private val profil
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
 
-internal fun enqueueDiscoveredStream(context: Context, title: String, url: String, profileId: String = NexvioProfileStore.active(context).id, groupTitle: String = title, mediaType: String = "movie", posterUrl: String? = null): Long =
-    OfflineDownloads(context.applicationContext, profileId).enqueue(url, title, groupTitle, mediaType, posterUrl)
+internal fun enqueueDiscoveredStream(context: Context, title: String, url: String, profileId: String = NexvioProfileStore.active(context).id, groupTitle: String = title, mediaType: String = "movie", posterUrl: String? = null, headers: Map<String, String> = emptyMap()): Long =
+    OfflineDownloads(context.applicationContext, profileId).enqueue(url, title, groupTitle, mediaType, posterUrl, headers)
 
 @Composable
 private fun DownloadActionPill(icon: ImageVector, label: String, onClick: () -> Unit) {
