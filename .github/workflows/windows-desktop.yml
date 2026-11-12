@@ -1,0 +1,60 @@
+name: Nexvio Windows desktop build
+
+on:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "web/**"
+      - ".github/workflows/windows-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Nexvio application
+        run: npm run build
+
+      - name: Package Windows installer
+        run: npx electron-builder --win nsis
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexvio-Windows-Installer
+          path: web/release/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish installer to public downloads repository
+        if: success() && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: nexarion666-png/Nexvio-Downloads
+          token: ${{ secrets.NEXVIO_DOWNLOADS_TOKEN }}
+          tag_name: windows-build-${{ github.run_number }}
+          target_commitish: main
+          name: Nexvio Windows build #${{ github.run_number }}
+          body: Windows 10 and 11 desktop installer built from the Nexvio source repository.
+          prerelease: true
+          make_latest: false
+          generate_release_notes: false
+          files: web/release/*.exe
+          fail_on_unmatched_files: true
