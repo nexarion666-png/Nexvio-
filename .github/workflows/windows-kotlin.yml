@@ -40,7 +40,7 @@ jobs:
         with:
           name: Nexvio-Native-Windows
           path: |
-            Nexvio--main/desktop/build/compose/binaries/main-release/**/*.msi
-            Nexvio--main/desktop/build/compose/binaries/main-release/**/*.exe
+            Nexvio--main/desktop/build/compose/binaries/main/msi/*.msi
+            Nexvio--main/desktop/build/compose/binaries/main/exe/*.exe
           if-no-files-found: error
           retention-days: 30
