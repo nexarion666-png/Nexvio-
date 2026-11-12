@@ -1,7 +1,8 @@
 const { app, BrowserWindow, shell } = require('electron')
 const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 
-const APP_URL = 'file://' + path.join(__dirname, '..', 'dist', 'index.html')
+const APP_URL = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).href
 
 function isSafeExternalUrl(value) {
   try {
