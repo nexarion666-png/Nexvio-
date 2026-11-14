@@ -2047,8 +2047,10 @@ internal fun normalizeSubtitleLanguageCode(raw: String): String {
     }
 }
 
-private const val OPENSUBTITLES_V3_MANIFEST =
-    "https://opensubtitlesv3-pro.dexter21767.com/eyJsYW5ncyI6WyJlbmdsaXNoIl0sInNvdXJjZSI6ImFsbCIsImFpVHJhbnNsYXRlZCI6dHJ1ZSwiYXV0b0FkanVzdG1lbnQiOmZhbHNlfQ==/manifest.json"
+private const val OPENSUBTITLES_V3_PRO_MANIFEST =
+    "https://opensubtitlesv3-pro.dexter21767.com/eyJsYW5ncyI6WyJlbmdsaXNoIl0sInNvdXJjZSI6ImFsbCIsImFpVHJhbnNsYXRlZCI6dHJ1ZSwibWFudWFsQWRqdXN0bWVudCI6ZmFsc2V9/manifest.json"
+private const val OPENSUBTITLES_V3_OFFICIAL_MANIFEST =
+    "https://opensubtitles-v3.strem.io/manifest.json"
 
 private fun subtitleLanguageCode(pref: String): String? = when (pref) {
     "No subtitles" -> null
@@ -2067,34 +2069,56 @@ internal fun searchStremioSubtitles(
     if (resourceType == "series" && (season == null || episode == null || season < 0 || episode <= 0)) {
         throw IllegalStateException("Season and episode metadata are required for series subtitles.")
     }
-    val manifestUri = URI(OPENSUBTITLES_V3_MANIFEST)
-    val basePath = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
-    val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$basePath"
+
     val contentId = if (resourceType == "series") "$imdbId:$season:$episode" else imdbId
-    val endpoint = "$base/subtitles/$resourceType/$contentId.json"
-    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-        connectTimeout = 15000; readTimeout = 20000; instanceFollowRedirects = true
-        setRequestProperty("User-Agent", "Nexvio/1.0 Android")
-        setRequestProperty("Accept", "application/json")
-    }
-    try {
-        val code = connection.responseCode
-        val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
-            ?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) throw IllegalStateException("Subtitle add-on request failed (HTTP $code).")
-        val subtitles = org.json.JSONObject(body).optJSONArray("subtitles") ?: org.json.JSONArray()
-        return buildList {
-            for (i in 0 until subtitles.length()) {
-                val item = subtitles.optJSONObject(i) ?: continue
-                val url = item.optString("url").trim()
-                if (!(url.startsWith("https://") || url.startsWith("http://"))) continue
-                val rawLanguage = item.optString("lang").ifBlank { language }
-                val lang = normalizeSubtitleLanguageCode(rawLanguage).ifBlank { language }
-                val label = item.optString("label").ifBlank { "Subtitle • ${lang.uppercase()}" }
-                add(SubtitleOption(url, lang, label, item.optString("id")))
+    val manifests = listOf(OPENSUBTITLES_V3_PRO_MANIFEST, OPENSUBTITLES_V3_OFFICIAL_MANIFEST)
+    val results = linkedMapOf<String, SubtitleOption>()
+    var lastFailure: Exception? = null
+    var successfulProviders = 0
+
+    for (manifest in manifests) {
+        try {
+            val manifestUri = URI(manifest)
+            val basePath = manifestUri.path.orEmpty()
+                .removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
+            val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$basePath"
+            val endpoint = "$base/subtitles/$resourceType/$contentId.json"
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 20000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "Nexvio/1.0 Android")
+                setRequestProperty("Accept", "application/json")
             }
-        }.distinctBy { it.url }
-    } finally { connection.disconnect() }
+            try {
+                val code = connection.responseCode
+                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) {
+                    throw IllegalStateException("Subtitle add-on request failed (HTTP $code).")
+                }
+                successfulProviders++
+                val subtitles = org.json.JSONObject(body).optJSONArray("subtitles") ?: org.json.JSONArray()
+                for (i in 0 until subtitles.length()) {
+                    val item = subtitles.optJSONObject(i) ?: continue
+                    val url = item.optString("url").trim()
+                    if (!(url.startsWith("https://") || url.startsWith("http://"))) continue
+                    val rawLanguage = item.optString("lang").ifBlank { language }
+                    val lang = normalizeSubtitleLanguageCode(rawLanguage).ifBlank { language }
+                    val label = item.optString("label").ifBlank { "Subtitle • ${lang.uppercase()}" }
+                    results.putIfAbsent(url, SubtitleOption(url, lang, label, item.optString("id")))
+                }
+            } finally {
+                connection.disconnect()
+            }
+        } catch (e: Exception) {
+            lastFailure = e
+            android.util.Log.w("NexvioSubtitles", "Subtitle provider failed; trying fallback: ${e.message}")
+        }
+    }
+
+    if (successfulProviders == 0 && lastFailure != null) throw lastFailure
+    return results.values.toList()
 }
 
 internal fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subtitleUrl: String, onProgress: (Long, Long) -> Unit = { _, _ -> }): java.io.File {
