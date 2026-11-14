@@ -157,6 +157,9 @@ internal class OfflineDownloads(private val context: Context, private val profil
         removeRecord(id)
     }
     fun cancel(id: Long) = deleteDownload(id)
+    fun subtitleState(id: Long): org.json.JSONObject? =
+        if (ResumableDownloads.isOwn(id)) ResumableDownloads.subtitleStatus(context, profileId, id) else null
+    fun downloadSubtitles(id: Long) = ResumableDownloads.startSubtitleDownload(context, profileId, id)
     fun subtitleFile(id: Long): File? {
         if (!ResumableDownloads.isOwn(id)) return null
         val video = ResumableDownloads.completedFile(context, profileId, id) ?: return null
@@ -248,6 +251,7 @@ private fun DownloadItemCard(
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
+    subtitleState: org.json.JSONObject?,
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -283,6 +287,16 @@ private fun DownloadItemCard(
                     if (stopped && !errorText.isNullOrBlank()) "$label — $errorText" else label,
                     color = Color(0xFF9A9DA6), fontSize = 13.sp
                 )
+                if (finished && subtitleState != null) {
+                    when (subtitleState.optString("status")) {
+                        "downloading" -> {
+                            Text("Downloading English subtitles • ${subtitleState.optInt("progress")}%", color = Color(0xFFB7F36B), fontSize = 12.sp)
+                            LinearProgressIndicator(progress = { subtitleState.optInt("progress").coerceIn(0, 100) / 100f }, modifier = Modifier.fillMaxWidth())
+                        }
+                        "downloaded" -> Text("English subtitles saved", color = Color(0xFFB7F36B), fontSize = 12.sp)
+                        "unavailable" -> Text(subtitleState.optString("error").takeIf { it.isNotBlank() } ?: "English subtitles unavailable", color = Color(0xFF9A9DA6), fontSize = 12.sp, maxLines = 2)
+                    }
+                }
                 if (!finished) {
                     val done = transfer?.first ?: 0L
                     val total = transfer?.second ?: -1L
@@ -317,7 +331,40 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
     var openedFolder by remember { mutableStateOf<String?>(null) }
     // Bumped whenever a poster file has just been saved, so the screen re-reads it from disk.
     var posterVersion by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { rows = store.rows(); progressRefresh++; delay(1000) } }
+    var subtitlePromptId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            rows = store.rows()
+            progressRefresh++
+            if (subtitlePromptId == null) {
+                subtitlePromptId = rows.firstOrNull { row ->
+                    row.third == DownloadManager.STATUS_SUCCESSFUL &&
+                        store.subtitleState(row.first)?.optString("status") == "awaiting_confirmation"
+                }?.first
+            }
+            delay(1000)
+        }
+    }
+    val promptTitle = subtitlePromptId?.let { id -> rows.firstOrNull { it.first == id }?.second ?: "this video" }
+    if (subtitlePromptId != null) {
+        AlertDialog(
+            onDismissRequest = {
+                subtitlePromptId?.let { ResumableDownloads.updateSubtitleChoice(context, profileId, it, false) }
+                subtitlePromptId = null
+            },
+            title = { Text("Download English subtitles?") },
+            text = { Text("The video has finished downloading. Would you like Nexvio to download English subtitles for $promptTitle?") },
+            confirmButton = {
+                TextButton(onClick = { subtitlePromptId?.let { store.downloadSubtitles(it) }; subtitlePromptId = null }) { Text("Yes, download") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    subtitlePromptId?.let { ResumableDownloads.updateSubtitleChoice(context, profileId, it, false) }
+                    subtitlePromptId = null
+                }) { Text("Not now") }
+            }
+        )
+    }
     val groups = remember(rows, progressRefresh) {
         rows.groupBy { row ->
             val meta = store.metadata(row.first)
@@ -395,6 +442,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
                         errorText = store.errorMessage(row.first),
                         poster = posterModel,
                         canPause = ResumableDownloads.isOwn(row.first),
+                        subtitleState = store.subtitleState(row.first),
                         onPlay = { playRow(row) },
                         onPause = { store.pause(row.first); rows = store.rows() },
                         onResume = { store.resume(row.first); rows = store.rows() },
