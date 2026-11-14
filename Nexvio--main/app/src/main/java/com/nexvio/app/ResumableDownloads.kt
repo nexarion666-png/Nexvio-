@@ -108,6 +108,12 @@ internal object ResumableDownloads {
             .put("subtitleEpisode", subtitleEpisode ?: -1)
         prefs.edit().putString("own_$id", rec.toString()).apply()
         startJob(app, profileId, id)
+        // Fetch English subtitles immediately, in parallel with the video transfer.
+        if (subtitleId?.startsWith("tt") == true) startSubtitleDownload(app, profileId, id)
+        else update(prefs, id) {
+            it.put("subtitleStatus", "unavailable")
+                .put("subtitleError", "No IMDb-linked movie or episode ID is available for subtitle matching.")
+        }
         return id
     }
 
@@ -220,11 +226,16 @@ internal object ResumableDownloads {
                             val percent = if (total > 0L) ((done * 100L) / total).toInt().coerceIn(0, 99) else 0
                             update(prefs, id) { it.put("subtitleProgress", percent) }
                         }
-                        val video = completedFile(app, profileId, id) ?: throw IOException("Downloaded video is missing.")
-                        val sidecar = File(dir, video.name + ".en.vtt")
-                        if (sidecar.exists()) sidecar.delete()
-                        if (!temp.renameTo(sidecar)) { temp.copyTo(sidecar, overwrite = true); temp.delete() }
-                        if (sidecar.isFile && sidecar.length() > 0L) { saved = sidecar; break }
+                        val item = record(prefs, id) ?: throw IOException("Download record is missing.")
+                        val videoName = item.optString("file")
+                        val staged = File(dir, "$videoName.en.vtt.part")
+                        if (staged.exists()) staged.delete()
+                        if (!temp.renameTo(staged)) { temp.copyTo(staged, overwrite = true); temp.delete() }
+                        if (staged.isFile && staged.length() > 0L) {
+                            promoteSubtitleIfVideoReady(app, profileId, id)
+                            saved = staged
+                            break
+                        }
                     } catch (e: Exception) { lastError = e.message }
                 }
                 update(prefs, id) { item ->
@@ -239,6 +250,25 @@ internal object ResumableDownloads {
         job.invokeOnCompletion { subtitleJobs.remove(id, job) }
         job.start()
         DownloadService.ensureRunning(app)
+    }
+
+    private fun promoteSubtitleIfVideoReady(context: Context, profileId: String, id: Long) {
+        val prefs = prefs(context, profileId)
+        val rec = record(prefs, id) ?: return
+        if (rec.optInt("status") != DownloadManager.STATUS_SUCCESSFUL) return
+        val dir = directory(context, profileId)
+        val name = rec.optString("file")
+        if (name.isBlank()) return
+        val staged = File(dir, "$name.en.vtt.part")
+        if (!staged.isFile || staged.length() <= 0L) return
+        val sidecar = File(dir, "$name.en.vtt")
+        if (sidecar.exists()) sidecar.delete()
+        if (!staged.renameTo(sidecar)) {
+            runCatching { staged.copyTo(sidecar, overwrite = true); staged.delete() }
+        }
+        if (sidecar.isFile && sidecar.length() > 0L) {
+            update(prefs, id) { it.put("subtitleFile", sidecar.name) }
+        }
     }
 
     fun completedFile(context: Context, profileId: String, id: Long): File? {
@@ -263,17 +293,8 @@ internal object ResumableDownloads {
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
             update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
-            // Automatically fetch English subtitles immediately after the video is saved.
-            // This runs in the downloader's IO scope, so it does not depend on DownloadsScreen
-            // being open or the user confirming a dialog.
-            if (rec.optString("subtitleId").startsWith("tt")) {
-                startSubtitleDownload(app, profileId, id)
-            } else {
-                update(prefs, id) {
-                    it.put("subtitleStatus", "unavailable")
-                        .put("subtitleError", "No IMDb-linked movie or episode ID is available for subtitle matching.")
-                }
-            }
+            // If the parallel subtitle fetch finished first, publish its staged sidecar now.
+            promoteSubtitleIfVideoReady(app, profileId, id)
             notifyDownloadComplete(app, rec.optString("title"))
         } catch (e: CancellationException) {
             throw e
