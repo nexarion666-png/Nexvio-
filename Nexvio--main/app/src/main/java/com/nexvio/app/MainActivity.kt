@@ -2035,6 +2035,18 @@ private fun PlayerFloatingButton(
 
 internal data class SubtitleOption(val url: String, val language: String, val label: String, val release: String)
 
+/** Normalizes common ISO-639 aliases returned by subtitle add-ons. */
+internal fun normalizeSubtitleLanguageCode(raw: String): String {
+    val value = raw.trim().lowercase(java.util.Locale.ROOT).replace('_', '-')
+    return when {
+        value == "english" || value == "eng" || value == "en" || value.startsWith("en-") -> "en"
+        value == "japanese" || value == "jpn" || value == "ja" || value.startsWith("ja-") -> "ja"
+        value == "spanish" || value == "spa" || value == "es" || value.startsWith("es-") -> "es"
+        value == "french" || value == "fra" || value == "fre" || value == "fr" || value.startsWith("fr-") -> "fr"
+        else -> value.substringBefore('-')
+    }
+}
+
 private const val OPENSUBTITLES_V3_MANIFEST =
     "https://opensubtitlesv3-pro.dexter21767.com/eyJsYW5ncyI6WyJlbmdsaXNoIl0sInNvdXJjZSI6ImFsbCIsImFpVHJhbnNsYXRlZCI6dHJ1ZSwiYXV0b0FkanVzdG1lbnQiOmZhbHNlfQ==/manifest.json"
 
@@ -2076,7 +2088,8 @@ internal fun searchStremioSubtitles(
                 val item = subtitles.optJSONObject(i) ?: continue
                 val url = item.optString("url").trim()
                 if (!(url.startsWith("https://") || url.startsWith("http://"))) continue
-                val lang = item.optString("lang").ifBlank { language }
+                val rawLanguage = item.optString("lang").ifBlank { language }
+                val lang = normalizeSubtitleLanguageCode(rawLanguage).ifBlank { language }
                 val label = item.optString("label").ifBlank { "Subtitle • ${lang.uppercase()}" }
                 add(SubtitleOption(url, lang, label, item.optString("id")))
             }
