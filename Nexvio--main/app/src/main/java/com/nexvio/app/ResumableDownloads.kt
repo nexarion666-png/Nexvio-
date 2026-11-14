@@ -224,7 +224,7 @@ internal object ResumableDownloads {
                     val season = rec.optInt("subtitleSeason", -1).takeIf { it >= 0 }
                     val episode = rec.optInt("subtitleEpisode", -1).takeIf { it > 0 }
                     val english = searchStremioSubtitles(imdbId, resourceType, season, episode, "en")
-                        .filter { it.language.equals("en", ignoreCase = true) || it.language.startsWith("en-", ignoreCase = true) }
+                        .filter { normalizeSubtitleLanguageCode(it.language) == "en" }
                     var savedSubtitle: File? = null
                     for (option in english.take(8)) {
                         try {
