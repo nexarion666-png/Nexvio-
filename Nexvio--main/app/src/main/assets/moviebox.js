@@ -54,7 +54,9 @@ function canonicalUrl(value) {
   var queryAt = withoutFragment.indexOf("?");
   var address = queryAt >= 0 ? withoutFragment.slice(0, queryAt) : withoutFragment;
   var queryString = queryAt >= 0 ? withoutFragment.slice(queryAt + 1) : "";
-  var path = address.replace(/^https?:\\/\\/[^/]+/i, "");
+  var schemeAt = address.indexOf("://");
+  var pathStart = schemeAt >= 0 ? address.indexOf("/", schemeAt + 3) : -1;
+  var path = pathStart >= 0 ? address.slice(pathStart) : "/";
   if (!path) path = "/";
   if (!queryString) return path;
 
