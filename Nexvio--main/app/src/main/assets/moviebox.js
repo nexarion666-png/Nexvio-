@@ -32,9 +32,15 @@ function initializeSession() {
     Realme: ["RMX3085", "RMX3360", "RMX3551"]
   };
   var brands = Object.keys(brandModels);
-  selectedBrand = brands[Math.floor(Math.random() * brands.length)].toLowerCase();
-  var models = brandModels[selectedBrand.charAt(0).toUpperCase() + selectedBrand.slice(1)];
+  var brand = brands[Math.floor(Math.random() * brands.length)];
+  var models = brandModels[brand];
+  selectedBrand = brand.toLowerCase();
+  // Keep the original brand key for model lookup (OnePlus is case-sensitive).
   selectedModel = models[Math.floor(Math.random() * models.length)];
+  if (!selectedModel) {
+    selectedBrand = "samsung";
+    selectedModel = brandModels.Samsung[0];
+  }
 }
 
 function md5(value) {
