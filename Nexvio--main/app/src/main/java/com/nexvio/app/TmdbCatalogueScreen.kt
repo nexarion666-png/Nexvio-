@@ -685,6 +685,10 @@ private suspend fun fetchTmdbImdbId(item: TmdbTitle): String = withContext(Dispa
 private suspend fun fetchAddonStreams(context: android.content.Context, item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onStreams: suspend (List<DiscoveredStream>) -> Unit, onProviderStatus: suspend (String, String) -> Unit): List<DiscoveredStream> = withContext(Dispatchers.IO) {
     val output = java.util.Collections.synchronizedList(mutableListOf<DiscoveredStream>())
     val publishLock = kotlinx.coroutines.sync.Mutex()
+    // Resolve the catalogue title's IMDb ID once and attach it to every source,
+    // including Nuvio repository streams (not only Stremio add-on streams).
+    val subtitleImdbId = try { fetchTmdbImdbId(item) } catch (_: Exception) { null }
+    val subtitleType = if (item.mediaType == "movie") "movie" else "series"
 
     suspend fun publish(newStreams: List<DiscoveredStream>) {
         if (newStreams.isEmpty()) return
@@ -704,7 +708,13 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             try {
                 NuvioScraperEngine.discover(context, item, seasonNumber, episodeNumber, onStreams = { found ->
                     publish(found.map { stream ->
-                        DiscoveredStream(stream.providerName, stream.title, stream.url, stream.quality, stream.headers)
+                        DiscoveredStream(
+                        stream.providerName, stream.title, stream.url, stream.quality, stream.headers,
+                        subtitleId = subtitleImdbId,
+                        subtitleType = subtitleType,
+                        subtitleSeason = if (subtitleType == "series") seasonNumber else null,
+                        subtitleEpisode = if (subtitleType == "series") episodeNumber else null
+                    )
                     })
                 }, onStatus = { message ->
                     val separator = message.indexOf(":")
@@ -728,7 +738,7 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
             }
 
         if (addons.isNotEmpty()) {
-            val imdbId = try { fetchTmdbImdbId(item) } catch (_: Exception) { null }
+            val imdbId = subtitleImdbId
             if (imdbId != null) {
                 val resourceType = if (item.mediaType == "movie") "movie" else "series"
                 val streamId = if (item.mediaType == "movie") imdbId else "$imdbId:$seasonNumber:$episodeNumber"
