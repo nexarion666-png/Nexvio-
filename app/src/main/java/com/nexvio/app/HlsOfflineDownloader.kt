@@ -85,27 +85,69 @@ internal object HlsOfflineDownloader {
         String(fetchBytes(url, headers, callback), Charsets.UTF_8)
 
     private suspend fun fetchBytes(url: String, headers: Map<String, String>, callback: (HttpURLConnection?) -> Unit): ByteArray {
-        currentCoroutineContext().ensureActive()
-        val connection = URL(url).openConnection() as HttpURLConnection
-        callback(connection)
-        try {
-            connection.instanceFollowRedirects = true
-            connection.connectTimeout = 20000
-            connection.readTimeout = 45000
-            connection.setRequestProperty("User-Agent", "Nexvio/1.0")
-            connection.setRequestProperty("Accept", "*/*")
-            connection.setRequestProperty("Accept-Encoding", "identity")
-            headers.forEach { (key, value) ->
-                if (!key.equals("host", true) && !key.equals("content-length", true) && !key.equals("range", true) && !key.equals("accept-encoding", true)) connection.setRequestProperty(key, value)
+        // Vidlink can answer HTTP 428 when the request headers differ from the ones
+        // accepted by its playback CDN. Try the provider's playback headers first,
+        // then the same plain Nexvio request used by the web downloader, and finally
+        // a standard Android browser request. These are ordinary request variants,
+        // not a retry of a rejected/expired media URL with altered authorization.
+        val profiles = listOf(
+            headers,
+            emptyMap(),
+            mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                "Accept" to "*/*"
+            )
+        )
+        var lastStatus = -1
+        for (profileIndex in profiles.indices) {
+            var current = url
+            var redirectCount = 0
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val connection = URL(current).openConnection() as HttpURLConnection
+                callback(connection)
+                try {
+                    connection.instanceFollowRedirects = false
+                    connection.connectTimeout = 20000
+                    connection.readTimeout = 45000
+                    connection.setRequestProperty("User-Agent", "Nexvio/1.0")
+                    connection.setRequestProperty("Accept", "*/*")
+                    connection.setRequestProperty("Accept-Encoding", "identity")
+                    profiles[profileIndex].forEach { (key, value) ->
+                        if (!key.equals("host", true) && !key.equals("content-length", true) &&
+                            !key.equals("range", true) && !key.equals("accept-encoding", true)) {
+                            connection.setRequestProperty(key, value)
+                        }
+                    }
+                    if (profileIndex == 2) {
+                        val origin = URL(current).let { "${it.protocol}://${it.host}/" }
+                        connection.setRequestProperty("Referer", origin)
+                    }
+                    val status = connection.responseCode
+                    if (status in 300..399 && status != 304) {
+                        val location = connection.getHeaderField("Location")
+                        if (location.isNullOrBlank() || redirectCount++ >= 5) {
+                            throw IOException("Vidlink sent an invalid or excessive redirect while downloading.")
+                        }
+                        current = URL(URL(current), location).toString()
+                        continue
+                    }
+                    if (status == 428 || status == 403 || status == 401 || status == 429) {
+                        lastStatus = status
+                        break
+                    }
+                    if (status !in 200..299) {
+                        throw IOException("Vidlink HLS request failed (HTTP " + status + ").")
+                    }
+                    val bytes = connection.inputStream.use { it.readBytes() }
+                    currentCoroutineContext().ensureActive()
+                    return bytes
+                } finally {
+                    callback(null)
+                    connection.disconnect()
+                }
             }
-            val status = connection.responseCode
-            if (status !in 200..299) throw IOException("Vidlink HLS request failed (HTTP " + status + ").")
-            val bytes = connection.inputStream.use { it.readBytes() }
-            currentCoroutineContext().ensureActive()
-            return bytes
-        } finally {
-            callback(null)
-            connection.disconnect()
         }
+        throw IOException("Vidlink refused the HLS download request (HTTP " + lastStatus + "). The provider may require a playback-only session or may not permit offline downloads for this stream.")
     }
 }
