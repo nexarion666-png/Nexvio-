@@ -97,9 +97,9 @@ import java.net.URI
 import java.net.URL
 
 private val Ink: Color get() = AppAppearanceState.background
-private val Panel = Color(0xFF1B1D22)
+private val Panel: Color get() = AppAppearanceState.panel
 private val Accent: Color get() = AppAppearanceState.accent
-private val Muted = Color(0xFF9A9DA6)
+private val Muted: Color get() = AppAppearanceState.muted
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
 private const val PLAYBACK_TAG = "NexvioPlayback"
 
@@ -151,9 +151,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-/** Outlives the activity so the final sync can finish after the screen goes away. */
-private val exitSyncScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
-
 class MainActivity : ComponentActivity() {
     private var foregroundSyncJob: Job? = null
 
@@ -179,11 +176,6 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         foregroundSyncJob?.cancel()
         foregroundSyncJob = null
-        // The loop above only runs while the app is on screen, so anything changed in the last few
-        // seconds would otherwise wait until the next time this device is opened before reaching
-        // the other devices. Push one last sync as the app goes to the background.
-        val appContext = applicationContext
-        exitSyncScope.launch { syncNexvioAccountAutomatically(appContext) }
         super.onStop()
     }
 }
@@ -843,6 +835,17 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
 
     LaunchedEffect(Unit) {
         if (!loadedOnce) {
+            // Also seed the built-in playlist for users who choose Continue without account.
+            // Signed-in users are seeded during cloud sync; this fallback covers local-only use.
+            val playlistPrefs = context.getSharedPreferences("nexvio_iptv", Context.MODE_PRIVATE)
+            if (playlistPrefs.getString("source", null).isNullOrBlank()) {
+                playlistPrefs.edit()
+                    .putString("source", "http://108.175.13.7/playlist.m3u")
+                    .putString("label", "Nexvio IPTV")
+                    .putBoolean("local", false)
+                    .putBoolean("default_playlist_initialized", true)
+                    .commit()
+            }
             val saved = store.source()
             if (saved != null) {
                 loading = true
@@ -966,7 +969,6 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
-    var subtitlesEnabled by rememberSaveable(channel.id) { mutableStateOf(true) }
     var subtitleDiagnostic by remember(channel.id) { mutableStateOf("No subtitle diagnostics yet.") }
     var subtitleSearchMode by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
@@ -1106,14 +1108,6 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 .setSeekForwardIncrementMs(10_000L)
                 .build()
             createdPlayer = instance
-            // Automatic subtitle mode starts with text tracks disabled. Nexvio then
-            // chooses one explicit track (embedded or downloaded) and pins it, rather
-            // than letting adaptive streams silently switch tracks as manifests refresh.
-            if (playerPrefs.getBoolean("auto_subtitles", true)) {
-                instance.trackSelectionParameters = instance.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                    .build()
-            }
             player = instance
             // Restore the saved position only on the FIRST ready state. Without this, every
             // buffering->ready transition (including after a seek) jumped back to the stale
@@ -1341,9 +1335,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 
     // Automatically picks and applies the best online subtitle for movies/episodes.
-    LaunchedEffect(player, channel.id, subtitlesEnabled) {
+    LaunchedEffect(player, channel.id) {
         val active = player ?: return@LaunchedEffect
-        if (!subtitlesEnabled) return@LaunchedEffect
         if (!playerPrefs.getBoolean("auto_subtitles", true)) return@LaunchedEffect
         val code = subtitleLanguageCode(playerPrefs.getString("preferred_subtitle_language", "Device language") ?: "Device language")
             ?: return@LaunchedEffect
@@ -1387,9 +1380,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
             Log.w("NexvioSubtitles", "Cached subtitle failed validation: ${e.message}")
             cached.delete()
         }
-        // 3) Search the configured OpenSubtitles V3 Stremio add-on using the
-        // IMDb identity attached to catalogue streams. Never guess an IMDb ID
-        // from an IPTV channel name.
+        // 3) Use the configured Stremio subtitle add-on for TMDB-linked streams.
+        // IPTV streams without an IMDb identity are deliberately not title-guessed.
         val imdbId = channel.subtitleId?.takeIf { it.startsWith("tt") } ?: return@LaunchedEffect
         val resourceType = channel.subtitleType ?: return@LaunchedEffect
         try {
@@ -1811,16 +1803,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             revealControls()
                         }, size = 23)
                         PlayerIconButton(Icons.Filled.HighQuality, "Video quality", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, size = 25)
-                        PlayerIconButton(Icons.Filled.ClosedCaption, if (subtitlesEnabled) "Turn subtitles off" else "Turn subtitles on", {
-                            subtitlesEnabled = !subtitlesEnabled
-                            player?.let { active ->
-                                active.trackSelectionParameters = active.trackSelectionParameters.buildUpon()
-                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
-                                    .build()
-                            }
-                            showPlayerMessage(if (subtitlesEnabled) "Subtitles on" else "Subtitles off")
-                            revealControls()
-                        }, size = 24)
+                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { subtitleSearchMode = false; subtitleDialogOpen = true; subtitleError = null; revealControls() }, size = 24)
                         PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
                             if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
                             else showPlayerMessage("No playlist is attached to this stream.")
@@ -2048,13 +2031,8 @@ private fun subtitleLanguageCode(pref: String): String? = when (pref) {
     else -> java.util.Locale.getDefault().language.ifBlank { "en" }
 }
 
-/** Query the configured Stremio subtitle resource with the IMDb identity from TMDB. */
 private fun searchStremioSubtitles(
-    imdbId: String,
-    resourceType: String,
-    season: Int?,
-    episode: Int?,
-    language: String
+    imdbId: String, resourceType: String, season: Int?, episode: Int?, language: String
 ): List<SubtitleOption> {
     require(imdbId.startsWith("tt")) { "A valid IMDb title ID is required for subtitle lookup." }
     require(resourceType == "movie" || resourceType == "series") { "Unsupported subtitle media type." }
@@ -2067,9 +2045,7 @@ private fun searchStremioSubtitles(
     val contentId = if (resourceType == "series") "$imdbId:$season:$episode" else imdbId
     val endpoint = "$base/subtitles/$resourceType/$contentId.json"
     val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-        connectTimeout = 15000
-        readTimeout = 20000
-        instanceFollowRedirects = true
+        connectTimeout = 15000; readTimeout = 20000; instanceFollowRedirects = true
         setRequestProperty("User-Agent", "Nexvio/1.0 Android")
         setRequestProperty("Accept", "application/json")
     }
@@ -2089,27 +2065,22 @@ private fun searchStremioSubtitles(
                 add(SubtitleOption(url, lang, label, item.optString("id")))
             }
         }.distinctBy { it.url }
-    } finally {
-        connection.disconnect()
-    }
+    } finally { connection.disconnect() }
 }
 
-/** Downloads a direct Stremio subtitle URL, converts SRT to WebVTT and caches it. */
 private fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subtitleUrl: String): java.io.File {
     require(subtitleUrl.startsWith("https://") || subtitleUrl.startsWith("http://")) {
         "The subtitle add-on returned an invalid download URL."
     }
-    val fileConnection = (URL(subtitleUrl).openConnection() as HttpURLConnection).apply {
-        connectTimeout = 15000
-        readTimeout = 30000
-        instanceFollowRedirects = true
+    val connection = (URL(subtitleUrl).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 15000; readTimeout = 30000; instanceFollowRedirects = true
         setRequestProperty("User-Agent", "Nexvio/1.0 Android")
         setRequestProperty("Accept", "text/vtt, text/plain, */*")
     }
     try {
-        val code = fileConnection.responseCode
+        val code = connection.responseCode
         if (code !in 200..299) throw IllegalStateException("Subtitle file download failed (HTTP $code).")
-        val rawBytes = fileConnection.inputStream.use { input ->
+        val rawBytes = connection.inputStream.use { input ->
             val output = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(8192)
             var total = 0
@@ -2134,9 +2105,7 @@ private fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subti
         if (!vtt.contains("-->")) throw IllegalStateException("Subtitle file contained no cues.")
         return java.io.File(cacheDir, "nexvio_subtitle_${channelId.hashCode()}.vtt")
             .apply { writeText(vtt, Charsets.UTF_8) }
-    } finally {
-        fileConnection.disconnect()
-    }
+    } finally { connection.disconnect() }
 }
 
 private fun subtitleEndTimeMs(file: java.io.File): Long? {
@@ -2218,7 +2187,7 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 
 private fun activeProfileIdForSettings(context: Context): String = NexvioProfileStore.active(context).id
 
-private fun settingsPrefs(context: Context): android.content.SharedPreferences {
+internal fun settingsPrefs(context: Context): android.content.SharedPreferences {
     val profile = NexvioProfileStore.active(context)
     val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
     return context.getSharedPreferences(name, Context.MODE_PRIVATE)
