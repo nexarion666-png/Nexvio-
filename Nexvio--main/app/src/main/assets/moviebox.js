@@ -61,7 +61,7 @@ function canonicalUrl(value) {
       }).join("&");
     }
   } catch (_) {
-    var raw = String(value).replace(/^https?:\\/\\/[^/]+/, "");
+    var raw = String(value).replace(/^https?:\/\/[^/]+/, "");
     var at = raw.indexOf("?");
     path = at >= 0 ? raw.slice(0, at) : raw;
     if (at >= 0) query = raw.slice(at + 1).split("&").sort().join("&");
