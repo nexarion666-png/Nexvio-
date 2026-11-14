@@ -221,15 +221,20 @@ internal object ResumableDownloads {
                 val season = rec.optInt("subtitleSeason", -1).takeIf { it >= 0 }
                 val episode = rec.optInt("subtitleEpisode", -1).takeIf { it > 0 }
                 val dir = directory(app, profileId).also { it.mkdirs() }
-                val options = searchStremioSubtitles(imdbId, type, season, episode, "en")
-                    .filter { normalizeSubtitleLanguageCode(it.language) == "en" }
+                // Subtitle providers can briefly return 502/503/504 while the video
+                // download continues. Retry those transient failures before giving up.
+                val options = withSubtitleProviderRetries {
+                    searchStremioSubtitles(imdbId, type, season, episode, "en")
+                }.filter { normalizeSubtitleLanguageCode(it.language) == "en" }
                 var saved: File? = null
                 var lastError: String? = null
                 for (option in options.take(8)) {
                     try {
-                        val temp = downloadSubtitleVtt(dir, "offline-download-$id", option.url) { done, total ->
-                            val percent = if (total > 0L) ((done * 100L) / total).toInt().coerceIn(0, 99) else 0
-                            update(prefs, id) { it.put("subtitleProgress", percent) }
+                        val temp = withSubtitleProviderRetries {
+                            downloadSubtitleVtt(dir, "offline-download-$id", option.url) { done, total ->
+                                val percent = if (total > 0L) ((done * 100L) / total).toInt().coerceIn(0, 99) else 0
+                                update(prefs, id) { it.put("subtitleProgress", percent) }
+                            }
                         }
                         val item = record(prefs, id) ?: throw IOException("Download record is missing.")
                         val videoName = item.optString("file")
@@ -255,6 +260,30 @@ internal object ResumableDownloads {
         job.invokeOnCompletion { subtitleJobs.remove(id, job) }
         job.start()
         DownloadService.ensureRunning(app)
+    }
+
+    /**
+     * Retries only transient subtitle-provider gateway failures. Permanent errors and
+     * cancellation are propagated immediately. This never blocks or cancels the video job.
+     */
+    private suspend fun <T> withSubtitleProviderRetries(block: suspend () -> T): T {
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = e.message.orEmpty()
+                val transientGatewayFailure =
+                    Regex("""HTTP\\s*(502|503|504)""", RegexOption.IGNORE_CASE).containsMatchIn(message) ||
+                    listOf("Bad Gateway", "Service Unavailable", "Gateway Timeout")
+                        .any { message.contains(it, ignoreCase = true) }
+                if (!transientGatewayFailure || attempt >= 2) throw e
+                delay(1_000L * (attempt + 1))
+                attempt++
+            }
+        }
     }
 
     private fun promoteSubtitleIfVideoReady(context: Context, profileId: String, id: Long) {
