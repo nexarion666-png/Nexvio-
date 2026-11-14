@@ -193,12 +193,6 @@ internal object ResumableDownloads {
         return downloaded to rec.optLong("total", -1L)
     }
 
-    fun updateSubtitleChoice(context: Context, profileId: String, id: Long, accepted: Boolean) {
-        update(prefs(context.applicationContext, profileId), id) {
-            it.put("subtitleStatus", if (accepted) "downloading" else "skipped")
-        }
-    }
-
     fun subtitleStatus(context: Context, profileId: String, id: Long): JSONObject? =
         record(prefs(context, profileId), id)?.let { JSONObject().put("status", it.optString("subtitleStatus")).put("progress", it.optInt("subtitleProgress", 0)).put("error", it.optString("subtitleError")) }
 
@@ -264,9 +258,16 @@ internal object ResumableDownloads {
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
             update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
-            // Wait for the user's choice before looking up or downloading subtitles.
+            // Automatically fetch English subtitles immediately after the video is saved.
+            // This runs in the downloader's IO scope, so it does not depend on DownloadsScreen
+            // being open or the user confirming a dialog.
             if (rec.optString("subtitleId").startsWith("tt")) {
-                update(prefs, id) { it.put("subtitleStatus", "awaiting_confirmation").put("subtitleProgress", 0) }
+                startSubtitleDownload(app, profileId, id)
+            } else {
+                update(prefs, id) {
+                    it.put("subtitleStatus", "unavailable")
+                        .put("subtitleError", "No IMDb-linked movie or episode ID is available for subtitle matching.")
+                }
             }
             notifyDownloadComplete(app, rec.optString("title"))
         } catch (e: CancellationException) {
