@@ -57,11 +57,12 @@ internal object ResumableDownloads {
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<Long, Job>()
+    private val subtitleJobs = ConcurrentHashMap<Long, Job>()
     private val connections = ConcurrentHashMap<Long, HttpURLConnection>()
     private val reconciledProfiles = mutableSetOf<String>()
 
     /** Transfers that are actually running right now (paused ones do not count). */
-    fun activeCount(): Int = jobs.values.count { it.isActive }
+    fun activeCount(): Int = jobs.values.count { it.isActive } + subtitleJobs.values.count { it.isActive }
 
     fun prefs(context: Context, profileId: String): SharedPreferences =
         context.getSharedPreferences(if (profileId == "primary") "nexvio_downloads" else "nexvio_downloads_$profileId", Context.MODE_PRIVATE)
@@ -202,7 +203,7 @@ internal object ResumableDownloads {
         val rec = record(prefs, id) ?: return
         if (rec.optString("subtitleStatus") == "downloading" || rec.optString("subtitleStatus") == "downloaded") return
         update(prefs, id) { it.put("subtitleStatus", "downloading").put("subtitleProgress", 0).remove("subtitleError") }
-        scope.launch {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val imdbId = rec.optString("subtitleId")
                 val type = rec.optString("subtitleType", "movie")
@@ -234,6 +235,10 @@ internal object ResumableDownloads {
                 update(prefs, id) { it.put("subtitleStatus", "unavailable").put("subtitleError", e.message ?: "Subtitle download failed.") }
             }
         }
+        subtitleJobs.put(id, job)?.cancel()
+        job.invokeOnCompletion { subtitleJobs.remove(id, job) }
+        job.start()
+        DownloadService.ensureRunning(app)
     }
 
     fun completedFile(context: Context, profileId: String, id: Long): File? {
