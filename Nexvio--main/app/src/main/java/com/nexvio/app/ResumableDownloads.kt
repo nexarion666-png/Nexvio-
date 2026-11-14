@@ -193,6 +193,55 @@ internal object ResumableDownloads {
         return downloaded to rec.optLong("total", -1L)
     }
 
+    fun updateSubtitleChoice(context: Context, profileId: String, id: Long, accepted: Boolean) {
+        update(prefs(context.applicationContext, profileId), id) {
+            it.put("subtitleStatus", if (accepted) "downloading" else "skipped")
+        }
+    }
+
+    fun subtitleStatus(context: Context, profileId: String, id: Long): JSONObject? =
+        record(prefs(context, profileId), id)?.let { JSONObject().put("status", it.optString("subtitleStatus")).put("progress", it.optInt("subtitleProgress", 0)).put("error", it.optString("subtitleError")) }
+
+    fun startSubtitleDownload(context: Context, profileId: String, id: Long) {
+        val app = context.applicationContext
+        val prefs = prefs(app, profileId)
+        val rec = record(prefs, id) ?: return
+        if (rec.optString("subtitleStatus") == "downloading" || rec.optString("subtitleStatus") == "downloaded") return
+        update(prefs, id) { it.put("subtitleStatus", "downloading").put("subtitleProgress", 0).remove("subtitleError") }
+        scope.launch {
+            try {
+                val imdbId = rec.optString("subtitleId")
+                val type = rec.optString("subtitleType", "movie")
+                val season = rec.optInt("subtitleSeason", -1).takeIf { it >= 0 }
+                val episode = rec.optInt("subtitleEpisode", -1).takeIf { it > 0 }
+                val dir = directory(app, profileId).also { it.mkdirs() }
+                val options = searchStremioSubtitles(imdbId, type, season, episode, "en")
+                    .filter { normalizeSubtitleLanguageCode(it.language) == "en" }
+                var saved: File? = null
+                var lastError: String? = null
+                for (option in options.take(8)) {
+                    try {
+                        val temp = downloadSubtitleVtt(dir, "offline-download-$id", option.url) { done, total ->
+                            val percent = if (total > 0L) ((done * 100L) / total).toInt().coerceIn(0, 99) else 0
+                            update(prefs, id) { it.put("subtitleProgress", percent) }
+                        }
+                        val video = completedFile(app, profileId, id) ?: throw IOException("Downloaded video is missing.")
+                        val sidecar = File(dir, video.name + ".en.vtt")
+                        if (sidecar.exists()) sidecar.delete()
+                        if (!temp.renameTo(sidecar)) { temp.copyTo(sidecar, overwrite = true); temp.delete() }
+                        if (sidecar.isFile && sidecar.length() > 0L) { saved = sidecar; break }
+                    } catch (e: Exception) { lastError = e.message }
+                }
+                update(prefs, id) { item ->
+                    if (saved != null) item.put("subtitleStatus", "downloaded").put("subtitleProgress", 100).put("subtitleFile", saved.name)
+                    else item.put("subtitleStatus", "unavailable").put("subtitleError", lastError ?: "No English subtitle was found.")
+                }
+            } catch (e: Exception) {
+                update(prefs, id) { it.put("subtitleStatus", "unavailable").put("subtitleError", e.message ?: "Subtitle download failed.") }
+            }
+        }
+    }
+
     fun completedFile(context: Context, profileId: String, id: Long): File? {
         val rec = record(prefs(context, profileId), id) ?: return null
         if (rec.optInt("status") != DownloadManager.STATUS_SUCCESSFUL) return null
@@ -215,42 +264,9 @@ internal object ResumableDownloads {
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
             update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
-            // Fetch the English subtitle while the download worker is still active. A subtitle
-            // failure is isolated and must never change the completed video status.
-            val imdbId = rec.optString("subtitleId")
-            if (imdbId.startsWith("tt")) {
-                try {
-                    val resourceType = rec.optString("subtitleType", "movie")
-                    val season = rec.optInt("subtitleSeason", -1).takeIf { it >= 0 }
-                    val episode = rec.optInt("subtitleEpisode", -1).takeIf { it > 0 }
-                    val english = searchStremioSubtitles(imdbId, resourceType, season, episode, "en")
-                        .filter { normalizeSubtitleLanguageCode(it.language) == "en" }
-                    var savedSubtitle: File? = null
-                    for (option in english.take(8)) {
-                        try {
-                            val temporary = downloadSubtitleVtt(dir, "offline-download-$id", option.url)
-                            val sidecar = File(dir, "$name.en.vtt")
-                            if (sidecar.exists()) sidecar.delete()
-                            if (!temporary.renameTo(sidecar)) {
-                                temporary.copyTo(sidecar, overwrite = true)
-                                temporary.delete()
-                            }
-                            if (sidecar.isFile && sidecar.length() > 0L) {
-                                savedSubtitle = sidecar
-                                break
-                            }
-                        } catch (candidateError: Exception) {
-                            android.util.Log.w("NexvioDownloads", "English subtitle candidate failed for $id: ${candidateError.message}")
-                        }
-                    }
-                    update(prefs, id) { record ->
-                        record.put("subtitleStatus", if (savedSubtitle != null) "downloaded" else "unavailable")
-                        savedSubtitle?.let { record.put("subtitleFile", it.name) }
-                    }
-                } catch (subtitleError: Exception) {
-                    android.util.Log.w("NexvioDownloads", "Could not save English subtitle for $id: ${subtitleError.message}")
-                    update(prefs, id) { it.put("subtitleStatus", "unavailable") }
-                }
+            // Wait for the user's choice before looking up or downloading subtitles.
+            if (rec.optString("subtitleId").startsWith("tt")) {
+                update(prefs, id) { it.put("subtitleStatus", "awaiting_confirmation").put("subtitleProgress", 0) }
             }
             notifyDownloadComplete(app, rec.optString("title"))
         } catch (e: CancellationException) {
