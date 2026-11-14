@@ -331,39 +331,12 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
     var openedFolder by remember { mutableStateOf<String?>(null) }
     // Bumped whenever a poster file has just been saved, so the screen re-reads it from disk.
     var posterVersion by remember { mutableIntStateOf(0) }
-    var subtitlePromptId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(Unit) {
         while (true) {
             rows = store.rows()
             progressRefresh++
-            if (subtitlePromptId == null) {
-                subtitlePromptId = rows.firstOrNull { row ->
-                    row.third == DownloadManager.STATUS_SUCCESSFUL &&
-                        store.subtitleState(row.first)?.optString("status") == "awaiting_confirmation"
-                }?.first
-            }
             delay(1000)
         }
-    }
-    val promptTitle = subtitlePromptId?.let { id -> rows.firstOrNull { it.first == id }?.second ?: "this video" }
-    if (subtitlePromptId != null) {
-        AlertDialog(
-            onDismissRequest = {
-                subtitlePromptId?.let { ResumableDownloads.updateSubtitleChoice(context, profileId, it, false) }
-                subtitlePromptId = null
-            },
-            title = { Text("Download English subtitles?") },
-            text = { Text("The video has finished downloading. Would you like Nexvio to download English subtitles for $promptTitle?") },
-            confirmButton = {
-                TextButton(onClick = { subtitlePromptId?.let { store.downloadSubtitles(it) }; subtitlePromptId = null }) { Text("Yes, download") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    subtitlePromptId?.let { ResumableDownloads.updateSubtitleChoice(context, profileId, it, false) }
-                    subtitlePromptId = null
-                }) { Text("Not now") }
-            }
-        )
     }
     val groups = remember(rows, progressRefresh) {
         rows.groupBy { row ->
