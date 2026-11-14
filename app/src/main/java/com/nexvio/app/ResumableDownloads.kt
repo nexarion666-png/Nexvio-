@@ -90,14 +90,17 @@ internal object ResumableDownloads {
         while (prefs.contains("own_$id")) id++
         val dir = directory(app, profileId).also { it.mkdirs() }
         val safeTitle = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "Nexvio media" }
+        val isHls = runCatching { URL(url).path.lowercase().endsWith(".m3u8") }.getOrDefault(false)
         var name = safeTitle
         var counter = 1
-        while (File(dir, name).exists() || File(dir, "$name.part").exists()) { counter++; name = "$safeTitle ($counter)" }
-        runCatching { File(dir, "$name.part").createNewFile() }
+        while (File(dir, name).exists() || File(dir, "$name.part").exists() || File(dir, "$name.hls").exists() || File(dir, "$name.hls.part").exists()) { counter++; name = "$safeTitle ($counter)" }
+        if (!isHls) runCatching { File(dir, "$name.part").createNewFile() }
         val rec = JSONObject()
             .put("url", url)
             .put("title", title)
-            .put("file", name)
+            .put("file", if (isHls) "$name.hls/playlist.m3u8" else name)
+            .put("hls", isHls)
+            .put("hlsDir", if (isHls) "$name.hls" else "")
             .put("status", DownloadManager.STATUS_PENDING)
             .put("total", -1L)
             .put("headers", JSONObject().also { h -> headers.forEach { (k, v) -> h.put(k, v) } })
@@ -145,7 +148,13 @@ internal object ResumableDownloads {
             if (rec != null) {
                 val dir = directory(app, profileId)
                 val name = rec.optString("file")
-                if (name.isNotBlank()) {
+                if (rec.optBoolean("hls")) {
+                    val folder = rec.optString("hlsDir")
+                    if (folder.isNotBlank()) {
+                        runCatching { File(dir, folder).deleteRecursively() }
+                        runCatching { File(dir, "$folder.part").deleteRecursively() }
+                    }
+                } else if (name.isNotBlank()) {
                     runCatching { File(dir, name).delete() }
                     runCatching { File(dir, "$name.part").delete() }
                 }
@@ -185,7 +194,10 @@ internal object ResumableDownloads {
         val rec = record(prefs(context, profileId), id) ?: return null
         val dir = directory(context, profileId)
         val name = rec.optString("file")
-        val downloaded = if (rec.optInt("status") == DownloadManager.STATUS_SUCCESSFUL) File(dir, name).length() else File(dir, "$name.part").length()
+        val downloaded = if (rec.optBoolean("hls")) {
+            val folder = File(dir, if (rec.optInt("status") == DownloadManager.STATUS_SUCCESSFUL) rec.optString("hlsDir") else rec.optString("hlsDir") + ".part")
+            folder.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        } else if (rec.optInt("status") == DownloadManager.STATUS_SUCCESSFUL) File(dir, name).length() else File(dir, "$name.part").length()
         return downloaded to rec.optLong("total", -1L)
     }
 
@@ -202,14 +214,22 @@ internal object ResumableDownloads {
         val rec = record(prefs, id) ?: return
         val dir = directory(app, profileId).also { it.mkdirs() }
         val name = rec.optString("file")
-        val part = File(dir, "$name.part")
-        val target = File(dir, name)
+        val isHls = rec.optBoolean("hls")
+        val hlsDir = rec.optString("hlsDir")
+        val part = if (isHls) File(dir, "$hlsDir.part") else File(dir, "$name.part")
+        val target = if (isHls) File(dir, hlsDir) else File(dir, name)
         try {
             currentCoroutineContext().ensureActive()
             update(prefs, id) { if (it.optInt("status") == DownloadManager.STATUS_PENDING) it.put("status", DownloadManager.STATUS_RUNNING) }
-            transfer(rec.optString("url"), part, prefs, id, readHeaders(rec))
-            if (target.exists()) target.delete()
-            if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
+            if (isHls) {
+                HlsOfflineDownloader.download(rec.optString("url"), part, readHeaders(rec)) { connection ->
+                    if (connection == null) connections.remove(id) else connections[id] = connection
+                }
+            } else {
+                transfer(rec.optString("url"), part, prefs, id, readHeaders(rec))
+            }
+            if (target.exists()) target.deleteRecursively()
+            if (!part.renameTo(target)) throw IOException("Could not save the finished download.")
             update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
             notifyDownloadComplete(app, rec.optString("title"))
         } catch (e: CancellationException) {

@@ -809,7 +809,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         AlertDialog(
             onDismissRequest = { downloadTarget = null },
             title = { Text("Download for offline") },
-            text = { Text("Save " + item.title + (if (item.mediaType == "tv") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " (" + target.quality + ")? Only direct media files are supported. HLS/DASH playlists, DRM and provider pages cannot be converted by this downloader.") },
+            text = { Text("Save " + item.title + (if (item.mediaType == "tv") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " (" + target.quality + ")? Direct files and HLS video-on-demand streams are supported. Live playlists, DASH, DRM-protected streams and provider pages cannot be saved offline.") },
             confirmButton = {
                 TextButton(onClick = {
                     // Use the media title as the filename; series also include SxxExx.

@@ -95,11 +95,12 @@ internal class OfflineDownloads(private val context: Context, private val profil
         val parsed = URI(rawUrl.trim())
         require((parsed.scheme.equals("https", true) || parsed.scheme.equals("http", true)) && !parsed.host.isNullOrBlank()) { "This source does not provide a valid HTTP/HTTPS media URL." }
         val path = parsed.path.orEmpty().lowercase()
-        require(!path.endsWith(".m3u8") && !path.endsWith(".mpd") && !path.endsWith(".m3u")) {
-            "This source is a streaming playlist (HLS/DASH/M3U), not a direct media file. Nexvio cannot save it as an offline video yet."
+        val isHls = path.endsWith(".m3u8")
+        require(!path.endsWith(".mpd") && !path.endsWith(".m3u")) {
+            "This source uses an unsupported DASH/M3U playlist. Nexvio offline downloads support direct files and HLS VOD streams."
         }
-        require(listOf(".mp4", ".m4v", ".mkv", ".webm", ".mp3", ".aac").any { path.endsWith(it) } || !parsed.path.orEmpty().substringAfterLast("/").contains(".")) {
-            "This URL does not look like a direct media file. Choose a direct MP4/M4V/MKV/WebM/MP3/AAC source."
+        require(isHls || listOf(".mp4", ".m4v", ".mkv", ".webm", ".mp3", ".aac").any { path.endsWith(it) } || !parsed.path.orEmpty().substringAfterLast("/").contains(".")) {
+            "This URL does not look like a supported media file. Choose a direct file or an HLS VOD playlist."
         }
         val title = rawTitle.trim().ifBlank { parsed.path?.substringAfterLast('/')?.ifBlank { "Nexvio media" } ?: "Nexvio media" }
             .replace("/", "_").replace("\\", "_").take(100)
