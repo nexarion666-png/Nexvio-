@@ -2048,7 +2048,7 @@ internal fun normalizeSubtitleLanguageCode(raw: String): String {
 }
 
 private const val OPENSUBTITLES_V3_PRO_MANIFEST =
-    "https://opensubtitlesv3-pro.dexter21767.com/eyJsYW5ncyI6WyJlbmdsaXNoIl0sInNvdXJjZSI6ImFsbCIsImFpVHJhbnNsYXRlZCI6dHJ1ZSwibWFudWFsQWRqdXN0bWVudCI6ZmFsc2V9/manifest.json"
+    "https://opensubtitlesv3-pro.dexter21767.com/eyJsYW5ncyI6WyJlbmdsaXNoIl0sInNvdXJjZSI6ImFsbCIsImFpVHJhbnNsYXRlZCI6dHJ1ZSwiYXV0b0FkanVzdG1lbnQiOmZhbHNlfQ==/manifest.json"
 private const val OPENSUBTITLES_V3_OFFICIAL_MANIFEST =
     "https://opensubtitles-v3.strem.io/manifest.json"
 
