@@ -83,7 +83,7 @@ internal object ResumableDownloads {
     }
 
     @Synchronized
-    fun enqueue(context: Context, profileId: String, url: String, title: String): Long {
+    fun enqueue(context: Context, profileId: String, url: String, title: String, headers: Map<String, String> = emptyMap()): Long {
         val app = context.applicationContext
         val prefs = prefs(app, profileId)
         var id = System.currentTimeMillis().coerceAtLeast(OWN_ID_FLOOR)
@@ -100,6 +100,7 @@ internal object ResumableDownloads {
             .put("file", name)
             .put("status", DownloadManager.STATUS_PENDING)
             .put("total", -1L)
+            .put("headers", JSONObject().also { saved -> headers.forEach { (key, value) -> saved.put(key, value) } })
         prefs.edit().putString("own_$id", rec.toString()).apply()
         startJob(app, profileId, id)
         return id
@@ -206,7 +207,7 @@ internal object ResumableDownloads {
         try {
             currentCoroutineContext().ensureActive()
             update(prefs, id) { if (it.optInt("status") == DownloadManager.STATUS_PENDING) it.put("status", DownloadManager.STATUS_RUNNING) }
-            transfer(rec.optString("url"), part, prefs, id)
+            transfer(rec.optString("url"), part, prefs, id, readHeaders(rec))
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
             update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
@@ -224,9 +225,15 @@ internal object ResumableDownloads {
         }
     }
 
-    private suspend fun transfer(url: String, part: File, prefs: SharedPreferences, id: Long) {
+    private suspend fun transfer(url: String, part: File, prefs: SharedPreferences, id: Long, headers: Map<String, String>) {
         val existing = if (part.exists()) part.length() else 0L
-        val conn = openFollowingRedirects(url, existing)
+        var profile = 0
+        var conn = openFollowingRedirects(url, existing, headers, profile)
+        while (conn.responseCode in setOf(401, 403, 428, 429) && profile < 2) {
+            conn.disconnect()
+            profile++
+            conn = openFollowingRedirects(url, existing, headers, profile)
+        }
         connections[id] = conn
         try {
             currentCoroutineContext().ensureActive()
@@ -272,15 +279,31 @@ internal object ResumableDownloads {
         }
     }
 
-    private fun openFollowingRedirects(startUrl: String, from: Long): HttpURLConnection {
+    private fun readHeaders(rec: JSONObject): Map<String, String> {
+        val saved = rec.optJSONObject("headers") ?: return emptyMap()
+        val result = LinkedHashMap<String, String>()
+        saved.keys().forEach { key -> saved.optString(key).takeIf { it.isNotBlank() }?.let { result[key] = it } }
+        return result
+    }
+
+    private fun openFollowingRedirects(startUrl: String, from: Long, headers: Map<String, String>, profile: Int): HttpURLConnection {
         var current = startUrl
         repeat(6) {
             val conn = URL(current).openConnection() as HttpURLConnection
             conn.instanceFollowRedirects = false
             conn.connectTimeout = 15_000
             conn.readTimeout = 20_000
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Nexvio")
+            conn.setRequestProperty("User-Agent", when (profile) {
+                0 -> headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: "Nexvio/1.0"
+                1 -> "Nexvio/1.0"
+                else -> "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            })
+            conn.setRequestProperty("Accept", "*/*")
             conn.setRequestProperty("Accept-Encoding", "identity")
+            if (profile == 0) headers.forEach { (key, value) ->
+                if (!key.equals("host", true) && !key.equals("content-length", true) && !key.equals("range", true) && !key.equals("accept-encoding", true)) conn.setRequestProperty(key, value)
+            }
+            if (profile == 2) URL(current).let { conn.setRequestProperty("Referer", "${it.protocol}://${it.host}/") }
             if (from > 0) conn.setRequestProperty("Range", "bytes=$from-")
             val code = conn.responseCode
             if (code in 300..399 && code != 304) {
