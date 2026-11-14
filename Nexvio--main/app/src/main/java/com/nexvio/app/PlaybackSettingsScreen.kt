@@ -20,24 +20,38 @@ private val playbackPanel: Color get() = AppAppearanceState.panel
 private val playbackMuted: Color get() = AppAppearanceState.muted
 private fun playbackPrefs(context: Context) = settingsPrefs(context)
 
+// SharedPreferences values can retain older types across app upgrades. A mismatched
+// type throws ClassCastException during composition, so every startup read is guarded.
+private fun safePlaybackBoolean(prefs: android.content.SharedPreferences, key: String, default: Boolean): Boolean =
+    runCatching { prefs.getBoolean(key, default) }.getOrDefault(default)
+
+private fun safePlaybackString(prefs: android.content.SharedPreferences, key: String, default: String): String =
+    runCatching { prefs.getString(key, default) ?: default }.getOrDefault(default)
+
+private fun safePlaybackInt(prefs: android.content.SharedPreferences, key: String, default: Int): Int =
+    runCatching { prefs.getInt(key, default) }.getOrDefault(default)
+
+private fun safePlaybackFloat(prefs: android.content.SharedPreferences, key: String, default: Float): Float =
+    runCatching { prefs.getFloat(key, default) }.getOrDefault(default)
+
 @Composable
 fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember(context) { playbackPrefs(context) }
-    var autoplay by remember { mutableStateOf(prefs.getBoolean("playback_autoplay", true)) }
-    var resume by remember { mutableStateOf(prefs.getBoolean("playback_resume", true)) }
-    var resize by remember { mutableStateOf(prefs.getString("playback_resize", "Fit") ?: "Fit") }
-    var loadingOverlay by remember { mutableStateOf(prefs.getBoolean("playback_loading_overlay", true)) }
-    var minBuffer by remember { mutableFloatStateOf(prefs.getInt("playback_min_buffer", 15).toFloat()) }
-    var maxBuffer by remember { mutableFloatStateOf(prefs.getInt("playback_max_buffer", 45).toFloat()) }
-    var startBuffer by remember { mutableFloatStateOf(prefs.getInt("playback_start_buffer", 5).toFloat()) }
-    var backBuffer by remember { mutableFloatStateOf(prefs.getInt("playback_back_buffer", 10).toFloat()) }
-    var preferredAudio by remember { mutableStateOf(prefs.getString("preferred_audio_language", "Device language") ?: "Device language") }
-    var preferredSubtitle by remember { mutableStateOf(prefs.getString("preferred_subtitle_language", "Device language") ?: "Device language") }
-    var autoSubtitles by remember { mutableStateOf(prefs.getBoolean("auto_subtitles", true)) }
-    var subtitleSize by remember { mutableFloatStateOf(prefs.getFloat("subtitle_size_sp", 18f)) }
-    var autoplayNext by remember { mutableStateOf(prefs.getBoolean("playback_autoplay_next", true)) }
-    var touchGestures by remember { mutableStateOf(prefs.getBoolean("playback_touch_gestures", false)) }
+    var autoplay by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_autoplay", true)) }
+    var resume by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_resume", true)) }
+    var resize by remember { mutableStateOf(safePlaybackString(prefs, "playback_resize", "Fit")) }
+    var loadingOverlay by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_loading_overlay", true)) }
+    var minBuffer by remember { mutableFloatStateOf(safePlaybackInt(prefs, "playback_min_buffer", 15).coerceIn(5, 60).toFloat()) }
+    var maxBuffer by remember { mutableFloatStateOf(safePlaybackInt(prefs, "playback_max_buffer", 45).coerceIn(15, 120).toFloat()) }
+    var startBuffer by remember { mutableFloatStateOf(safePlaybackInt(prefs, "playback_start_buffer", 5).coerceIn(1, 30).toFloat()) }
+    var backBuffer by remember { mutableFloatStateOf(safePlaybackInt(prefs, "playback_back_buffer", 10).coerceIn(0, 60).toFloat()) }
+    var preferredAudio by remember { mutableStateOf(safePlaybackString(prefs, "preferred_audio_language", "Device language")) }
+    var preferredSubtitle by remember { mutableStateOf(safePlaybackString(prefs, "preferred_subtitle_language", "Device language")) }
+    var autoSubtitles by remember { mutableStateOf(safePlaybackBoolean(prefs, "auto_subtitles", true)) }
+    var subtitleSize by remember { mutableFloatStateOf(safePlaybackFloat(prefs, "subtitle_size_sp", 18f).takeIf { it.isFinite() }?.coerceIn(12f, 36f) ?: 18f) }
+    var autoplayNext by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_autoplay_next", true)) }
+    var touchGestures by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_touch_gestures", false)) }
     var dialog by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
