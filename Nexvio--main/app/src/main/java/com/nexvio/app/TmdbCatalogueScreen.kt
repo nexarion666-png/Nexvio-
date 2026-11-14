@@ -835,7 +835,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         val installed = runCatching { org.json.JSONArray(context.getSharedPreferences("nexvio_addons", Context.MODE_PRIVATE).getString("installed", "[]") ?: "[]") }.getOrElse { org.json.JSONArray() }
         ((0 until installed.length()).mapNotNull { installed.optJSONObject(it) }
             .filter { it.optBoolean("enabled", true) }
-            .map { it.optString("name").ifBlank { "Add-on" } } + "Vidlink").distinct()
+            .map { it.optString("name").ifBlank { "Add-on" } } + listOf("Vidlink", "MovieBox")).distinct()
     }
     val providerStatuses = remember(item.id, item.mediaType) { androidx.compose.runtime.mutableStateMapOf<String, String>().apply { addonNames.forEach { put(it, "Waiting") } } }
     var loading by remember(item.id, item.mediaType) { mutableStateOf(false) }
