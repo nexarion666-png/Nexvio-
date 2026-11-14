@@ -24,14 +24,17 @@ function initializeSession() {
   if (deviceId) return;
   var chars = "0123456789abcdef";
   for (var i = 0; i < 32; i++) deviceId += chars.charAt(Math.floor(Math.random() * 16));
-  var models = [
-    ["samsung", "SM-S918B"], ["samsung", "SM-A528B"],
-    ["xiaomi", "2201117TI"], ["xiaomi", "Redmi Note 11"],
-    ["oneplus", "LE2111"], ["google", "Pixel 7"], ["realme", "RMX3360"]
-  ];
-  var chosen = models[Math.floor(Math.random() * models.length)];
-  selectedBrand = chosen[0];
-  selectedModel = chosen[1];
+  var brandModels = {
+    Samsung: ["SM-S918B", "SM-A528B", "SM-M336B"],
+    Xiaomi: ["2201117TI", "M2012K11AI", "Redmi Note 11"],
+    OnePlus: ["LE2111", "CPH2449", "IN2023"],
+    Google: ["Pixel 6", "Pixel 7", "Pixel 8"],
+    Realme: ["RMX3085", "RMX3360", "RMX3551"]
+  };
+  var brands = Object.keys(brandModels);
+  selectedBrand = brands[Math.floor(Math.random() * brands.length)].toLowerCase();
+  var models = brandModels[selectedBrand.charAt(0).toUpperCase() + selectedBrand.slice(1)];
+  selectedModel = models[Math.floor(Math.random() * models.length)];
 }
 
 function md5(value) {
@@ -44,34 +47,41 @@ function decodeQueryPart(value) {
 }
 
 function canonicalUrl(value) {
-  var text = String(value);
-  var match = text.match(/^https?:\/\/[^/?#]+([^?#]*)(?:\?([^#]*))?/i);
-  var path = match ? (match[1] || "/") : text.split("?")[0];
-  var rawQuery = match && match[2] ? match[2] : "";
-  if (!rawQuery) return path;
-  var pairs = rawQuery.split("&").filter(Boolean).map(function (part) {
-    var at = part.indexOf("=");
-    return {
-      key: decodeQueryPart(at < 0 ? part : part.slice(0, at)),
-      value: decodeQueryPart(at < 0 ? "" : part.slice(at + 1))
-    };
-  });
-  pairs.sort(function (a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; });
-  return path + "?" + pairs.map(function (pair) { return pair.key + "=" + pair.value; }).join("&");
+  var path = "";
+  var query = "";
+  try {
+    var parsed = new URL(value);
+    path = parsed.pathname;
+    var params = Array.from(parsed.searchParams.keys()).sort();
+    if (params.length > 0) {
+      query = params.map(function (key) {
+        return parsed.searchParams.getAll(key).map(function (entry) {
+          return key + "=" + entry;
+        }).join("&");
+      }).join("&");
+    }
+  } catch (_) {
+    var raw = String(value).replace(/^https?:\\/\\/[^/]+/, "");
+    var at = raw.indexOf("?");
+    path = at >= 0 ? raw.slice(0, at) : raw;
+    if (at >= 0) query = raw.slice(at + 1).split("&").sort().join("&");
+  }
+  return query ? path + "?" + query : path;
 }
 
 function signature(method, accept, contentType, url, body, timestamp) {
   var bodyHash = "";
   var bodyLength = "";
   if (body) {
-    var words = CryptoJS.enc.Utf8.parse(body);
-    bodyHash = md5(words);
-    bodyLength = String(words.sigBytes);
+    var bodyWords = CryptoJS.enc.Utf8.parse(body);
+    bodyHash = md5(bodyWords);
+    bodyLength = bodyWords.sigBytes.toString();
   }
   var canonical = method.toUpperCase() + "\n" + (accept || "") + "\n" +
     (contentType || "") + "\n" + bodyLength + "\n" + timestamp + "\n" +
     bodyHash + "\n" + canonicalUrl(url);
-  return timestamp + "|2|" + CryptoJS.HmacMD5(canonical, SECRET_KEY).toString(CryptoJS.enc.Base64);
+  return timestamp + "|2|" +
+    CryptoJS.HmacMD5(canonical, SECRET_KEY).toString(CryptoJS.enc.Base64);
 }
 
 function request(method, url, body, customHeaders) {
@@ -116,11 +126,17 @@ function request(method, url, body, customHeaders) {
       attempts++;
       fetch(url, options).then(function (response) {
         if (!response.ok) {
-          if ((response.status === 403 || response.status === 429 || response.status >= 500) && attempts < 3) {
-            setTimeout(run, attempts * 700);
-            return;
-          }
-          reject(new Error("MovieBox API returned HTTP " + response.status));
+          response.text().then(function (bodyText) {
+            if ((response.status === 403 || response.status === 429 || response.status >= 500) && attempts < 3) {
+              setTimeout(run, attempts * 700);
+              return;
+            }
+            var detail = String(bodyText || "").replace(/\\s+/g, " ").slice(0, 240);
+            reject(new Error("MovieBox API returned HTTP " + response.status +
+              (detail ? " — " + detail : "")));
+          }).catch(function () {
+            reject(new Error("MovieBox API returned HTTP " + response.status));
+          });
           return;
         }
         Promise.all([response.text(), Promise.resolve(response.headers)]).then(function (values) {
