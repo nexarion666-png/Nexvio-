@@ -225,6 +225,8 @@ internal object NuvioScraperEngine {
                             val type = JSONObject.quote(if (item.mediaType == "movie") "movie" else "tv")
                             val s = if (item.mediaType == "movie") "null" else season.toString()
                             val e = if (item.mediaType == "movie") "null" else episode.toString()
+                            val title = JSONObject.quote(item.title)
+                            val year = JSONObject.quote(item.year)
                             val cryptoJsSource = context.assets.open("crypto-js.min.js").bufferedReader().use { it.readText() }
                             val js = context.assets.open("nexvio-prelude.js").bufferedReader().use { it.readText() }
                                 .replace("__NEXVIO_CRYPTO_JS__", cryptoJsSource)
@@ -233,6 +235,8 @@ internal object NuvioScraperEngine {
                                 .replace("__NEXVIO_TYPE_JSON__", type)
                                 .replace("__NEXVIO_SEASON__", s)
                                 .replace("__NEXVIO_EPISODE__", e)
+                                .replace("__NEXVIO_TITLE_JSON__", title)
+                                .replace("__NEXVIO_YEAR_JSON__", year)
                                 .replace("__NEXVIO_PROVIDER_JSON__", JSONObject.quote(name))
                             view.evaluateJavascript(js) { result ->
                                 android.util.Log.d("NexvioNuvio", "$name evaluateJavascript result: " + (result ?: "null"))
