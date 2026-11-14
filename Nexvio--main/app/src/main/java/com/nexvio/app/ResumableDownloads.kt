@@ -276,7 +276,7 @@ internal object ResumableDownloads {
             } catch (e: Exception) {
                 val message = e.message.orEmpty()
                 val transientGatewayFailure =
-                    Regex("""HTTP\\s*(502|503|504)""", RegexOption.IGNORE_CASE).containsMatchIn(message) ||
+                    Regex("""HTTP\s*(502|503|504)""", RegexOption.IGNORE_CASE).containsMatchIn(message) ||
                     listOf("Bad Gateway", "Service Unavailable", "Gateway Timeout")
                         .any { message.contains(it, ignoreCase = true) }
                 if (!transientGatewayFailure || attempt >= 2) throw e
