@@ -89,7 +89,7 @@ function request(method, url, body, customHeaders) {
       os_version: "16",
       device_id: deviceId,
       install_store: "ps",
-      gaid: "",
+      gaid: "d7578036d13336cc",
       brand: selectedBrand,
       model: selectedModel,
       system_language: "en",
