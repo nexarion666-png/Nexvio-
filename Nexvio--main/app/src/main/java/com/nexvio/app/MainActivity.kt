@@ -2097,7 +2097,7 @@ internal fun searchStremioSubtitles(
     } finally { connection.disconnect() }
 }
 
-internal fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subtitleUrl: String): java.io.File {
+internal fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subtitleUrl: String, onProgress: (Long, Long) -> Unit = { _, _ -> }): java.io.File {
     require(subtitleUrl.startsWith("https://") || subtitleUrl.startsWith("http://")) {
         "The subtitle add-on returned an invalid download URL."
     }
@@ -2109,16 +2109,18 @@ internal fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subt
     try {
         val code = connection.responseCode
         if (code !in 200..299) throw IllegalStateException("Subtitle file download failed (HTTP $code).")
+        val expected = connection.contentLengthLong
         val rawBytes = connection.inputStream.use { input ->
             val output = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(8192)
-            var total = 0
+            var total = 0L
             while (true) {
                 val count = input.read(buffer)
                 if (count < 0) break
                 total += count
-                if (total > 2 * 1024 * 1024) throw IllegalStateException("Subtitle file is too large.")
+                if (total > 2L * 1024 * 1024) throw IllegalStateException("Subtitle file is too large.")
                 output.write(buffer, 0, count)
+                onProgress(total, expected)
             }
             output.toByteArray()
         }
