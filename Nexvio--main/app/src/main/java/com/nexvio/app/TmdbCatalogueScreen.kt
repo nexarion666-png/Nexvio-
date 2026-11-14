@@ -897,7 +897,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     // Use the media title as the filename; series also include SxxExx.
                     val title = item.title + (if (item.mediaType == "tv") " - S" + seasonNumber.toString().padStart(2, '0') + "E" + episodeNumber.toString().padStart(2, '0') else "")
                     try {
-                        enqueueDiscoveredStream(context, title, target.url, groupTitle = item.title, mediaType = item.mediaType, posterUrl = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }, headers = target.headers)
+                        enqueueDiscoveredStream(context, title, target.url, groupTitle = item.title, mediaType = item.mediaType, posterUrl = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }, headers = target.headers, subtitleId = target.subtitleId, subtitleType = target.subtitleType, subtitleSeason = target.subtitleSeason, subtitleEpisode = target.subtitleEpisode)
                         downloadMessage = "Download queued. Track it in Library → Offline."
                     } catch (e: Exception) {
                         downloadMessage = e.message ?: "This stream cannot be downloaded as a direct media file."

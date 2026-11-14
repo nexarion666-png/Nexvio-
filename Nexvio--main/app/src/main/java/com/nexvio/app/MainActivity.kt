@@ -1368,7 +1368,23 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 return@LaunchedEffect
             }
         }
-        // 2) Re-use the subtitle already saved for this video, if any.
+        // 2) Offline downloads keep an English WebVTT sidecar beside the video.
+        // Load the persistent file before checking the temporary player cache or network.
+        val offlineDownloadId = channel.id.takeIf { it.startsWith("offline-download-") }
+            ?.removePrefix("offline-download-")?.toLongOrNull()
+        if (code.equals("en", ignoreCase = true) && offlineDownloadId != null) {
+            val offlineSubtitle = OfflineDownloads(context, profileId).subtitleFile(offlineDownloadId)
+            if (offlineSubtitle != null) {
+                try {
+                    validateSubtitleDuration(offlineSubtitle, active.duration)
+                    applySubtitleFile(offlineSubtitle, SubtitleOption(offlineSubtitle.absolutePath, "en", "English (offline)", "offline"))
+                    return@LaunchedEffect
+                } catch (e: Exception) {
+                    Log.w("NexvioSubtitles", "Saved offline subtitle could not be loaded: ${e.message}")
+                }
+            }
+        }
+        // 3) Re-use the temporary subtitle already saved for this video, if any.
         val cached = java.io.File(context.cacheDir, "nexvio_subtitle_" + channel.id.hashCode() + ".vtt")
         try {
             if (cached.exists() && cached.length() > 0L) {
@@ -2017,7 +2033,7 @@ private fun PlayerFloatingButton(
     }
 }
 
-private data class SubtitleOption(val url: String, val language: String, val label: String, val release: String)
+internal data class SubtitleOption(val url: String, val language: String, val label: String, val release: String)
 
 private const val OPENSUBTITLES_V3_MANIFEST =
     "https://opensubtitlesv3-pro.dexter21767.com/eyJsYW5ncyI6WyJlbmdsaXNoIl0sInNvdXJjZSI6ImFsbCIsImFpVHJhbnNsYXRlZCI6dHJ1ZSwiYXV0b0FkanVzdG1lbnQiOmZhbHNlfQ==/manifest.json"
@@ -2031,7 +2047,7 @@ private fun subtitleLanguageCode(pref: String): String? = when (pref) {
     else -> java.util.Locale.getDefault().language.ifBlank { "en" }
 }
 
-private fun searchStremioSubtitles(
+internal fun searchStremioSubtitles(
     imdbId: String, resourceType: String, season: Int?, episode: Int?, language: String
 ): List<SubtitleOption> {
     require(imdbId.startsWith("tt")) { "A valid IMDb title ID is required for subtitle lookup." }
@@ -2068,7 +2084,7 @@ private fun searchStremioSubtitles(
     } finally { connection.disconnect() }
 }
 
-private fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subtitleUrl: String): java.io.File {
+internal fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subtitleUrl: String): java.io.File {
     require(subtitleUrl.startsWith("https://") || subtitleUrl.startsWith("http://")) {
         "The subtitle add-on returned an invalid download URL."
     }

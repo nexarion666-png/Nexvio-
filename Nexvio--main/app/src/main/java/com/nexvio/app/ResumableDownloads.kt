@@ -83,7 +83,7 @@ internal object ResumableDownloads {
     }
 
     @Synchronized
-    fun enqueue(context: Context, profileId: String, url: String, title: String, headers: Map<String, String> = emptyMap()): Long {
+    fun enqueue(context: Context, profileId: String, url: String, title: String, headers: Map<String, String> = emptyMap(), subtitleId: String? = null, subtitleType: String? = null, subtitleSeason: Int? = null, subtitleEpisode: Int? = null): Long {
         val app = context.applicationContext
         val prefs = prefs(app, profileId)
         var id = System.currentTimeMillis().coerceAtLeast(OWN_ID_FLOOR)
@@ -101,6 +101,10 @@ internal object ResumableDownloads {
             .put("status", DownloadManager.STATUS_PENDING)
             .put("total", -1L)
             .put("headers", JSONObject().also { saved -> headers.forEach { (key, value) -> saved.put(key, value) } })
+            .put("subtitleId", subtitleId.orEmpty())
+            .put("subtitleType", subtitleType.orEmpty())
+            .put("subtitleSeason", subtitleSeason ?: -1)
+            .put("subtitleEpisode", subtitleEpisode ?: -1)
         prefs.edit().putString("own_$id", rec.toString()).apply()
         startJob(app, profileId, id)
         return id
@@ -211,6 +215,43 @@ internal object ResumableDownloads {
             if (target.exists()) target.delete()
             if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
             update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
+            // Fetch the English subtitle while the download worker is still active. A subtitle
+            // failure is isolated and must never change the completed video status.
+            val imdbId = rec.optString("subtitleId")
+            if (imdbId.startsWith("tt")) {
+                try {
+                    val resourceType = rec.optString("subtitleType", "movie")
+                    val season = rec.optInt("subtitleSeason", -1).takeIf { it >= 0 }
+                    val episode = rec.optInt("subtitleEpisode", -1).takeIf { it > 0 }
+                    val english = searchStremioSubtitles(imdbId, resourceType, season, episode, "en")
+                        .filter { it.language.equals("en", ignoreCase = true) || it.language.startsWith("en-", ignoreCase = true) }
+                    var savedSubtitle: File? = null
+                    for (option in english.take(8)) {
+                        try {
+                            val temporary = downloadSubtitleVtt(dir, "offline-download-$id", option.url)
+                            val sidecar = File(dir, "$name.en.vtt")
+                            if (sidecar.exists()) sidecar.delete()
+                            if (!temporary.renameTo(sidecar)) {
+                                temporary.copyTo(sidecar, overwrite = true)
+                                temporary.delete()
+                            }
+                            if (sidecar.isFile && sidecar.length() > 0L) {
+                                savedSubtitle = sidecar
+                                break
+                            }
+                        } catch (candidateError: Exception) {
+                            android.util.Log.w("NexvioDownloads", "English subtitle candidate failed for $id: ${candidateError.message}")
+                        }
+                    }
+                    update(prefs, id) { record ->
+                        record.put("subtitleStatus", if (savedSubtitle != null) "downloaded" else "unavailable")
+                        savedSubtitle?.let { record.put("subtitleFile", it.name) }
+                    }
+                } catch (subtitleError: Exception) {
+                    android.util.Log.w("NexvioDownloads", "Could not save English subtitle for $id: ${subtitleError.message}")
+                    update(prefs, id) { it.put("subtitleStatus", "unavailable") }
+                }
+            }
             notifyDownloadComplete(app, rec.optString("title"))
         } catch (e: CancellationException) {
             throw e
