@@ -410,7 +410,14 @@ function getStreams(tmdbId, mediaType = "movie", seasonNum = null, episodeNum = 
   return __async(this, null, function* () {
     console.log(`[Vidlink] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}${mediaType === "tv" ? `, S:${seasonNum}E:${episodeNum}` : ""}`);
     try {
-      // Android already has the selected TMDB title metadata. Use it directly instead of\n      // making a second TMDB details request that can fail before Vidlink is queried.\n      const suppliedTitle = typeof mediaTitle === "string" ? mediaTitle.trim() : "";\n      const suppliedYear = typeof mediaYear === "string" ? mediaYear.trim() : "";\n      const mediaInfo = suppliedTitle\n        ? { title: suppliedTitle, year: suppliedYear }\n        : yield getTmdbInfo(tmdbId, mediaType);\n      const { title, year } = mediaInfo;\n      const encryptedId = yield encryptTmdbId(tmdbId);
+      // Reuse the selected TMDB metadata instead of making a redundant details request.
+      const suppliedTitle = typeof mediaTitle === "string" ? mediaTitle.trim() : "";
+      const suppliedYear = typeof mediaYear === "string" ? mediaYear.trim() : "";
+      const titleMetadata = suppliedTitle
+        ? { title: suppliedTitle, year: suppliedYear }
+        : yield getTmdbInfo(tmdbId, mediaType);
+      const { title, year } = titleMetadata;
+      const encryptedId = yield encryptTmdbId(tmdbId);
       let vidlinkUrl;
       if (mediaType === "tv" && seasonNum && episodeNum) {
         vidlinkUrl = `${VIDLINK_API}/tv/${encryptedId}/${seasonNum}/${episodeNum}`;
