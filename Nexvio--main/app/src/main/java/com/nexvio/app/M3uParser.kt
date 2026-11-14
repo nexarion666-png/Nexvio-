@@ -12,7 +12,12 @@ data class TvChannel(
     val tvgName: String? = null,
     val isFavorite: Boolean = false,
     /** HTTP request headers required by provider streams (for example Referer). */
-    val requestHeaders: Map<String, String> = emptyMap()
+    val requestHeaders: Map<String, String> = emptyMap(),
+    /** IMDb identity supplied by the TMDB catalogue; absent for unlinked IPTV streams. */
+    val subtitleId: String? = null,
+    val subtitleType: String? = null,
+    val subtitleSeason: Int? = null,
+    val subtitleEpisode: Int? = null
 )
 
 data class ParsedPlaylist(val channels: List<TvChannel>, val error: String? = null)

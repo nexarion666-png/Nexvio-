@@ -97,9 +97,9 @@ import java.net.URI
 import java.net.URL
 
 private val Ink: Color get() = AppAppearanceState.background
-private val Panel: Color get() = AppAppearanceState.panel
+private val Panel = Color(0xFF1B1D22)
 private val Accent: Color get() = AppAppearanceState.accent
-private val Muted: Color get() = AppAppearanceState.muted
+private val Muted = Color(0xFF9A9DA6)
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
 private const val PLAYBACK_TAG = "NexvioPlayback"
 
@@ -115,6 +115,10 @@ private val tvChannelSaver = Saver<TvChannel?, Bundle>(
             putString("tvgId", value.tvgId)
             putString("tvgName", value.tvgName)
             putBoolean("isFavorite", value.isFavorite)
+            putString("subtitleId", value.subtitleId)
+            putString("subtitleType", value.subtitleType)
+            putInt("subtitleSeason", value.subtitleSeason ?: -1)
+            putInt("subtitleEpisode", value.subtitleEpisode ?: -1)
         }
     } },
     restore = { state -> state?.let { value ->
@@ -129,6 +133,10 @@ private val tvChannelSaver = Saver<TvChannel?, Bundle>(
             tvgId = value.getString("tvgId"),
             tvgName = value.getString("tvgName"),
             isFavorite = value.getBoolean("isFavorite"),
+            subtitleId = value.getString("subtitleId"),
+            subtitleType = value.getString("subtitleType"),
+            subtitleSeason = value.getInt("subtitleSeason").takeIf { it > 0 },
+            subtitleEpisode = value.getInt("subtitleEpisode").takeIf { it > 0 },
             requestHeaders = runCatching {
                 val headers = org.json.JSONObject(value.getString("requestHeaders").orEmpty())
                 buildMap { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, headers.optString(key)) } }
@@ -142,6 +150,9 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
+
+/** Outlives the activity so the final sync can finish after the screen goes away. */
+private val exitSyncScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
 class MainActivity : ComponentActivity() {
     private var foregroundSyncJob: Job? = null
@@ -168,6 +179,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         foregroundSyncJob?.cancel()
         foregroundSyncJob = null
+        // The loop above only runs while the app is on screen, so anything changed in the last few
+        // seconds would otherwise wait until the next time this device is opened before reaching
+        // the other devices. Push one last sync as the app goes to the background.
+        val appContext = applicationContext
+        exitSyncScope.launch { syncNexvioAccountAutomatically(appContext) }
         super.onStop()
     }
 }
@@ -827,17 +843,6 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
 
     LaunchedEffect(Unit) {
         if (!loadedOnce) {
-            // Also seed the built-in playlist for users who choose Continue without account.
-            // Signed-in users are seeded during cloud sync; this fallback covers local-only use.
-            val playlistPrefs = context.getSharedPreferences("nexvio_iptv", Context.MODE_PRIVATE)
-            if (playlistPrefs.getString("source", null).isNullOrBlank()) {
-                playlistPrefs.edit()
-                    .putString("source", "http://108.175.13.7/playlist.m3u")
-                    .putString("label", "Nexvio IPTV")
-                    .putBoolean("local", false)
-                    .putBoolean("default_playlist_initialized", true)
-                    .commit()
-            }
             val saved = store.source()
             if (saved != null) {
                 loading = true
@@ -961,6 +966,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var moreMenuExpanded by remember { mutableStateOf(false) }
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
+    var subtitlesEnabled by rememberSaveable(channel.id) { mutableStateOf(true) }
     var subtitleDiagnostic by remember(channel.id) { mutableStateOf("No subtitle diagnostics yet.") }
     var subtitleSearchMode by remember { mutableStateOf(false) }
     var subtitleLanguage by rememberSaveable(channel.id) { mutableStateOf("en") }
@@ -1100,6 +1106,14 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 .setSeekForwardIncrementMs(10_000L)
                 .build()
             createdPlayer = instance
+            // Automatic subtitle mode starts with text tracks disabled. Nexvio then
+            // chooses one explicit track (embedded or downloaded) and pins it, rather
+            // than letting adaptive streams silently switch tracks as manifests refresh.
+            if (playerPrefs.getBoolean("auto_subtitles", true)) {
+                instance.trackSelectionParameters = instance.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+            }
             player = instance
             // Restore the saved position only on the FIRST ready state. Without this, every
             // buffering->ready transition (including after a seek) jumped back to the stale
@@ -1327,8 +1341,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 
     // Automatically picks and applies the best online subtitle for movies/episodes.
-    LaunchedEffect(player, channel.id) {
+    LaunchedEffect(player, channel.id, subtitlesEnabled) {
         val active = player ?: return@LaunchedEffect
+        if (!subtitlesEnabled) return@LaunchedEffect
         if (!playerPrefs.getBoolean("auto_subtitles", true)) return@LaunchedEffect
         val code = subtitleLanguageCode(playerPrefs.getString("preferred_subtitle_language", "Device language") ?: "Device language")
             ?: return@LaunchedEffect
@@ -1372,14 +1387,18 @@ private fun formatPlayerTime(milliseconds: Long): String {
             Log.w("NexvioSubtitles", "Cached subtitle failed validation: ${e.message}")
             cached.delete()
         }
-        // 3) Search online and apply the best match (try up to 3 candidates).
-        val apiKey = BuildConfig.OPENSUBTITLES_API_KEY
-        if (apiKey.isBlank()) return@LaunchedEffect
+        // 3) Search the configured OpenSubtitles V3 Stremio add-on using the
+        // IMDb identity attached to catalogue streams. Never guess an IMDb ID
+        // from an IPTV channel name.
+        val imdbId = channel.subtitleId?.takeIf { it.startsWith("tt") } ?: return@LaunchedEffect
+        val resourceType = channel.subtitleType ?: return@LaunchedEffect
         try {
-            val candidates = withContext(Dispatchers.IO) { searchBestSubtitles(apiKey, channel.name, code) }
+            val candidates = withContext(Dispatchers.IO) {
+                searchStremioSubtitles(imdbId, resourceType, channel.subtitleSeason, channel.subtitleEpisode, code)
+            }
             for (option in candidates.take(8)) {
                 try {
-                    val file = withContext(Dispatchers.IO) { downloadSubtitleVtt(context.cacheDir, channel.id, option.fileId) }
+                    val file = withContext(Dispatchers.IO) { downloadSubtitleVtt(context.cacheDir, channel.id, option.url) }
                     validateSubtitleDuration(file, active.duration)
                     applySubtitleFile(file, option)
                     showPlayerMessage("Subtitles loaded (${code.uppercase()})")
@@ -1408,7 +1427,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Online subtitles", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text("Search and download subtitles from OpenSubtitles", color = Muted, fontSize = 12.sp)
+                            Text("Search and download subtitles from your configured OpenSubtitles V3 add-on", color = Muted, fontSize = 12.sp)
                         }
                         IconButton(onClick = { subtitleDialogOpen = false }) {
                             Icon(Icons.Filled.Close, contentDescription = "Close subtitles", tint = Color.White)
@@ -1457,65 +1476,17 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 subtitleResults = emptyList()
                                 try {
                                     val (results, statusMessage) = withContext(Dispatchers.IO) {
-                                        val visibleTitle = subtitleSearchTitle.trim()
-                                        val episodeMatch = Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b")
-                                            .find(visibleTitle) ?: Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b").find(channel.name)
-                                        val cleanChannelTitle = channel.name.substringBefore(" • ")
-                                            .replace(Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b"), "")
-                                            .trim()
-                                        val searchTitle = visibleTitle
-                                            .replace(Regex("(?i)\\bS\\d{1,2}\\s*E\\d{1,3}\\b"), "")
-                                            .trim()
-                                            .ifBlank { cleanChannelTitle }
-                                        val mediaType = if (episodeMatch != null) "tv" else "movie"
-                                        val apiKey = BuildConfig.OPENSUBTITLES_API_KEY
-                                        if (apiKey.isBlank()) throw IllegalStateException("OpenSubtitles API key is missing. Add OPENSUBTITLES_API_KEY to GitHub Actions secrets and rebuild.")
-                                        val endpoint = buildString {
-                                            append("https://api.opensubtitles.com/api/v1/subtitles?query=")
-                                            append(Uri.encode(searchTitle))
-                                            append("&languages=").append(Uri.encode(subtitleLanguage.trim().ifBlank { "en" }))
-                                            append("&type=").append(if (episodeMatch != null) "episode" else "movie")
-                                            if (episodeMatch != null) {
-                                                append("&season_number=").append(episodeMatch.groupValues[1].toInt())
-                                                append("&episode_number=").append(episodeMatch.groupValues[2].toInt())
-                                            }
-                                        }
-                                        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                                            connectTimeout = 15000
-                                            readTimeout = 20000
-                                            setRequestProperty("Api-Key", apiKey)
-                                            setRequestProperty("User-Agent", "Nexvio v1.0")
-                                            setRequestProperty("Accept", "application/json")
-                                        }
-                                        try {
-                                            val code = connection.responseCode
-                                            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
-                                                ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                                            val json = runCatching { org.json.JSONObject(body) }.getOrNull()
-                                            if (code !in 200..299) {
-                                                val message = json?.optString("message")?.takeIf { it.isNotBlank() && it != "null" }
-                                                    ?: "OpenSubtitles search failed (HTTP $code)."
-                                                throw IllegalStateException(message)
-                                            }
-                                            val data = json?.optJSONArray("data") ?: org.json.JSONArray()
-                                            val found = buildList {
-                                                for (i in 0 until data.length()) {
-                                                    val attributes = data.optJSONObject(i)?.optJSONObject("attributes") ?: continue
-                                                    val files = attributes.optJSONArray("files") ?: continue
-                                                    val language = attributes.optString("language", subtitleLanguage)
-                                                    val release = attributes.optString("release", "")
-                                                    for (j in 0 until files.length()) {
-                                                        val fileId = files.optJSONObject(j)?.optString("file_id").orEmpty()
-                                                        if (fileId.isNotBlank() && fileId != "null") {
-                                                            add(SubtitleOption(fileId, language, release.ifBlank { "Subtitle • $language" }, release))
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            val statusMessage = if (found.isEmpty()) "No subtitles found. Try another title or language."
-                                                else "Found ${found.size} subtitle option(s)."
-                                            found to statusMessage
-                                        } finally { connection.disconnect() }
+                                        val imdbId = channel.subtitleId?.takeIf { it.startsWith("tt") }
+                                            ?: throw IllegalStateException("This stream has no IMDb-linked title. Open the movie or episode from Nexvio Movies/Series to search add-on subtitles; IPTV channel names cannot be safely matched automatically.")
+                                        val resourceType = channel.subtitleType
+                                            ?: throw IllegalStateException("Subtitle lookup metadata is unavailable for this stream.")
+                                        val language = subtitleLanguage.trim().ifBlank { "en" }
+                                        val found = searchStremioSubtitles(
+                                            imdbId, resourceType, channel.subtitleSeason, channel.subtitleEpisode, language
+                                        )
+                                        val statusMessage = if (found.isEmpty()) "No subtitles were returned by the configured add-on for this title and language."
+                                            else "Found ${found.size} subtitle option(s) from the OpenSubtitles V3 add-on."
+                                        found to statusMessage
                                     }
                                     subtitleResults = results
                                     subtitleError = statusMessage
@@ -1533,7 +1504,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     if (subtitleLoading) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text("Searching OpenSubtitles…", color = Color.White, fontSize = 13.sp)
+                            Text("Searching subtitle add-on…", color = Color.White, fontSize = 13.sp)
                         }
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     } else if (subtitleError != null) {
@@ -1557,7 +1528,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                             subtitleError = null
                                             try {
                                                 val file = withContext(Dispatchers.IO) {
-                                                    downloadSubtitleVtt(context.cacheDir, channel.id, option.fileId)
+                                                    downloadSubtitleVtt(context.cacheDir, channel.id, option.url)
                                                 }
                                                 applySubtitleFile(file, option)
                                                 subtitleDialogOpen = false
@@ -1840,7 +1811,16 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             revealControls()
                         }, size = 23)
                         PlayerIconButton(Icons.Filled.HighQuality, "Video quality", { openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality") }, size = 25)
-                        PlayerIconButton(Icons.Filled.ClosedCaption, "Subtitles", { subtitleSearchMode = false; subtitleDialogOpen = true; subtitleError = null; revealControls() }, size = 24)
+                        PlayerIconButton(Icons.Filled.ClosedCaption, if (subtitlesEnabled) "Turn subtitles off" else "Turn subtitles on", {
+                            subtitlesEnabled = !subtitlesEnabled
+                            player?.let { active ->
+                                active.trackSelectionParameters = active.trackSelectionParameters.buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
+                                    .build()
+                            }
+                            showPlayerMessage(if (subtitlesEnabled) "Subtitles on" else "Subtitles off")
+                            revealControls()
+                        }, size = 24)
                         PlayerIconButton(Icons.Filled.QueueMusic, "Playlist", {
                             if ((player?.mediaItemCount ?: 0) > 1) showPlayerMessage("Use previous/next to navigate this playlist.")
                             else showPlayerMessage("No playlist is attached to this stream.")
@@ -2054,7 +2034,10 @@ private fun PlayerFloatingButton(
     }
 }
 
-private data class SubtitleOption(val fileId: String, val language: String, val label: String, val release: String)
+private data class SubtitleOption(val url: String, val language: String, val label: String, val release: String)
+
+private const val OPENSUBTITLES_V3_MANIFEST =
+    "https://opensubtitlesv3-pro.dexter21767.com/eyJsYW5ncyI6WyJlbmdsaXNoIl0sInNvdXJjZSI6ImFsbCIsImFpVHJhbnNsYXRlZCI6dHJ1ZSwiYXV0b0FkanVzdG1lbnQiOmZhbHNlfQ==/manifest.json"
 
 private fun subtitleLanguageCode(pref: String): String? = when (pref) {
     "No subtitles" -> null
@@ -2065,86 +2048,67 @@ private fun subtitleLanguageCode(pref: String): String? = when (pref) {
     else -> java.util.Locale.getDefault().language.ifBlank { "en" }
 }
 
-/** Searches OpenSubtitles for a movie/episode channel name and returns candidates, best first. */
-private fun searchBestSubtitles(apiKey: String, channelName: String, language: String): List<SubtitleOption> {
-    val episodeRegex = Regex("(?i)\\bS(\\d{1,2})\\s*E(\\d{1,3})\\b")
-    val episode = episodeRegex.find(channelName)
-    val quality = channelName.substringAfter(" • ", "").trim()
-    val title = channelName.substringBefore(" • ").replace(episodeRegex, "").trim()
-    if (title.isBlank()) return emptyList()
-    val endpoint = buildString {
-        append("https://api.opensubtitles.com/api/v1/subtitles?query=").append(Uri.encode(title.lowercase()))
-        append("&languages=").append(Uri.encode(language))
-        append("&type=").append(if (episode != null) "episode" else "movie")
-        if (episode != null) {
-            append("&season_number=").append(episode.groupValues[1].toInt())
-            append("&episode_number=").append(episode.groupValues[2].toInt())
-        }
+/** Query the configured Stremio subtitle resource with the IMDb identity from TMDB. */
+private fun searchStremioSubtitles(
+    imdbId: String,
+    resourceType: String,
+    season: Int?,
+    episode: Int?,
+    language: String
+): List<SubtitleOption> {
+    require(imdbId.startsWith("tt")) { "A valid IMDb title ID is required for subtitle lookup." }
+    require(resourceType == "movie" || resourceType == "series") { "Unsupported subtitle media type." }
+    if (resourceType == "series" && (season == null || episode == null || season < 0 || episode <= 0)) {
+        throw IllegalStateException("Season and episode metadata are required for series subtitles.")
     }
+    val manifestUri = URI(OPENSUBTITLES_V3_MANIFEST)
+    val basePath = manifestUri.path.orEmpty().removeSuffix("/").removeSuffix("manifest.json").trimEnd('/')
+    val base = "${manifestUri.scheme}://${manifestUri.rawAuthority}$basePath"
+    val contentId = if (resourceType == "series") "$imdbId:$season:$episode" else imdbId
+    val endpoint = "$base/subtitles/$resourceType/$contentId.json"
     val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-        connectTimeout = 15000; readTimeout = 20000
-        setRequestProperty("Api-Key", apiKey)
-        setRequestProperty("User-Agent", "Nexvio v1.0")
+        connectTimeout = 15000
+        readTimeout = 20000
+        instanceFollowRedirects = true
+        setRequestProperty("User-Agent", "Nexvio/1.0 Android")
         setRequestProperty("Accept", "application/json")
     }
     try {
         val code = connection.responseCode
-        val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) throw IllegalStateException("OpenSubtitles search failed (HTTP $code).")
-        val data = org.json.JSONObject(body).optJSONArray("data") ?: return emptyList()
-        data class Scored(val option: SubtitleOption, val bad: Boolean, val qualityMatch: Boolean, val trusted: Boolean, val downloads: Int)
-        val scored = mutableListOf<Scored>()
-        for (i in 0 until data.length()) {
-            val attrs = data.optJSONObject(i)?.optJSONObject("attributes") ?: continue
-            val files = attrs.optJSONArray("files") ?: continue
-            val fileId = files.optJSONObject(0)?.optString("file_id").orEmpty()
-            if (fileId.isBlank() || fileId == "null") continue
-            val release = attrs.optString("release", "")
-            val lang = attrs.optString("language", language)
-            scored.add(Scored(
-                SubtitleOption(fileId, lang, release.ifBlank { "Subtitle • $lang" }, release),
-                bad = attrs.optBoolean("ai_translated") || attrs.optBoolean("machine_translated") || attrs.optBoolean("hearing_impaired"),
-                qualityMatch = quality.isNotBlank() && release.contains(quality, ignoreCase = true),
-                trusted = attrs.optBoolean("from_trusted"),
-                downloads = attrs.optInt("download_count", 0)
-            ))
-        }
-        return scored.sortedWith(compareBy<Scored> { it.bad }.thenByDescending { it.qualityMatch }.thenByDescending { it.trusted }.thenByDescending { it.downloads })
-            .map { it.option }
-    } finally { connection.disconnect() }
+        val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+        if (code !in 200..299) throw IllegalStateException("Subtitle add-on request failed (HTTP $code).")
+        val subtitles = org.json.JSONObject(body).optJSONArray("subtitles") ?: org.json.JSONArray()
+        return buildList {
+            for (i in 0 until subtitles.length()) {
+                val item = subtitles.optJSONObject(i) ?: continue
+                val url = item.optString("url").trim()
+                if (!(url.startsWith("https://") || url.startsWith("http://"))) continue
+                val lang = item.optString("lang").ifBlank { language }
+                val label = item.optString("label").ifBlank { "Subtitle • ${lang.uppercase()}" }
+                add(SubtitleOption(url, lang, label, item.optString("id")))
+            }
+        }.distinctBy { it.url }
+    } finally {
+        connection.disconnect()
+    }
 }
 
-/** Downloads a subtitle from OpenSubtitles, converts SRT to WebVTT and saves it in the cache. */
-private fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, fileId: String): java.io.File {
-    val apiKey = BuildConfig.OPENSUBTITLES_API_KEY
-    if (apiKey.isBlank()) throw IllegalStateException("OpenSubtitles API key is missing. Rebuild the APK after adding the GitHub Actions secret.")
-    val request = (URL("https://api.opensubtitles.com/api/v1/download").openConnection() as HttpURLConnection).apply {
-        requestMethod = "POST"; doOutput = true
-        connectTimeout = 15000; readTimeout = 20000
-        setRequestProperty("Api-Key", apiKey)
-        setRequestProperty("User-Agent", "Nexvio v1.0")
-        setRequestProperty("Accept", "application/json")
-        setRequestProperty("Content-Type", "application/json")
+/** Downloads a direct Stremio subtitle URL, converts SRT to WebVTT and caches it. */
+private fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, subtitleUrl: String): java.io.File {
+    require(subtitleUrl.startsWith("https://") || subtitleUrl.startsWith("http://")) {
+        "The subtitle add-on returned an invalid download URL."
     }
-    val downloadJson: org.json.JSONObject
-    try {
-        request.outputStream.use { it.write(org.json.JSONObject().put("file_id", fileId.toLong()).put("sub_format", "srt").toString().toByteArray(Charsets.UTF_8)) }
-        val code = request.responseCode
-        val body = (if (code in 200..299) request.inputStream else request.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) {
-            val message = runCatching { org.json.JSONObject(body).optString("message") }.getOrNull()
-            throw IllegalStateException(message?.takeIf { it.isNotBlank() && it != "null" } ?: "OpenSubtitles download request failed (HTTP $code).")
-        }
-        downloadJson = org.json.JSONObject(body)
-    } finally { request.disconnect() }
-    val downloadUrl = downloadJson.optString("link")
-    if (downloadUrl.isBlank() || downloadUrl == "null") throw IllegalStateException("OpenSubtitles did not return a subtitle download link.")
-    val fileConnection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
-        connectTimeout = 15000; readTimeout = 30000
-        setRequestProperty("User-Agent", "Nexvio v1.0")
+    val fileConnection = (URL(subtitleUrl).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 15000
+        readTimeout = 30000
+        instanceFollowRedirects = true
+        setRequestProperty("User-Agent", "Nexvio/1.0 Android")
+        setRequestProperty("Accept", "text/vtt, text/plain, */*")
     }
     try {
-        if (fileConnection.responseCode !in 200..299) throw IllegalStateException("Subtitle file download failed (HTTP ${fileConnection.responseCode}).")
+        val code = fileConnection.responseCode
+        if (code !in 200..299) throw IllegalStateException("Subtitle file download failed (HTTP $code).")
         val rawBytes = fileConnection.inputStream.use { input ->
             val output = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(8192)
@@ -2162,15 +2126,19 @@ private fun downloadSubtitleVtt(cacheDir: java.io.File, channelId: String, fileI
         val text = rawBytes.toString(Charsets.UTF_8).trimStart('\uFEFF')
         val normalized = text.replace("\r\n", "\n").replace('\r', '\n')
         val vtt = if (normalized.startsWith("WEBVTT")) normalized else {
-            // SRT uses commas in BOTH timestamps; WebVTT needs dots in both or Media3 drops every cue.
-            "WEBVTT\n\n" + normalized.lines().joinToString("\n") { line -> if (line.contains("-->")) line.replace(',', '.') else line }
+            if (!normalized.contains("-->")) throw IllegalStateException("Subtitle file is not a supported SRT or WebVTT file.")
+            "WEBVTT\n\n" + normalized.lines().joinToString("\n") { line ->
+                if (line.contains("-->")) line.replace(',', '.') else line
+            }
         }
         if (!vtt.contains("-->")) throw IllegalStateException("Subtitle file contained no cues.")
-        return java.io.File(cacheDir, "nexvio_subtitle_${channelId.hashCode()}.vtt").apply { writeText(vtt, Charsets.UTF_8) }
-    } finally { fileConnection.disconnect() }
+        return java.io.File(cacheDir, "nexvio_subtitle_${channelId.hashCode()}.vtt")
+            .apply { writeText(vtt, Charsets.UTF_8) }
+    } finally {
+        fileConnection.disconnect()
+    }
 }
 
-/** Returns the final cue end time in milliseconds, or null when it cannot be read. */
 private fun subtitleEndTimeMs(file: java.io.File): Long? {
     val timestamp = Regex("(?:^|\\s)(\\d{1,2}:\\d{2}:\\d{2}[.,]\\d{3}|\\d{2}:\\d{2}[.,]\\d{3})\\s*$")
     var last: Long? = null
@@ -2250,7 +2218,7 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
 
 private fun activeProfileIdForSettings(context: Context): String = NexvioProfileStore.active(context).id
 
-internal fun settingsPrefs(context: Context): android.content.SharedPreferences {
+private fun settingsPrefs(context: Context): android.content.SharedPreferences {
     val profile = NexvioProfileStore.active(context)
     val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"
     return context.getSharedPreferences(name, Context.MODE_PRIVATE)
