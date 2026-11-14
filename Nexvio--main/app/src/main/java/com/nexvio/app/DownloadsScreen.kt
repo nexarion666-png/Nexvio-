@@ -287,13 +287,13 @@ private fun DownloadItemCard(
                     if (stopped && !errorText.isNullOrBlank()) "$label — $errorText" else label,
                     color = Color(0xFF9A9DA6), fontSize = 13.sp
                 )
-                if (finished && subtitleState != null) {
+                if (subtitleState != null) {
                     when (subtitleState.optString("status")) {
                         "downloading" -> {
                             Text("Downloading English subtitles • ${subtitleState.optInt("progress")}%", color = Color(0xFFB7F36B), fontSize = 12.sp)
                             LinearProgressIndicator(progress = { subtitleState.optInt("progress").coerceIn(0, 100) / 100f }, modifier = Modifier.fillMaxWidth())
                         }
-                        "downloaded" -> Text("English subtitles saved", color = Color(0xFFB7F36B), fontSize = 12.sp)
+                        "downloaded" -> Text(if (finished) "English subtitles saved" else "English subtitles ready • waiting for video", color = Color(0xFFB7F36B), fontSize = 12.sp)
                         "unavailable" -> Text(subtitleState.optString("error").takeIf { it.isNotBlank() } ?: "English subtitles unavailable", color = Color(0xFF9A9DA6), fontSize = 12.sp, maxLines = 2)
                     }
                 }
