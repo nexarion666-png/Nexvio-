@@ -47,26 +47,42 @@ function decodeQueryPart(value) {
 }
 
 function canonicalUrl(value) {
-  var path = "";
-  var query = "";
-  try {
-    var parsed = new URL(value);
-    path = parsed.pathname;
-    var params = Array.from(parsed.searchParams.keys()).sort();
-    if (params.length > 0) {
-      query = params.map(function (key) {
-        return parsed.searchParams.getAll(key).map(function (entry) {
-          return key + "=" + entry;
-        }).join("&");
-      }).join("&");
+  // Avoid URL.searchParams: Nexvio's lightweight WebView URL shim does not
+  // implement it consistently across Android System WebView versions.
+  var raw = String(value || "");
+  var withoutFragment = raw.split("#")[0];
+  var queryAt = withoutFragment.indexOf("?");
+  var address = queryAt >= 0 ? withoutFragment.slice(0, queryAt) : withoutFragment;
+  var queryString = queryAt >= 0 ? withoutFragment.slice(queryAt + 1) : "";
+  var path = address.replace(/^https?:\\/\\/[^/]+/i, "");
+  if (!path) path = "/";
+  if (!queryString) return path;
+
+  var entries = queryString.split("&").filter(function (part) { return part.length > 0; }).map(function (part, index) {
+    var equalsAt = part.indexOf("=");
+    var rawKey = equalsAt >= 0 ? part.slice(0, equalsAt) : part;
+    var rawValue = equalsAt >= 0 ? part.slice(equalsAt + 1) : "";
+    var key = decodeQueryPart(rawKey);
+    return { key: key, value: decodeQueryPart(rawValue), index: index };
+  });
+  entries.sort(function (a, b) {
+    if (a.key < b.key) return -1;
+    if (a.key > b.key) return 1;
+    return a.index - b.index;
+  });
+  var canonicalQuery = [];
+  var lastKey = null;
+  var values = [];
+  entries.forEach(function (entry) {
+    if (lastKey !== null && entry.key !== lastKey) {
+      canonicalQuery.push(values.join("&"));
+      values = [];
     }
-  } catch (_) {
-    var raw = String(value).replace(/^https?:\/\/[^/]+/, "");
-    var at = raw.indexOf("?");
-    path = at >= 0 ? raw.slice(0, at) : raw;
-    if (at >= 0) query = raw.slice(at + 1).split("&").sort().join("&");
-  }
-  return query ? path + "?" + query : path;
+    lastKey = entry.key;
+    values.push(entry.key + "=" + entry.value);
+  });
+  if (values.length) canonicalQuery.push(values.join("&"));
+  return path + "?" + canonicalQuery.join("&");
 }
 
 function signature(method, accept, contentType, url, body, timestamp) {
