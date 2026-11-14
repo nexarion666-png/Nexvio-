@@ -149,16 +149,21 @@ internal object ResumableDownloads {
         val rec = record(prefs, id)
         prefs.edit().remove("own_$id").apply()
         val job = jobs[id]
+        val subtitleJob = subtitleJobs[id]
         job?.cancel()
+        subtitleJob?.cancel()
         scope.launch {
             connections[id]?.let { runCatching { it.disconnect() } }
             job?.join()
+            subtitleJob?.join()
             if (rec != null) {
                 val dir = directory(app, profileId)
                 val name = rec.optString("file")
                 if (name.isNotBlank()) {
                     runCatching { File(dir, name).delete() }
                     runCatching { File(dir, "$name.part").delete() }
+                    runCatching { File(dir, "$name.en.vtt").delete() }
+                    runCatching { File(dir, "$name.en.vtt.part").delete() }
                 }
             }
         }
