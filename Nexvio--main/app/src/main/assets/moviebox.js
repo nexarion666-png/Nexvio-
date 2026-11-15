@@ -21,9 +21,11 @@ var SECRET_KEY = CryptoJS.enc.Base64.parse(
 var deviceId = "";
 var selectedBrand = "";
 var selectedModel = "";
+var advertisingId = "";
 
 function initializeSession() {
   if (deviceId) return;
+  advertisingId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) { var r = Math.floor(Math.random() * 16); return (c === "x" ? r : (r & 3 | 8)).toString(16); });
   var chars = "0123456789abcdef";
   for (var i = 0; i < 32; i++) deviceId += chars.charAt(Math.floor(Math.random() * 16));
   var brandModels = {
@@ -121,13 +123,14 @@ function extractUserToken(headers) {
 function request(method, url, body, customHeaders) {
   return new Promise(function (resolve, reject) {
     initializeSession();
-    var original = new URL(url);
-    var requestPath = original.pathname + original.search;
+    var rawUrl = String(url);
+    var pathMatch = rawUrl.match(/^https?:\\/\\/[^/]+(\\/[^?#]*)?(\\?[^#]*)?/i);
+    var requestPath = (pathMatch && pathMatch[1] ? pathMatch[1] : "/") + (pathMatch && pathMatch[2] ? pathMatch[2] : "");
     var lastError = null;
     var hostIndex = 0;
     function tryHost() {
       if (hostIndex >= API_HOSTS.length) {
-        reject(lastError || new Error("MovieBox: all API hosts failed for " + original.pathname));
+        reject(lastError || new Error("MovieBox: all API hosts failed for " + requestPath.split("?")[0]));
         return;
       }
       var base = API_HOSTS[hostIndex++];
@@ -138,7 +141,7 @@ function request(method, url, body, customHeaders) {
       var clientInfo = {
         package_name: PACKAGE_INFO.package_name, version_name: PACKAGE_INFO.version_name,
         version_code: PACKAGE_INFO.version_code, os: "android", os_version: "16",
-        device_id: deviceId, install_store: "ps", gaid: "", brand: selectedBrand,
+        device_id: deviceId, install_store: "ps", gaid: advertisingId, brand: selectedBrand,
         model: selectedModel, system_language: "en", net: "NETWORK_WIFI",
         region: "IN", timezone: "Asia/Calcutta", sp_code: ""
       };
@@ -197,7 +200,7 @@ function normalizeTitle(value) {
 
 function searchSubjects(title) {
   var url = API_BASE + "/wefeed-mobile-bff/subject-api/search";
-  var body = JSON.stringify({ page: 1, perPage: 10, keyword: title, subjectType: 0 });
+  var body = JSON.stringify({ page: 1, perPage: 20, keyword: title, subjectType: 0 });
   return request("POST", url, body, {}).then(function (response) {
     var payload = response.data && response.data.data;
     if (payload && Array.isArray(payload.items)) return payload.items;
