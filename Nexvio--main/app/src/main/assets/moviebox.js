@@ -6,7 +6,9 @@
 "use strict";
 
 var CryptoJS = require("crypto-js");
-var API_BASE = "https://api3.aoneroom.com";
+var API_BASE = "https://api6.aoneroom.com";
+var API_HOSTS = ["https://api6.aoneroom.com","https://api5.aoneroom.com","https://api4.aoneroom.com","https://api4sg.aoneroom.com","https://api3.aoneroom.com","https://api6sg.aoneroom.com","https://api.inmoviebox.com"];
+var authToken = "";
 var KEY_B64_DEFAULT = "NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw==";
 var PACKAGE_INFO = {
   package_name: "com.community.mbox.in",
@@ -108,72 +110,80 @@ function signature(method, accept, contentType, url, body, timestamp) {
     CryptoJS.HmacMD5(canonical, SECRET_KEY).toString(CryptoJS.enc.Base64);
 }
 
+function extractUserToken(headers) {
+  if (!headers || typeof headers.get !== "function") return "";
+  var raw = headers.get("x-user");
+  if (!raw) return "";
+  try { var parsed = JSON.parse(raw); return parsed && parsed.token ? String(parsed.token) : ""; }
+  catch (_) { return ""; }
+}
+
 function request(method, url, body, customHeaders) {
   return new Promise(function (resolve, reject) {
     initializeSession();
-    var timestamp = Date.now();
-    var accept = (customHeaders && customHeaders.Accept) || "application/json";
-    var contentType = (customHeaders && customHeaders["Content-Type"]) ||
-      (body ? "application/json; charset=utf-8" : "application/json");
-    var clientInfo = {
-      package_name: PACKAGE_INFO.package_name,
-      version_name: PACKAGE_INFO.version_name,
-      version_code: PACKAGE_INFO.version_code,
-      os: "android",
-      os_version: "16",
-      device_id: deviceId,
-      install_store: "ps",
-      gaid: "d7578036d13336cc",
-      brand: selectedBrand,
-      model: selectedModel,
-      system_language: "en",
-      net: "NETWORK_WIFI",
-      region: "IN",
-      timezone: "Asia/Calcutta",
-      sp_code: ""
-    };
-    var headers = {
-      "Accept": accept,
-      "Content-Type": contentType,
-      "x-client-token": timestamp + "," + md5(String(timestamp).split("").reverse().join("")),
-      "x-tr-signature": signature(method, accept, contentType, url, body, timestamp),
-      "User-Agent": PACKAGE_INFO.package_name + "/" + PACKAGE_INFO.version_code +
-        " (Linux; U; Android 16; en_IN; " + selectedModel + "; Build/BP22.250325.006; Cronet/133.0.6876.3)",
-      "x-client-info": JSON.stringify(clientInfo),
-      "x-client-status": "0"
-    };
-    Object.keys(customHeaders || {}).forEach(function (key) { headers[key] = customHeaders[key]; });
-    var options = { method: method, headers: headers };
-    if (body) options.body = body;
-    var attempts = 0;
-    function run() {
-      attempts++;
-      fetch(url, options).then(function (response) {
-        if (!response.ok) {
-          response.text().then(function (bodyText) {
-            if ((response.status === 403 || response.status === 429 || response.status >= 500) && attempts < 3) {
-              setTimeout(run, attempts * 700);
-              return;
-            }
-            var detail = String(bodyText || "").replace(/\\s+/g, " ").slice(0, 240);
-            reject(new Error("MovieBox API returned HTTP " + response.status +
-              (detail ? " — " + detail : "")));
-          }).catch(function () {
-            reject(new Error("MovieBox API returned HTTP " + response.status));
-          });
-          return;
-        }
-        Promise.all([response.text(), Promise.resolve(response.headers)]).then(function (values) {
+    var original = new URL(url);
+    var requestPath = original.pathname + original.search;
+    var lastError = null;
+    var hostIndex = 0;
+    function tryHost() {
+      if (hostIndex >= API_HOSTS.length) {
+        reject(lastError || new Error("MovieBox: all API hosts failed for " + original.pathname));
+        return;
+      }
+      var base = API_HOSTS[hostIndex++];
+      var targetUrl = base + requestPath;
+      var timestamp = Date.now();
+      var accept = (customHeaders && customHeaders.Accept) || "application/json";
+      var contentType = (customHeaders && customHeaders["Content-Type"]) || (body ? "application/json; charset=utf-8" : "application/json");
+      var clientInfo = {
+        package_name: PACKAGE_INFO.package_name, version_name: PACKAGE_INFO.version_name,
+        version_code: PACKAGE_INFO.version_code, os: "android", os_version: "16",
+        device_id: deviceId, install_store: "ps", gaid: "", brand: selectedBrand,
+        model: selectedModel, system_language: "en", net: "NETWORK_WIFI",
+        region: "IN", timezone: "Asia/Calcutta", sp_code: ""
+      };
+      var headers = {
+        "Accept": accept, "Content-Type": contentType,
+        "x-client-token": timestamp + "," + md5(String(timestamp).split("").reverse().join("")),
+        "x-tr-signature": signature(method, accept, contentType, targetUrl, body, timestamp),
+        "User-Agent": PACKAGE_INFO.package_name + "/" + PACKAGE_INFO.version_code +
+          " (Linux; U; Android 16; en_IN; " + selectedModel + "; Build/BP22.250325.006; Cronet/133.0.6876.3)",
+        "x-client-info": JSON.stringify(clientInfo), "x-client-status": "0", "Referer": base + "/"
+      };
+      if (authToken) headers.Authorization = "Bearer " + authToken;
+      Object.keys(customHeaders || {}).forEach(function (key) { headers[key] = customHeaders[key]; });
+      var options = { method: method, headers: headers, cache: "no-store" };
+      if (body) options.body = body;
+      fetch(targetUrl, options).then(function (response) {
+        var freshToken = extractUserToken(response.headers);
+        if (freshToken) authToken = freshToken;
+        return response.text().then(function (text) {
           var data;
-          try { data = JSON.parse(values[0]); } catch (_) { data = values[0]; }
-          resolve({ data: data, headers: values[1] });
+          try { data = JSON.parse(text); } catch (_) { data = text; }
+          if (!response.ok) throw new Error("HTTP " + response.status + (text ? " — " + String(text).slice(0, 180) : ""));
+          if (data && typeof data === "object" && data.code !== undefined &&
+              Number(data.code) !== 0 && Number(data.code) !== 200) {
+            throw new Error("API code " + data.code + ": " + (data.message || data.msg || "request rejected"));
+          }
+          resolve({ data: data, headers: response.headers, host: base });
         });
       }).catch(function (error) {
-        if (attempts < 3) setTimeout(run, attempts * 700);
-        else reject(error);
+        lastError = error;
+        console.warn("[MovieBox] " + base + " failed: " + error.message + "; trying next host");
+        tryHost();
       });
     }
-    run();
+    tryHost();
+  });
+}
+
+function bootstrapAuthToken() {
+  if (authToken) return Promise.resolve(authToken);
+  var url = API_BASE + "/wefeed-mobile-bff/tab-operating?page=1&tabId=0&version=";
+  return request("GET", url, null, {}).then(function () {
+    if (!authToken) throw new Error("MovieBox bootstrap returned no x-user session token.");
+    console.log("[MovieBox] Session token initialized.");
+    return authToken;
   });
 }
 
@@ -186,10 +196,12 @@ function normalizeTitle(value) {
 }
 
 function searchSubjects(title) {
-  var url = API_BASE + "/wefeed-mobile-bff/subject-api/search/v2";
-  var body = JSON.stringify({ page: 1, perPage: 20, keyword: title });
+  var url = API_BASE + "/wefeed-mobile-bff/subject-api/search";
+  var body = JSON.stringify({ page: 1, perPage: 10, keyword: title, subjectType: 0 });
   return request("POST", url, body, {}).then(function (response) {
-    var groups = response.data && response.data.data && response.data.data.results;
+    var payload = response.data && response.data.data;
+    if (payload && Array.isArray(payload.items)) return payload.items;
+    var groups = payload && payload.results;
     if (!Array.isArray(groups)) return [];
     var subjects = [];
     groups.forEach(function (group) {
@@ -253,7 +265,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, mediaTitle, mediaY
   var season = type === "tv" ? Math.max(1, Number(seasonNum) || 1) : 0;
   var episode = type === "tv" ? Math.max(1, Number(episodeNum) || 1) : 0;
 
-  return searchSubjects(title).then(function (subjects) {
+  return bootstrapAuthToken().then(function () { return searchSubjects(title); }).then(function (subjects) {
     var match = chooseSubject(subjects, title, year, type);
     if (!match) throw new Error("MovieBox could not find a matching title for " + title + ".");
     var detailUrl = API_BASE + "/wefeed-mobile-bff/subject-api/get?subjectId=" + encodeURIComponent(match.subjectId);
