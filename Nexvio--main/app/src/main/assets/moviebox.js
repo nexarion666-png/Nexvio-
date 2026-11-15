@@ -124,7 +124,7 @@ function request(method, url, body, customHeaders) {
   return new Promise(function (resolve, reject) {
     initializeSession();
     var rawUrl = String(url);
-    var pathMatch = rawUrl.match(/^https?:\\/\\/[^/]+(\\/[^?#]*)?(\\?[^#]*)?/i);
+    var pathMatch = rawUrl.match(/^https?:\/\/[^/]+(\/[^?#]*)?(\?[^#]*)?/i);
     var requestPath = (pathMatch && pathMatch[1] ? pathMatch[1] : "/") + (pathMatch && pathMatch[2] ? pathMatch[2] : "");
     var lastError = null;
     var hostIndex = 0;
