@@ -425,12 +425,15 @@ function getStreams(tmdbId, mediaType = "movie", seasonNum = null, episodeNum = 
         params.set("season", String(seasonNum));
         params.set("episode", String(episodeNum));
       }
-      // Match the website integration: its API handles ID encryption
-      // and the upstream VidLink request on the server.
-      const vidlinkUrl = `https://nexvio-web-app.vercel.app/api/vidlink?${params.toString()}`;
-      console.log(`[Vidlink] Requesting Nexvio VidLink API: ${vidlinkUrl}`);
+      // Resolve VidLink directly instead of relying on the separate
+      // nexvio-web-app Vercel deployment, which may not be reachable.
+      const encryptedId = yield encryptTmdbId(tmdbId);
+      const vidlinkUrl = mediaType === "tv"
+        ? `${VIDLINK_API}/tv/${encodeURIComponent(encryptedId)}/${seasonNum}/${episodeNum}`
+        : `${VIDLINK_API}/movie/${encodeURIComponent(encryptedId)}`;
+      console.log(`[Vidlink] Requesting VidLink API: ${vidlinkUrl}`);
       const response = yield makeRequest(vidlinkUrl, {
-        headers: { "Accept": "application/json,*/*" }
+        headers: VIDLINK_HEADERS
       });
       const data = yield response.json();
       if (data && data.error) throw new Error(data.error);
