@@ -88,7 +88,9 @@ var TOKEN_URL = "https://apig.inmoviebox.com/wefeed-mobile-bff/tab/ranking-list?
 var PACKAGE_INFO = {
   package_name: "com.community.mbox.in",
   version_name: "4.0.04.1112.03",
-  version_code: 50020135
+  // MovieBox gates real playback on this code in both x-client-info and User-Agent.
+  // Keep it at the highest signed 32-bit value to avoid stale-client placeholder streams.
+  version_code: 2147483647
 };
 
 // src/moviebox/utils.js
