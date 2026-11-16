@@ -417,14 +417,6 @@ function getStreams(tmdbId, mediaType = "movie", seasonNum = null, episodeNum = 
         ? { title: suppliedTitle, year: suppliedYear }
         : yield getTmdbInfo(tmdbId, mediaType);
       const { title, year } = titleMetadata;
-      const params = new URLSearchParams({
-        tmdbId: String(tmdbId),
-        mediaType
-      });
-      if (mediaType === "tv" && seasonNum && episodeNum) {
-        params.set("season", String(seasonNum));
-        params.set("episode", String(episodeNum));
-      }
       // Resolve VidLink directly instead of relying on the separate
       // nexvio-web-app Vercel deployment, which may not be reachable.
       const encryptedId = yield encryptTmdbId(tmdbId);
