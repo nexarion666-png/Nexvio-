@@ -5,21 +5,25 @@
  */
 "use strict";
 
-var VIDNEST_API = "https://first.vidnest.fun";
+var VIDNEST_API = "https://new.vidnest.fun";
 var VIDNEST_DECRYPT = "https://aesdec.nuvioapp.space/decrypt";
 var VIDNEST_PROXY = "https://vidnest.animanga.fun/proxy";
 var VIDNEST_PASSPHRASE = "A7kP9mQeXU2BWcD4fRZV+Sg8yN0/M5tLbC1HJQwYe6o=";
 var VIDNEST_SERVERS = [
-  "hollymoviehd", "primesrc", "ophim", "flixhq", "vidlink", "rogflix"
+  "moviebox", "allmovies", "catflix", "hollymoviehd", "lamda", "flixhq"
 ];
 
 var API_HEADERS = {
-  "Accept": "application/json, text/javascript, */*; q=0.01",
+  "Accept": "*/*",
+  "Accept-Encoding": "gzip, deflate, br, zstd",
   "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
   "Cache-Control": "no-cache",
   "Pragma": "no-cache",
   "Origin": "https://vidnest.fun",
   "Referer": "https://vidnest.fun/",
+  "Sec-CH-UA": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+  "Sec-CH-UA-Mobile": "?1",
+  "Sec-CH-UA-Platform": "\"Android\"",
   "Sec-Fetch-Dest": "empty",
   "Sec-Fetch-Mode": "cors",
   "Sec-Fetch-Site": "same-site",
