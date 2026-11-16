@@ -121,11 +121,18 @@ internal object NuvioScraperEngine {
         val providers = repositories.filter { it.enabled }
             .flatMap { repository ->
                 repository.providers.filter {
-                    !it.name.equals("Vidlink", ignoreCase = true) &&
-                        !it.name.equals("MovieBox", ignoreCase = true) &&
+                    val providerId = it.id.trim()
+                    val providerName = it.name.trim()
+                    // These providers were removed from Nexvio. Filter at execution
+                    // time as well as manifest parsing so stale/cached repositories
+                    // cannot put them back into the stream-search status list.
+                    !providerId.contains("vidnest", ignoreCase = true) &&
+                        !providerName.contains("vidnest", ignoreCase = true) &&
+                        !providerName.equals("Vidlink", ignoreCase = true) &&
+                        !providerName.equals("MovieBox", ignoreCase = true) &&
                         it.enabled &&
-                        (providerFilter == null || it.name.equals(providerFilter, true)) &&
-                        it.name !in disabledProviders
+                        (providerFilter == null || providerName.equals(providerFilter, true)) &&
+                        providerName !in disabledProviders
                 }.map { provider -> listOf(repository.name, provider.name, provider.fileUrl, provider.hasSettings) }
             }.toMutableList()
 
