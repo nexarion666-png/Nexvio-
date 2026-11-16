@@ -146,14 +146,14 @@ function vidnestParseServer(server, mediaType, tmdbId, title, year, season, epis
     });
 }
 
-function getStreams(tmdbId, mediaType, season, episode) {
+function getStreams(tmdbId, mediaType, season, episode, title, year) {
   var type = mediaType === "tv" ? "tv" : "movie";
   var id = String(tmdbId || "").trim();
   if (!/^\d+$/.test(id)) return Promise.resolve([]);
 
   var tasks = VIDNEST_SERVERS.map(function (server) {
     return vidnestParseServer(
-      server, type, id, __NEXVIO_TITLE__, __NEXVIO_YEAR__, season, episode
+      server, type, id, title, year, season, episode
     );
   });
 
