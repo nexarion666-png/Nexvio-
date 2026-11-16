@@ -5,13 +5,12 @@
  */
 "use strict";
 
-var VIDNEST_API = "https://new.vidnest.fun";
+var VIDNEST_API = "https://first.vidnest.fun";
 var VIDNEST_DECRYPT = "https://aesdec.nuvioapp.space/decrypt";
 var VIDNEST_PROXY = "https://vidnest.animanga.fun/proxy";
 var VIDNEST_PASSPHRASE = "A7kP9mQeXU2BWcD4fRZV+Sg8yN0/M5tLbC1HJQwYe6o=";
 var VIDNEST_SERVERS = [
-  "moviebox", "allmovies", "catflix", "purstream", "hollymoviehd",
-  "lamda", "flixhq", "vidlink", "onehd", "klikxxi"
+  "hollymoviehd", "primesrc", "ophim", "flixhq", "vidlink", "rogflix"
 ];
 
 var API_HEADERS = {
@@ -187,12 +186,15 @@ function getStreams(tmdbId, mediaType, season, episode, title, year) {
   var id = String(tmdbId || "").trim();
   if (!/^\d+$/.test(id)) return Promise.resolve([]);
 
-  return Promise.all(VIDNEST_SERVERS.map(function (server) {
-    return vidnestParseServer(server, type, id, title, year, season, episode);
-  })).then(function (groups) {
-    var streams = [];
-    var seen = {};
-    groups.forEach(function (group) {
+  // Keep requests sequential: Nexvio enforces a six-request in-flight
+  // ceiling per provider, and other providers may be using the same engine.
+  // Sequential requests avoid Vidnest exhausting its own request budget.
+  var streams = [];
+  var seen = {};
+  return VIDNEST_SERVERS.reduce(function (chain, server) {
+    return chain.then(function () {
+      return vidnestParseServer(server, type, id, title, year, season, episode);
+    }).then(function (group) {
       group.forEach(function (stream) {
         if (!seen[stream.url]) {
           seen[stream.url] = true;
@@ -200,6 +202,7 @@ function getStreams(tmdbId, mediaType, season, episode, title, year) {
         }
       });
     });
+  }, Promise.resolve()).then(function () {
     console.log("[Vidnest] Found " + streams.length + " stream(s) across " +
       VIDNEST_SERVERS.length + " servers");
     return streams;
