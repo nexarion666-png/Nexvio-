@@ -10,28 +10,17 @@ This directory is both the public Android download landing page and the public u
 4. Keep `index.html` and `latest.json` together at the site root.
 5. Confirm the deployed `/latest.json` is publicly readable and that the website Download button opens its APK.
 
-The Android app currently checks `https://nexvio-updates-site.vercel.app/latest.json`. If you deploy to a different domain, change `LATEST_UPDATE_JSON` in `app/src/main/java/com/nexvio/app/NexvioUpdateChecker.kt` to the new HTTPS endpoint and publish a new Android build.
+The Android app currently checks `https://nexvio-updates-site-phi.vercel.app/latest.json`. If you deploy to a different domain, change `LATEST_UPDATE_JSON` in `app/src/main/java/com/nexvio/app/NexvioUpdateChecker.kt` to the new HTTPS endpoint and publish a new Android build.
 
-## Publishing a release
+## Automatic publishing
 
-1. Build a release APK with the same permanent Android signing keystore used for every previous Nexvio release.
-2. Upload the APK to a public HTTPS download location (the existing Nexvio-Downloads GitHub Releases repository can host it).
-3. Update `latest.json` with the new `version`, strictly increasing `versionCode`, public `downloadUrl`, and human-readable `releaseNotes`.
-4. Deploy the updated static site.
-5. Install the new APK on a test device over the previous Nexvio installation before announcing it.
+Main-branch Android builds publish the APK to the public `Nexvio-Downloads` GitHub Releases repository. After that upload succeeds, the Android GitHub Actions workflow automatically writes the matching version, version code, release URL, and release notes to `latest.json`, then commits that metadata to the source repository.
 
-Example metadata:
+The Vercel site serves this file directly, so its Download button and the Android in-app update checker use the same latest-release feed. No manual edit to `latest.json` is needed for normal main-branch builds.
 
-```json
-{
-  "version": "1.0.2",
-  "versionCode": 3,
-  "downloadUrl": "https://example.com/Nexvio.apk",
-  "releaseNotes": "Bug fixes and performance improvements."
-}
-```
+The workflow requires the repository Actions secret `NEXVIO_DOWNLOADS_TOKEN` with permission to publish releases in `nexarion666-png/Nexvio-Downloads`. It also uses the permanent Android signing keystore secrets already required by the build.
 
-Never publish a download URL for an APK until that exact file is uploaded and publicly accessible. Android requires updates to be signed with the same signing certificate as the installed app. The app opens the download URL and Android asks the user to approve installation; ordinary Android apps cannot silently install themselves.
+The Android app will notify users when a newer version is available. Android still requires the user to approve installation; apps cannot silently install APK updates through the ordinary installer flow.
 
 ## Current published release
 
