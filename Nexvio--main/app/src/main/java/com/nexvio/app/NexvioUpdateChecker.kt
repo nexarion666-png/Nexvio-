@@ -6,12 +6,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -40,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -51,6 +48,7 @@ import java.net.URL
 private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site-phi.vercel.app/latest.json"
 private const val UPDATE_PREFS = "nexvio_update_download"
 private const val UPDATE_ID_KEY = "download_id"
+private const val UPDATE_VERSION_KEY = "download_version"
 
 @Composable
 fun NexvioUpdateChecker() {
@@ -81,6 +79,7 @@ fun NexvioUpdateChecker() {
                     connectTimeout = 7000
                     readTimeout = 7000
                     setRequestProperty("Accept", "application/json")
+                    setRequestProperty("Cache-Control", "no-cache")
                     setRequestProperty("User-Agent", "Nexvio-Android")
                 }
                 if (connection.responseCode !in 200..299) return@withContext null
@@ -96,9 +95,24 @@ fun NexvioUpdateChecker() {
                 connection?.disconnect()
             }
         }
-        updateVersion = update?.first
-        releaseNotes = update?.second.orEmpty()
-        downloadUrl = update?.third
+
+        if (update != null) {
+            // A completed APK is valid only for the exact version it was downloaded for.
+            // Old builds must never leave the banner stuck on Install for a newer release.
+            val prefs = context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
+            val savedDownloadVersion = prefs.getString(UPDATE_VERSION_KEY, null)
+            if (savedDownloadVersion != update.first) {
+                prefs.edit().remove(UPDATE_ID_KEY).remove(UPDATE_VERSION_KEY).apply()
+                downloadId = -1L
+                progress = 0
+                downloading = false
+                downloadComplete = false
+                downloadFailed = false
+            }
+            updateVersion = update.first
+            releaseNotes = update.second
+            downloadUrl = update.third
+        }
     }
 
     LaunchedEffect(downloadId) {
@@ -194,7 +208,10 @@ fun NexvioUpdateChecker() {
                                         .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "nexvio-update-$updateVersion.apk")
                                     val newId = downloadManager.enqueue(request)
                                     context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
-                                        .edit().putLong(UPDATE_ID_KEY, newId).apply()
+                                        .edit()
+                                        .putLong(UPDATE_ID_KEY, newId)
+                                        .putString(UPDATE_VERSION_KEY, updateVersion)
+                                        .apply()
                                     downloadId = newId
                                     progress = 0
                                     downloadComplete = false
