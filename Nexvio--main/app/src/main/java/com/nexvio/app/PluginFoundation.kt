@@ -86,6 +86,9 @@ object PluginManifestParser {
             for (index in 0 until providersJson.length()) {
                 val item = providersJson.optJSONObject(index) ?: continue
                 val providerName = item.optString("name").trim()
+                val providerId = item.optString("id").trim()
+                // Vidnest was removed from Nexvio; do not re-expose it through cached remote manifests.
+                if (providerId.equals("vidnest", ignoreCase = true) || providerName.equals("Vidnest", ignoreCase = true)) continue
                 val file = item.optString("file").ifBlank { item.optString("filename") }.trim()
                 if (providerName.isEmpty() || file.isEmpty()) continue
                 val fileUrl = PluginUrlPolicy.resolveProviderUrl(manifestUrl, file) ?: continue
