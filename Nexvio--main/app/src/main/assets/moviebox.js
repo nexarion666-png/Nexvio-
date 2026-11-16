@@ -87,8 +87,8 @@ var BRAND_MODELS = {
 var TOKEN_URL = "https://apig.inmoviebox.com/wefeed-mobile-bff/tab/ranking-list?tabId=0&categoryType=4516404531735022304&page=1&perPage=1";
 var PACKAGE_INFO = {
   package_name: "com.community.mbox.in",
-  version_name: "4.0.03.0920.03",
-  version_code: 50020130
+  version_name: "4.0.04.1112.03",
+  version_code: 50020135
 };
 
 // src/moviebox/utils.js
