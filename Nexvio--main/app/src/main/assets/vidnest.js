@@ -1,25 +1,30 @@
 /*
  * Nexvio built-in Vidnest provider.
- * Independently implemented against the publicly exposed Vidnest API.
- *
- * Vidnest currently encrypts some server responses. Those responses are
- * decrypted by the upstream-compatible AES-GCM endpoint configured below.
- * The endpoint is a third-party service and may become unavailable.
+ * Uses the current Vidnest API host and normalizes its server-specific
+ * response formats into Nexvio stream entries.
  */
 "use strict";
 
-var VIDNEST_API = "https://first.vidnest.fun";
+var VIDNEST_API = "https://new.vidnest.fun";
 var VIDNEST_DECRYPT = "https://aesdec.nuvioapp.space/decrypt";
 var VIDNEST_PROXY = "https://vidnest.animanga.fun/proxy";
 var VIDNEST_PASSPHRASE = "A7kP9mQeXU2BWcD4fRZV+Sg8yN0/M5tLbC1HJQwYe6o=";
-var VIDNEST_SERVERS = ["hollymoviehd", "primesrc", "ophim", "flixhq", "vidlink", "rogflix"];
+var VIDNEST_SERVERS = [
+  "moviebox", "allmovies", "catflix", "purstream", "hollymoviehd",
+  "lamda", "flixhq", "vidlink", "onehd", "klikxxi"
+];
 
 var API_HEADERS = {
-  "Accept": "*/*",
+  "Accept": "application/json, text/javascript, */*; q=0.01",
   "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+  "Cache-Control": "no-cache",
+  "Pragma": "no-cache",
   "Origin": "https://vidnest.fun",
   "Referer": "https://vidnest.fun/",
-  "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/143.0.0.0 Mobile Safari/537.36"
+  "Sec-Fetch-Dest": "empty",
+  "Sec-Fetch-Mode": "cors",
+  "Sec-Fetch-Site": "same-site",
+  "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36"
 };
 
 var STREAM_HEADERS = {
@@ -34,7 +39,10 @@ var STREAM_HEADERS = {
 function vidnestRequest(url, options) {
   return fetch(url, options || {}).then(function (response) {
     return response.text().then(function (body) {
-      if (!response.ok) throw new Error("HTTP " + response.status + ": " + body.slice(0, 160));
+      if (!response.ok) {
+        var detail = body.replace(/\s+/g, " ").slice(0, 220);
+        throw new Error("HTTP " + response.status + (detail ? ": " + detail : ""));
+      }
       return body;
     });
   });
@@ -57,17 +65,46 @@ function vidnestDecode(payload) {
   });
 }
 
+/* Vidnest servers do not share one response schema. Normalize the common
+ * sources/streams/url[]/data.stream.playlist shapes without treating subtitle
+ * captions as playable video links.
+ */
 function vidnestSources(data) {
-  if (!data || typeof data !== "object") return [];
-  if (Array.isArray(data.sources)) return data.sources;
-  if (Array.isArray(data.streams)) return data.streams;
-  if (typeof data.url === "string") return [{
-    url: data.url, headers: data.headers, subtitles: data.subtitles
-  }];
-  if (typeof data.data === "string") return [{
-    url: data.data, headers: data.headers
-  }];
-  return [];
+  var found = [];
+  var seen = {};
+  function add(value, inherited) {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(function (item) { add(item, inherited); });
+      return;
+    }
+    if (typeof value === "string") {
+      if (/^https?:\/\//i.test(value)) {
+        if (!seen[value]) {
+          seen[value] = true;
+          found.push(Object.assign({}, inherited || {}, { url: value }));
+        }
+      }
+      return;
+    }
+    if (typeof value !== "object") return;
+
+    var candidate = value.url || value.link || value.file || value.src ||
+      value.streamUrl || value.playbackUrl || value.playlist;
+    if (typeof candidate === "string" && /^https?:\/\//i.test(candidate)) {
+      if (!seen[candidate]) {
+        seen[candidate] = true;
+        found.push(Object.assign({}, inherited || {}, value, { url: candidate }));
+      }
+    }
+    if (Array.isArray(value.sources)) add(value.sources, value);
+    if (Array.isArray(value.streams)) add(value.streams, value);
+    if (Array.isArray(value.url)) add(value.url, value);
+    if (value.data && typeof value.data === "object") add(value.data, value);
+    if (value.stream && typeof value.stream === "object") add(value.stream, value);
+  }
+  add(data, {});
+  return found;
 }
 
 function vidnestQuality(value) {
@@ -103,42 +140,41 @@ function vidnestPlaybackUrl(rawUrl) {
 function vidnestParseServer(server, mediaType, tmdbId, title, year, season, episode) {
   var url = VIDNEST_API + "/" + server + "/" + mediaType + "/" + encodeURIComponent(tmdbId);
   if (mediaType === "tv") url += "/" + season + "/" + episode;
-  if (server === "flixhq") url += "?server=upcloud";
+  if (server === "flixhq" || server === "onehd") url += "?server=upcloud";
 
   return vidnestRequest(url, { method: "GET", headers: API_HEADERS })
     .then(function (body) {
-      var payload = JSON.parse(body);
-      return vidnestDecode(payload);
+      return vidnestDecode(JSON.parse(body));
     })
     .then(function (data) {
       var sources = vidnestSources(data);
       var result = [];
       sources.forEach(function (source) {
-        if (!source || typeof source !== "object") return;
-        var rawUrl = source.file || source.url || source.src || source.link;
+        var rawUrl = source.url || source.link || source.file || source.src ||
+          source.streamUrl || source.playbackUrl || source.playlist;
         var streamUrl = vidnestPlaybackUrl(rawUrl);
         if (!streamUrl) return;
 
-        var label = source.label || source.source || "";
-        var language = source.language ? " [" + source.language + "]" : "";
+        var label = source.label || source.source || source.name || source.resolution || "";
+        var language = source.language || source.lang || "";
         var displayTitle = String(title || "Untitled");
         if (year) displayTitle += " (" + year + ")";
         if (mediaType === "tv") {
           displayTitle += " S" + String(season).padStart(2, "0") +
             "E" + String(episode).padStart(2, "0");
         }
-
         var headers = Object.assign({}, STREAM_HEADERS, source.headers || {});
         result.push({
           name: "Vidnest " + server.charAt(0).toUpperCase() + server.slice(1) +
-            (label ? " - " + label : "") + language,
+            (label ? " - " + label : "") + (language ? " [" + language + "]" : ""),
           title: displayTitle,
           url: streamUrl,
-          quality: vidnestQuality(source.quality || source.label || rawUrl),
+          quality: vidnestQuality(source.quality || source.resolution || label || rawUrl),
           headers: headers,
           provider: "vidnest"
         });
       });
+      console.log("[Vidnest] " + server + " returned " + result.length + " stream(s)");
       return result;
     }).catch(function (error) {
       console.log("[Vidnest] " + server + " unavailable: " + String(error && error.message || error));
@@ -151,20 +187,15 @@ function getStreams(tmdbId, mediaType, season, episode, title, year) {
   var id = String(tmdbId || "").trim();
   if (!/^\d+$/.test(id)) return Promise.resolve([]);
 
-  var tasks = VIDNEST_SERVERS.map(function (server) {
-    return vidnestParseServer(
-      server, type, id, title, year, season, episode
-    );
-  });
-
-  return Promise.all(tasks).then(function (groups) {
+  return Promise.all(VIDNEST_SERVERS.map(function (server) {
+    return vidnestParseServer(server, type, id, title, year, season, episode);
+  })).then(function (groups) {
     var streams = [];
     var seen = {};
     groups.forEach(function (group) {
       group.forEach(function (stream) {
-        var key = stream.url;
-        if (!seen[key]) {
-          seen[key] = true;
+        if (!seen[stream.url]) {
+          seen[stream.url] = true;
           streams.push(stream);
         }
       });
