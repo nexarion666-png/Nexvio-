@@ -730,7 +730,11 @@ private suspend fun fetchAddonStreams(context: android.content.Context, item: Tm
         val prefs = context.getSharedPreferences("nexvio_addons", android.content.Context.MODE_PRIVATE)
         val installed = org.json.JSONArray(prefs.getString("installed", "[]") ?: "[]")
         val addons = (0 until installed.length()).mapNotNull { installed.optJSONObject(it) }
-            .filter { it.optBoolean("enabled", true) }
+            .filter { addon ->
+                addon.optBoolean("enabled", true) &&
+                    !addon.optString("id").contains("vidnest", ignoreCase = true) &&
+                    !addon.optString("name").contains("vidnest", ignoreCase = true)
+            }
             .mapNotNull { obj ->
                 val name = obj.optString("name").ifBlank { "Add-on" }
                 val manifest = obj.optString("manifestUrl").trim()
