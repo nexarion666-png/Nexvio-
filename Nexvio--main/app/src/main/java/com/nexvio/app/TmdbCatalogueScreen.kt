@@ -843,7 +843,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                     !installedAddon.optString("id").contains("vidnest", ignoreCase = true) &&
                     !installedAddon.optString("name").contains("vidnest", ignoreCase = true)
             }
-            .map { it.optString("name").ifBlank { "Add-on" } } + listOf("Vidlink")).distinct()
+            .map { it.optString("name").ifBlank { "Add-on" } } + listOf("Vidlink", "Vixsrc")).distinct()
     }
     val providerStatuses = remember(item.id, item.mediaType) { androidx.compose.runtime.mutableStateMapOf<String, String>().apply { addonNames.forEach { put(it, "Waiting") } } }
     var loading by remember(item.id, item.mediaType) { mutableStateOf(false) }
