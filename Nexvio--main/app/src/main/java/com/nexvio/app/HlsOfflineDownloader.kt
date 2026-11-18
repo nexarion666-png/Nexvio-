@@ -44,7 +44,7 @@ internal object HlsOfflineDownloader {
 
         if (variants.isEmpty()) {
             val mediaFile = File(folder, "playlist.m3u8")
-            downloadedBytes += packageMediaPlaylist(url, masterText, mediaFile, folder, headers, onConnection, downloadedBytes, onProgress)
+            downloadedBytes += packageMediaPlaylist(url, masterText, mediaFile, folder, headers, onConnection, -1L, downloadedBytes, onProgress)
             return
         }
 
@@ -73,7 +73,7 @@ internal object HlsOfflineDownloader {
         variantFile.parentFile?.mkdirs()
         downloadedBytes += packageMediaPlaylist(
             selected.url, variantPlaylistText, variantFile,
-            variantFile.parentFile!!, headers, onConnection, downloadedBytes, onProgress
+            variantFile.parentFile!!, headers, onConnection, estimatedTotalBytes, downloadedBytes, onProgress
         )
 
         var localAudioLine: String? = null
@@ -85,7 +85,7 @@ internal object HlsOfflineDownloader {
                 audioFile.parentFile?.mkdirs()
                 downloadedBytes += packageMediaPlaylist(
                     audioUrl, fetchText(audioUrl, headers, onConnection), audioFile,
-                    audioFile.parentFile!!, headers, onConnection, downloadedBytes, onProgress
+                    audioFile.parentFile!!, headers, onConnection, estimatedTotalBytes, downloadedBytes, onProgress
                 )
                 localAudioLine = selectedAudio.replace(Regex("URI=\"[^\"]*\"", RegexOption.IGNORE_CASE), "URI=\"audio/playlist.m3u8\"")
             } else {
@@ -145,6 +145,7 @@ internal object HlsOfflineDownloader {
         localFolder: File,
         headers: Map<String, String>,
         onConnection: (HttpURLConnection?) -> Unit,
+        estimatedTotalBytes: Long,
         initialBytes: Long,
         onProgress: (Long, Long) -> Unit
     ): Long {
@@ -182,7 +183,7 @@ internal object HlsOfflineDownloader {
                         val bytes = fetchToFile(URL(URL(playlistUrl), keyUri).toString(), keyFile, headers, onConnection)
                         addedBytes += bytes
                         progressBytes += bytes
-                        onProgress(progressBytes, -1L)
+                        onProgress(progressBytes, estimatedTotalBytes)
                     }
                     output.append(line.replace(Regex("URI=\"[^\"]*\"", RegexOption.IGNORE_CASE), "URI=\"keys/" + keyFile.name + "\"")).append('\n')
                     keyIndex++
@@ -196,7 +197,7 @@ internal object HlsOfflineDownloader {
                     val bytes = fetchToFile(URL(URL(playlistUrl), mapUri).toString(), mapFile, headers, onConnection)
                     addedBytes += bytes
                     progressBytes += bytes
-                    onProgress(progressBytes)
+                    onProgress(progressBytes, estimatedTotalBytes)
                 }
                 output.append(line.replace(Regex("URI=\"[^\"]*\"", RegexOption.IGNORE_CASE), "URI=\"segments/" + mapFile.name + "\"")).append('\n')
                 mapIndex++
