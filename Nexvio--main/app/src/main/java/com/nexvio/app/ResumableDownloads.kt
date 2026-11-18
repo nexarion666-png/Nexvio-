@@ -376,7 +376,19 @@ internal object ResumableDownloads {
         val existing = if (part.exists()) part.length() else 0L
         var profile = 0
         var conn = openFollowingRedirects(url, existing, headers, profile)
-        while (conn.responseCode in setOf(401, 403, 428, 429) && profile < 2) {
+        // Do not rotate user agents or hammer a rate-limited CDN. Honour Retry-After
+        // and make only two bounded retries using the same source headers.
+        var rateLimitRetries = 0
+        while (conn.responseCode == 429 && rateLimitRetries < 2) {
+            val retryAfter = conn.getHeaderField("Retry-After")?.trim()?.toLongOrNull()
+                ?.coerceIn(1L, 15L) ?: (2L shl rateLimitRetries)
+            conn.disconnect()
+            delay(retryAfter * 1000L)
+            currentCoroutineContext().ensureActive()
+            rateLimitRetries++
+            conn = openFollowingRedirects(url, existing, headers, profile)
+        }
+        while (conn.responseCode in setOf(401, 403, 428) && profile < 2) {
             conn.disconnect()
             profile++
             conn = openFollowingRedirects(url, existing, headers, profile)
