@@ -19,11 +19,11 @@ internal object HlsOfflineDownloader {
         headers: Map<String, String>,
         preferredVideoHeight: Int?,
         onConnection: (HttpURLConnection?) -> Unit,
-        onProgress: (Long) -> Unit
+        onProgress: (Long, Long) -> Unit
     ) {
         if (!folder.exists() && !folder.mkdirs()) throw IOException("Could not create the HLS download folder.")
         var downloadedBytes = folder.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-        onProgress(downloadedBytes)
+        onProgress(downloadedBytes, -1L)
 
         val masterText = fetchText(url, headers, onConnection)
         if (!masterText.trimStart().startsWith("#EXTM3U")) {
@@ -56,10 +56,23 @@ internal object HlsOfflineDownloader {
             ?: audioRenditions.firstOrNull { attribute(it, "AUTOSELECT").equals("YES", true) }
             ?: audioRenditions.firstOrNull()
 
+        val variantPlaylistText = fetchText(selected.url, headers, onConnection)
+        val videoDurationSeconds = playlistDurationSeconds(variantPlaylistText)
+        val videoBandwidth = attribute(selected.tag, "AVERAGE-BANDWIDTH")?.toLongOrNull()
+            ?: attribute(selected.tag, "BANDWIDTH")?.toLongOrNull()
+        val audioBandwidth = selectedAudio?.let {
+            attribute(it, "AVERAGE-BANDWIDTH")?.toLongOrNull()
+                ?: attribute(it, "BANDWIDTH")?.toLongOrNull()
+        } ?: 0L
+        val estimatedTotalBytes = if (videoDurationSeconds > 0.0 && videoBandwidth != null && videoBandwidth > 0L) {
+            (((videoBandwidth + audioBandwidth).toDouble() * videoDurationSeconds) / 8.0).toLong().coerceAtLeast(1L)
+        } else -1L
+        onProgress(downloadedBytes, estimatedTotalBytes)
+
         val variantFile = File(folder, "variant/playlist.m3u8")
         variantFile.parentFile?.mkdirs()
         downloadedBytes += packageMediaPlaylist(
-            selected.url, fetchText(selected.url, headers, onConnection), variantFile,
+            selected.url, variantPlaylistText, variantFile,
             variantFile.parentFile!!, headers, onConnection, downloadedBytes, onProgress
         )
 
@@ -104,8 +117,12 @@ internal object HlsOfflineDownloader {
         }
         if (!output.contains("#EXTM3U")) throw IOException("Could not build the offline HLS playlist.")
         File(folder, "playlist.m3u8").writeText(output.toString(), Charsets.UTF_8)
-        onProgress(downloadedBytes)
+        onProgress(downloadedBytes, estimatedTotalBytes)
     }
+
+    private fun playlistDurationSeconds(text: String): Double =
+        Regex("#EXTINF:([0-9]+(?:\\.[0-9]+)?)", RegexOption.IGNORE_CASE)
+            .findAll(text).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }
 
     private data class Variant(val tag: String, val url: String, val height: Int?, val audioGroup: String?)
 
@@ -129,7 +146,7 @@ internal object HlsOfflineDownloader {
         headers: Map<String, String>,
         onConnection: (HttpURLConnection?) -> Unit,
         initialBytes: Long,
-        onProgress: (Long) -> Unit
+        onProgress: (Long, Long) -> Unit
     ): Long {
         if (!playlistText.trimStart().startsWith("#EXTM3U")) throw IOException("The HLS media playlist is invalid.")
         if (!playlistText.contains("#EXT-X-ENDLIST")) throw IOException("This is a live HLS stream. Only completed movies and episodes can be downloaded.")
@@ -165,7 +182,7 @@ internal object HlsOfflineDownloader {
                         val bytes = fetchToFile(URL(URL(playlistUrl), keyUri).toString(), keyFile, headers, onConnection)
                         addedBytes += bytes
                         progressBytes += bytes
-                        onProgress(progressBytes)
+                        onProgress(progressBytes, -1L)
                     }
                     output.append(line.replace(Regex("URI=\"[^\"]*\"", RegexOption.IGNORE_CASE), "URI=\"keys/" + keyFile.name + "\"")).append('\n')
                     keyIndex++
