@@ -24,6 +24,21 @@ function request(url, headers) {
   });
 }
 
+function normalizePlaylistUrl(value) {
+  // The site sometimes serializes URL separators as escaped slashes
+  // (for example: https:\\/\\/vixsrc.to \\/playlist\\/769486).
+  // Convert those back to URL separators before passing the URL to Android.
+  var url = String(value || "").trim();
+  url = url.replace(/\\\\\\//g, "/");
+  url = url.replace(/\\\\/g, "/");
+  url = url.replace(/\\s+/g, "");
+  url = url.replace(/^(https?):\\/{3,}/i, "$1//");
+  if (/^https?:\\/[^/]/i.test(url)) {
+    url = url.replace(/^(https?):\\//i, "$1://");
+  }
+  return url;
+}
+
 function extractPlaylistData(html) {
   // Vixsrc now serves an API response containing an embed path, then the
   // embed page contains the signed playlist URL and short-lived token.
@@ -35,7 +50,7 @@ function extractPlaylistData(html) {
   if (isFinite(expirySeconds) && expirySeconds > 0 && expirySeconds * 1000 < Date.now()) {
     throw new Error("Vixsrc returned an expired stream token");
   }
-  return { token: token[1], expires: expires[1], playlist: playlist[1] };
+  return { token: token[1], expires: expires[1], playlist: normalizePlaylistUrl(playlist[1]) };
 }
 
 function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
@@ -61,7 +76,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
         // Some Vixsrc pages expose the playlist as a direct HLS URL instead
         // of the token/url object.
         var direct = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
-        if (direct) return { token: "", expires: "", playlist: direct[0] };
+        if (direct) return { token: "", expires: "", playlist: normalizePlaylistUrl(direct[0]) };
         return null;
       });
     }
