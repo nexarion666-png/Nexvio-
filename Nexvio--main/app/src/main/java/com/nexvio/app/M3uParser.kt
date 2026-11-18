@@ -17,7 +17,9 @@ data class TvChannel(
     val subtitleId: String? = null,
     val subtitleType: String? = null,
     val subtitleSeason: Int? = null,
-    val subtitleEpisode: Int? = null
+    val subtitleEpisode: Int? = null,
+    /** Preferred HLS video height selected in stream search; audio selection remains independent. */
+    val preferredVideoHeight: Int? = null
 )
 
 data class ParsedPlaylist(val channels: List<TvChannel>, val error: String? = null)
