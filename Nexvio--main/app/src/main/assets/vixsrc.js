@@ -75,7 +75,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         if (data) return data;
         // Some Vixsrc pages expose the playlist as a direct HLS URL instead
         // of the token/url object.
-        var direct = html.match(/https?:\\/\\/[^"'\\s]+\\.m3u8[^"'\\s]*/i);
+        var direct = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
         if (direct) return { token: "", expires: "", playlist: direct[0] };
         return null;
       });
@@ -116,16 +116,16 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
           throw new Error("Vixsrc response was not a valid HLS playlist");
         }
         var quality = "Auto";
-        var resolution = playlistText.match(/RESOLUTION=\\d+x(\\d+)/g) || [];
+        var resolution = playlistText.match(/RESOLUTION=\d+x(\d+)/g) || [];
         if (resolution.length) {
           var heights = resolution.map(function (entry) {
-            return Number((entry.match(/x(\\d+)/) || [])[1] || 0);
+            return Number((entry.match(/x(\d+)/) || [])[1] || 0);
           });
           var best = Math.max.apply(Math, heights);
           if (best) quality = best + "p";
         }
         var subtitles = [];
-        var subtitleRegex = /#EXT-X-MEDIA:[^\\n]*TYPE=SUBTITLES[^\\n]*URI="([^"]+)"[^\\n]*/g;
+        var subtitleRegex = /#EXT-X-MEDIA:[^\n]*TYPE=SUBTITLES[^\n]*URI="([^"]+)"[^\n]*/g;
         var match;
         while ((match = subtitleRegex.exec(playlistText)) !== null) {
           var label = (match[0].match(/NAME="([^"]+)"/) || [])[1] || "Subtitle";
@@ -143,7 +143,6 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         }];
       });
     });
-  });
   }).catch(function (error) {
     console.error("[Vixsrc] Extraction failed: " + (error && error.message ? error.message : String(error)));
     throw error;
