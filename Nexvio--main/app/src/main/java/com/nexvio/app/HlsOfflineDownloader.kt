@@ -214,7 +214,7 @@ internal object HlsOfflineDownloader {
                 if (bytes <= 0L) throw IOException("The HLS source returned an empty media segment.")
                 addedBytes += bytes
                 progressBytes += bytes
-                onProgress(progressBytes)
+                onProgress(progressBytes, estimatedTotalBytes)
             }
             output.append("segments/").append(segmentFile.name).append('\n')
             segmentIndex++
