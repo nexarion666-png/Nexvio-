@@ -1181,10 +1181,13 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 }
             })
             val uri = Uri.parse(channel.streamUrl)
+            val isVixsrcStream = channel.category.equals("Vixsrc", ignoreCase = true)
+            val isHlsStream = uri.path?.endsWith(".m3u8", ignoreCase = true) == true || isVixsrcStream
             val mediaItem = MediaItem.Builder().setUri(uri).apply {
-                if (uri.path?.endsWith(".m3u8", ignoreCase = true) == true) {
-                    setMimeType(MimeTypes.APPLICATION_M3U8)
-                }
+                // Vixsrc's signed HLS variant URLs do not necessarily end in .m3u8.
+                // Without an explicit MIME type Media3 treats them as progressive files
+                // and fails with UnrecognizedInputFormatException (3003).
+                if (isHlsStream) setMimeType(MimeTypes.APPLICATION_M3U8)
             }.build()
             instance.setMediaItem(mediaItem)
             instance.playWhenReady = shouldResumePlayback && playerPrefs.getBoolean("playback_autoplay", true)
