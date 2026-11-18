@@ -129,7 +129,6 @@ internal object NuvioScraperEngine {
                     !providerId.contains("vidnest", ignoreCase = true) &&
                         !providerName.contains("vidnest", ignoreCase = true) &&
                         !providerName.equals("Vidlink", ignoreCase = true) &&
-                        !providerName.equals("MovieBox", ignoreCase = true) &&
                         it.enabled &&
                         (providerFilter == null || providerName.equals(providerFilter, true)) &&
                         providerName !in disabledProviders
@@ -140,11 +139,6 @@ internal object NuvioScraperEngine {
             disabledProviders.none { it.equals("Vidlink", ignoreCase = true) }
         ) {
             providers.add(listOf("Nexvio Built-in", "Vidlink", "asset:vidlink.js", false))
-        }
-        if ((providerFilter == null || "MovieBox".equals(providerFilter, ignoreCase = true)) &&
-            disabledProviders.none { it.equals("MovieBox", ignoreCase = true) }
-        ) {
-            providers.add(listOf("Nexvio Built-in", "MovieBox", "asset:moviebox.js", false))
         }
         val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
         val publishLock = kotlinx.coroutines.sync.Mutex()
@@ -164,12 +158,10 @@ internal object NuvioScraperEngine {
                             when {
                                 providerName.equals("Vidlink", ignoreCase = true) ->
                                     context.assets.open("vidlink.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
-                                providerName.equals("MovieBox", ignoreCase = true) ->
-                                    context.assets.open("moviebox.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
                                 else -> fetchText(fileUrl, MAX_BYTES)
                             }
                         } catch (e: Exception) {
-                            val builtIn = providerName.equals("Vidlink", true) || providerName.equals("MovieBox", true)
+                            val builtIn = providerName.equals("Vidlink", true)
                             onStatus(providerName + ": " + (if (builtIn) "bundled provider load error" else "network/download error") + " — " + (e.message ?: "provider load error"))
                             return@withPermit
                         }
