@@ -119,6 +119,7 @@ private val tvChannelSaver = Saver<TvChannel?, Bundle>(
             putString("subtitleType", value.subtitleType)
             putInt("subtitleSeason", value.subtitleSeason ?: -1)
             putInt("subtitleEpisode", value.subtitleEpisode ?: -1)
+            putInt("preferredVideoHeight", value.preferredVideoHeight ?: -1)
         }
     } },
     restore = { state -> state?.let { value ->
@@ -137,6 +138,7 @@ private val tvChannelSaver = Saver<TvChannel?, Bundle>(
             subtitleType = value.getString("subtitleType"),
             subtitleSeason = value.getInt("subtitleSeason").takeIf { it > 0 },
             subtitleEpisode = value.getInt("subtitleEpisode").takeIf { it > 0 },
+            preferredVideoHeight = value.getInt("preferredVideoHeight", -1).takeIf { it > 0 },
             requestHeaders = runCatching {
                 val headers = org.json.JSONObject(value.getString("requestHeaders").orEmpty())
                 buildMap { val keys = headers.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, headers.optString(key)) } }
@@ -1113,6 +1115,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
             // buffering->ready transition (including after a seek) jumped back to the stale
             // position that is refreshed once per second, which undid skips and drags.
             var initialResumeHandled = false
+            var preferredQualityApplied = false
             instance.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (playbackState == Player.STATE_ENDED) {
@@ -1151,6 +1154,20 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 }
 
                 override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                    if (!preferredQualityApplied && (channel.preferredVideoHeight ?: 0) > 0) {
+                        val targetHeight = channel.preferredVideoHeight!!
+                        val videoGroup = tracks.groups.firstOrNull { group ->
+                            group.type == C.TRACK_TYPE_VIDEO && (0 until group.length).any { group.getTrackFormat(it).height == targetHeight }
+                        }
+                        val matchingIndex = videoGroup?.let { group -> (0 until group.length).firstOrNull { group.getTrackFormat(it).height == targetHeight } }
+                        if (videoGroup != null && matchingIndex != null) {
+                            instance.trackSelectionParameters = instance.trackSelectionParameters.buildUpon()
+                                .setOverrideForType(TrackSelectionOverride(videoGroup.mediaTrackGroup, listOf(matchingIndex)))
+                                .build()
+                            preferredQualityApplied = true
+                            Log.i(PLAYBACK_TAG, "Applied stream-search quality " + targetHeight + "p")
+                        }
+                    }
                     val textTracks = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
                     val details = textTracks.flatMap { group -> (0 until group.length).map { index ->
                         val format = group.getTrackFormat(index)
