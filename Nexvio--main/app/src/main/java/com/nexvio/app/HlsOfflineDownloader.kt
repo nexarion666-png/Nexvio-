@@ -64,16 +64,32 @@ internal object HlsOfflineDownloader {
             attribute(it, "AVERAGE-BANDWIDTH")?.toLongOrNull()
                 ?: attribute(it, "BANDWIDTH")?.toLongOrNull()
         } ?: 0L
-        val estimatedTotalBytes = if (videoDurationSeconds > 0.0 && videoBandwidth != null && videoBandwidth > 0L) {
+        val bitrateEstimate = if (videoDurationSeconds > 0.0 && videoBandwidth != null && videoBandwidth > 0L) {
             (((videoBandwidth + audioBandwidth).toDouble() * videoDurationSeconds) / 8.0).toLong().coerceAtLeast(1L)
         } else -1L
-        onProgress(downloadedBytes, estimatedTotalBytes)
+
+        // First try to measure every selected video/audio segment using HEAD or a
+        // one-byte Range request. If the CDN exposes resource lengths, this is the
+        // exact media payload size before the download begins.
+        val audioPlaylistUrl = selectedAudio?.let { audio ->
+            attribute(audio, "URI")?.takeIf { it.isNotBlank() }?.let { URL(URL(url), it).toString() }
+        }
+        val audioPlaylistText = audioPlaylistUrl?.let { fetchText(it, headers, onConnection) }
+        val videoExactBytes = playlistResourceBytes(selected.url, variantPlaylistText, headers)
+        val audioExactBytes = if (audioPlaylistUrl != null && audioPlaylistText != null) {
+            playlistResourceBytes(audioPlaylistUrl, audioPlaylistText, headers)
+        } else 0L
+        val exactTotalBytes = if (videoExactBytes >= 0L && audioExactBytes >= 0L) {
+            videoExactBytes + audioExactBytes
+        } else -1L
+        val totalBytes = exactTotalBytes.takeIf { it > 0L } ?: bitrateEstimate
+        onProgress(downloadedBytes, totalBytes)
 
         val variantFile = File(folder, "variant/playlist.m3u8")
         variantFile.parentFile?.mkdirs()
         downloadedBytes += packageMediaPlaylist(
             selected.url, variantPlaylistText, variantFile,
-            variantFile.parentFile!!, headers, onConnection, estimatedTotalBytes, downloadedBytes, onProgress
+            variantFile.parentFile!!, headers, onConnection, totalBytes, downloadedBytes, onProgress
         )
 
         var localAudioLine: String? = null
@@ -84,7 +100,7 @@ internal object HlsOfflineDownloader {
                 val audioFile = File(folder, "audio/playlist.m3u8")
                 audioFile.parentFile?.mkdirs()
                 downloadedBytes += packageMediaPlaylist(
-                    audioUrl, fetchText(audioUrl, headers, onConnection), audioFile,
+                    audioUrl, audioPlaylistText ?: fetchText(audioUrl, headers, onConnection), audioFile,
                     audioFile.parentFile!!, headers, onConnection, estimatedTotalBytes, downloadedBytes, onProgress
                 )
                 localAudioLine = selectedAudio.replace(Regex("URI=\"[^\"]*\"", RegexOption.IGNORE_CASE), "URI=\"audio/playlist.m3u8\"")
@@ -118,6 +134,65 @@ internal object HlsOfflineDownloader {
         if (!output.contains("#EXTM3U")) throw IOException("Could not build the offline HLS playlist.")
         File(folder, "playlist.m3u8").writeText(output.toString(), Charsets.UTF_8)
         onProgress(downloadedBytes, estimatedTotalBytes)
+    }
+
+    /**
+     * Returns the exact byte count for all media resources referenced by a finite
+     * HLS playlist, or -1 when even one resource does not disclose its length.
+     */
+    private suspend fun playlistResourceBytes(
+        playlistUrl: String,
+        playlistText: String,
+        headers: Map<String, String>
+    ): Long {
+        if (!playlistText.trimStart().startsWith("#EXTM3U") || !playlistText.contains("#EXT-X-ENDLIST")) return -1L
+        val resources = mutableListOf<String>()
+        for (raw in playlistText.replace("\\r", "").lines()) {
+            val line = raw.trim()
+            if (line.isEmpty()) continue
+            if (line.startsWith("#EXT-X-KEY:", true) || line.startsWith("#EXT-X-MAP:", true)) {
+                val uri = attribute(line, "URI") ?: continue
+                if (uri.isNotBlank()) resources += URL(URL(playlistUrl), uri).toString()
+            } else if (!line.startsWith("#")) {
+                resources += URL(URL(playlistUrl), line).toString()
+            }
+        }
+        if (resources.isEmpty()) return -1L
+        var total = 0L
+        for (resource in resources.distinct()) {
+            val size = probeResourceSize(resource, headers)
+            if (size < 0L) return -1L
+            total += size
+        }
+        return total
+    }
+
+    private suspend fun probeResourceSize(url: String, headers: Map<String, String>): Long {
+        currentCoroutineContext().ensureActive()
+        val head = open(url, headers).apply { requestMethod = "HEAD" }
+        try {
+            val code = head.responseCode
+            if (code in 200..299 && head.contentLengthLong >= 0L) return head.contentLengthLong
+        } catch (_: Exception) {
+            // Some CDNs reject HEAD; try a one-byte range request below.
+        } finally {
+            head.disconnect()
+        }
+
+        currentCoroutineContext().ensureActive()
+        val ranged = open(url, headers).apply { setRequestProperty("Range", "bytes=0-0") }
+        try {
+            val code = ranged.responseCode
+            val contentRange = ranged.getHeaderField("Content-Range")
+            val total = contentRange?.substringAfterLast('/')?.toLongOrNull()
+            if (code == 206 && total != null && total >= 0L) return total
+            if (code in 200..299 && ranged.contentLengthLong >= 0L) return ranged.contentLengthLong
+            return -1L
+        } catch (_: Exception) {
+            return -1L
+        } finally {
+            ranged.disconnect()
+        }
     }
 
     private fun playlistDurationSeconds(text: String): Double =
