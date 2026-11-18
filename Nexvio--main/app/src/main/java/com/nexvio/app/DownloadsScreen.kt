@@ -86,26 +86,29 @@ internal class OfflineDownloads(private val context: Context, private val profil
     private val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private val prefs = ResumableDownloads.prefs(context, profileId)
     fun ids(): List<Long> = prefs.getString("ids", "").orEmpty().split(",").mapNotNull { it.toLongOrNull() }
-    fun enqueue(rawUrl: String, rawTitle: String, groupTitle: String = rawTitle, mediaType: String = "movie", posterUrl: String? = null, headers: Map<String, String> = emptyMap(), subtitleId: String? = null, subtitleType: String? = null, subtitleSeason: Int? = null, subtitleEpisode: Int? = null): Long {
+    fun enqueue(rawUrl: String, rawTitle: String, groupTitle: String = rawTitle, mediaType: String = "movie", posterUrl: String? = null, headers: Map<String, String> = emptyMap(), subtitleId: String? = null, subtitleType: String? = null, subtitleSeason: Int? = null, subtitleEpisode: Int? = null, preferredVideoHeight: Int? = null): Long {
         val parsed = URI(rawUrl.trim())
         require((parsed.scheme.equals("https", true) || parsed.scheme.equals("http", true)) && !parsed.host.isNullOrBlank()) { "This source does not provide a valid HTTP/HTTPS media URL." }
         val path = parsed.path.orEmpty().lowercase()
-        require(!path.endsWith(".m3u8") && !path.endsWith(".mpd") && !path.endsWith(".m3u")) {
-            "This source is a streaming playlist (HLS/DASH/M3U), not a direct media file. Nexvio cannot save it as an offline video yet."
+        val host = parsed.host.orEmpty().lowercase()
+        val isHls = path.endsWith(".m3u8") || host == "vixsrc.to" || host.endsWith(".vixsrc.to")
+        require(!path.endsWith(".mpd") && !path.endsWith(".m3u")) {
+            "This source uses an unsupported DASH or M3U playlist. Nexvio currently supports Vixsrc HLS and direct media files."
         }
-        require(listOf(".mp4", ".m4v", ".mkv", ".webm", ".mp3", ".aac").any { path.endsWith(it) } || !parsed.path.orEmpty().substringAfterLast("/").contains(".")) {
-            "This URL does not look like a direct media file. Choose a direct MP4/M4V/MKV/WebM/MP3/AAC source."
+        require(isHls || listOf(".mp4", ".m4v", ".mkv", ".webm", ".mp3", ".aac").any { path.endsWith(it) } || !parsed.path.orEmpty().substringAfterLast("/").contains(".")) {
+            "This URL does not look like a supported direct media file or HLS stream."
         }
         val title = rawTitle.trim().ifBlank { parsed.path?.substringAfterLast('/')?.ifBlank { "Nexvio media" } ?: "Nexvio media" }
             .replace("/", "_").replace("\\", "_").take(100)
         // New downloads use the resumable engine so they can be paused and resumed.
-        val id = ResumableDownloads.enqueue(context, profileId, parsed.toString(), title, headers, subtitleId, subtitleType, subtitleSeason, subtitleEpisode)
+        val id = ResumableDownloads.enqueue(context, profileId, parsed.toString(), title, headers, subtitleId, subtitleType, subtitleSeason, subtitleEpisode, preferredVideoHeight)
         prefs.edit().putString("ids", (ids() + id).distinct().joinToString(",")).apply()
         val metadata = org.json.JSONObject()
             .put("groupTitle", groupTitle)
             .put("mediaType", mediaType)
             .put("posterUrl", posterUrl.orEmpty())
             .put("downloadTitle", title)
+            .put("quality", preferredVideoHeight?.let { "${it}p" } ?: "")
         prefs.edit().putString("metadata_$id", metadata.toString()).apply()
         // Save the poster to the phone right away so the folder still has it offline.
         if (!posterUrl.isNullOrBlank()) {
@@ -220,8 +223,8 @@ internal class OfflineDownloads(private val context: Context, private val profil
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
 
-internal fun enqueueDiscoveredStream(context: Context, title: String, url: String, profileId: String = NexvioProfileStore.active(context).id, groupTitle: String = title, mediaType: String = "movie", posterUrl: String? = null, headers: Map<String, String> = emptyMap(), subtitleId: String? = null, subtitleType: String? = null, subtitleSeason: Int? = null, subtitleEpisode: Int? = null): Long =
-    OfflineDownloads(context.applicationContext, profileId).enqueue(url, title, groupTitle, mediaType, posterUrl, headers, subtitleId, subtitleType, subtitleSeason, subtitleEpisode)
+internal fun enqueueDiscoveredStream(context: Context, title: String, url: String, profileId: String = NexvioProfileStore.active(context).id, groupTitle: String = title, mediaType: String = "movie", posterUrl: String? = null, headers: Map<String, String> = emptyMap(), subtitleId: String? = null, subtitleType: String? = null, subtitleSeason: Int? = null, subtitleEpisode: Int? = null, preferredVideoHeight: Int? = null): Long =
+    OfflineDownloads(context.applicationContext, profileId).enqueue(url, title, groupTitle, mediaType, posterUrl, headers, subtitleId, subtitleType, subtitleSeason, subtitleEpisode, preferredVideoHeight)
 
 @Composable
 private fun DownloadActionPill(icon: ImageVector, label: String, onClick: () -> Unit) {
