@@ -62,64 +62,88 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
     ? BASE_URL + "/api/tv/" + encodeURIComponent(tmdbId) + "/" + seasonNum + "/" + episodeNum
     : BASE_URL + "/api/movie/" + encodeURIComponent(tmdbId);
 
-  console.log("[Vixsrc] Using current API -> embed -> HLS flow");
+  console.log("[Vixsrc] Trying canonical page -> masterPlaylist extraction first");
   return getTmdbInfo(tmdbId, mediaType).then(function (info) {
-    return request(apiUrl, { "Referer": pageUrl }).then(function (response) {
-      return response.json();
-    }).then(function (apiData) {
-      if (!apiData || !apiData.src) throw new Error("Vixsrc API response did not contain an embed path");
-      var embedUrl = new URL(apiData.src, BASE_URL).toString();
-      console.log("[Vixsrc] Fetching embed page");
-      return request(embedUrl, {
-        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-        "Referer": pageUrl
+    function fetchMasterFromPage(url, referer) {
+      return request(url, {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": referer
       }).then(function (response) {
         return response.text();
       }).then(function (html) {
         var data = extractPlaylistData(html);
-        if (!data) throw new Error("Vixsrc embed page did not contain playlist token data");
-        var separator = data.playlist.indexOf("?") >= 0 ? "&" : "?";
-        var masterUrl = data.playlist + separator +
-          "token=" + encodeURIComponent(data.token) +
-          "&expires=" + encodeURIComponent(data.expires) + "&h=1&lang=en";
-        console.log("[Vixsrc] Fetching HLS master playlist");
-        return request(masterUrl, {
-          "Accept": "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
-          "Referer": pageUrl
-        }).then(function (response) {
-          return response.text();
-        }).then(function (playlistText) {
-          if (!playlistText || playlistText.indexOf("#EXTM3U") < 0) {
-            throw new Error("Vixsrc response was not a valid HLS playlist");
-          }
-          var quality = "Auto";
-          var resolution = playlistText.match(/RESOLUTION=\d+x(\d+)/g) || [];
-          if (resolution.length) {
-            var heights = resolution.map(function (entry) {
-              return Number((entry.match(/x(\d+)/) || [])[1] || 0);
-            });
-            var best = Math.max.apply(Math, heights);
-            if (best) quality = best + "p";
-          }
-          var subtitles = [];
-          var subtitleRegex = /#EXT-X-MEDIA:[^\n]*TYPE=SUBTITLES[^\n]*URI="([^"]+)"[^\n]*/g;
-          var match;
-          while ((match = subtitleRegex.exec(playlistText)) !== null) {
-            var label = (match[0].match(/NAME="([^"]+)"/) || [])[1] || "Subtitle";
-            subtitles.push({ url: new URL(match[1], masterUrl).toString(), language: label, name: label, headers: { "Referer": pageUrl, "User-Agent": USER_AGENT } });
-          }
-          return [{
-            name: "Vixsrc",
-            title: info.title + (info.year ? " (" + info.year + ")" : ""),
-            url: masterUrl,
-            quality: quality,
-            type: "direct",
-            headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
-            subtitles: subtitles
-          }];
+        if (data) return data;
+        // Some Vixsrc pages expose the playlist as a direct HLS URL instead
+        // of the token/url object.
+        var direct = html.match(/https?:\\/\\/[^"'\\s]+\\.m3u8[^"'\\s]*/i);
+        if (direct) return { token: "", expires: "", playlist: direct[0] };
+        return null;
+      });
+    }
+
+    return fetchMasterFromPage(pageUrl, BASE_URL + "/").then(function (data) {
+      if (data) {
+        console.log("[Vixsrc] Extracted stream data from canonical page");
+        return { info: info, data: data };
+      }
+      console.log("[Vixsrc] Canonical page had no playlist; trying API embed fallback");
+      return request(apiUrl, { "Referer": pageUrl }).then(function (response) {
+        return response.json();
+      }).then(function (apiData) {
+        if (!apiData || !apiData.src) throw new Error("Vixsrc API response did not contain an embed path");
+        var embedUrl = apiData.src.indexOf("http") === 0 ? apiData.src : BASE_URL + (apiData.src.charAt(0) === "/" ? "" : "/") + apiData.src;
+        return fetchMasterFromPage(embedUrl, pageUrl).then(function (embedData) {
+          if (!embedData) throw new Error("Vixsrc canonical and embed pages contained no playlist data");
+          return { info: info, data: embedData };
         });
       });
+    }).then(function (resolved) {
+      var data = resolved.data;
+      var masterUrl = data.playlist;
+      if (data.token && data.expires) {
+        var separator = masterUrl.indexOf("?") >= 0 ? "&" : "?";
+        masterUrl += separator + "token=" + encodeURIComponent(data.token) +
+          "&expires=" + encodeURIComponent(data.expires) + "&h=1&lang=en";
+      }
+      console.log("[Vixsrc] Fetching HLS master playlist");
+      return request(masterUrl, {
+        "Accept": "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
+        "Referer": pageUrl
+      }).then(function (response) {
+        return response.text();
+      }).then(function (playlistText) {
+        if (!playlistText || playlistText.indexOf("#EXTM3U") < 0) {
+          throw new Error("Vixsrc response was not a valid HLS playlist");
+        }
+        var quality = "Auto";
+        var resolution = playlistText.match(/RESOLUTION=\\d+x(\\d+)/g) || [];
+        if (resolution.length) {
+          var heights = resolution.map(function (entry) {
+            return Number((entry.match(/x(\\d+)/) || [])[1] || 0);
+          });
+          var best = Math.max.apply(Math, heights);
+          if (best) quality = best + "p";
+        }
+        var subtitles = [];
+        var subtitleRegex = /#EXT-X-MEDIA:[^\\n]*TYPE=SUBTITLES[^\\n]*URI="([^"]+)"[^\\n]*/g;
+        var match;
+        while ((match = subtitleRegex.exec(playlistText)) !== null) {
+          var label = (match[0].match(/NAME="([^"]+)"/) || [])[1] || "Subtitle";
+          var subtitleUrl = match[1].indexOf("http") === 0 ? match[1] : masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1) + match[1];
+          subtitles.push({ url: subtitleUrl, language: label, name: label, headers: { "Referer": pageUrl, "User-Agent": USER_AGENT } });
+        }
+        return [{
+          name: "Vixsrc",
+          title: info.title + (info.year ? " (" + info.year + ")" : ""),
+          url: masterUrl,
+          quality: quality,
+          type: "direct",
+          headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
+          subtitles: subtitles
+        }];
+      });
     });
+  });
   }).catch(function (error) {
     console.error("[Vixsrc] Extraction failed: " + (error && error.message ? error.message : String(error)));
     throw error;
