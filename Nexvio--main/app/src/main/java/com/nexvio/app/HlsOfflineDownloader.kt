@@ -101,7 +101,7 @@ internal object HlsOfflineDownloader {
                 audioFile.parentFile?.mkdirs()
                 downloadedBytes += packageMediaPlaylist(
                     audioUrl, audioPlaylistText ?: fetchText(audioUrl, headers, onConnection), audioFile,
-                    audioFile.parentFile!!, headers, onConnection, estimatedTotalBytes, downloadedBytes, onProgress
+                    audioFile.parentFile!!, headers, onConnection, totalBytes, downloadedBytes, onProgress
                 )
                 localAudioLine = selectedAudio.replace(Regex("URI=\"[^\"]*\"", RegexOption.IGNORE_CASE), "URI=\"audio/playlist.m3u8\"")
             } else {
@@ -133,7 +133,7 @@ internal object HlsOfflineDownloader {
         }
         if (!output.contains("#EXTM3U")) throw IOException("Could not build the offline HLS playlist.")
         File(folder, "playlist.m3u8").writeText(output.toString(), Charsets.UTF_8)
-        onProgress(downloadedBytes, estimatedTotalBytes)
+        onProgress(downloadedBytes, totalBytes)
     }
 
     /**
