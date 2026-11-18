@@ -25,16 +25,15 @@ function request(url, headers) {
 }
 
 function normalizePlaylistUrl(value) {
-  // The site sometimes serializes URL separators as escaped slashes
-  // (for example: https:\\/\\/vixsrc.to \\/playlist\\/769486).
-  // Convert those back to URL separators before passing the URL to Android.
+  // Decode escaped URL separators without relying on complex regex patterns.
   var url = String(value || "").trim();
-  url = url.replace(/\\\\\\//g, "/");
-  url = url.replace(/\\\\/g, "/");
-  url = url.replace(/\\s+/g, "");
-  url = url.replace(/^(https?):\\/{3,}/i, "$1//");
-  if (/^https?:\\/[^/]/i.test(url)) {
-    url = url.replace(/^(https?):\\//i, "$1://");
+  url = url.split("\\\\/").join("/");
+  url = url.split("\\\\").join("/");
+  url = url.replace(/\s/g, "");
+  if (url.indexOf("https:/") === 0 && url.indexOf("https://") !== 0) {
+    url = "https://" + url.substring(7).replace(/^\/+/, "");
+  } else if (url.indexOf("http:/") === 0 && url.indexOf("http://") !== 0) {
+    url = "http://" + url.substring(6).replace(/^\/+/, "");
   }
   return url;
 }
