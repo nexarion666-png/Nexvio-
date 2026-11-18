@@ -279,7 +279,7 @@ internal class OfflineDownloads(private val context: Context, private val profil
 
         return withContext(Dispatchers.IO) {
             val values = ContentValues().apply {
-                put(MediaStore.Video.Media.DISPLAY_NAME, (source.nameWithoutExtension.ifBlank { "Nexvio video" }) + ".mp4")
+                put(MediaStore.Video.Media.DISPLAY_NAME, (metadata(id).optString("downloadTitle").ifBlank { source.nameWithoutExtension.ifBlank { "Nexvio video" } }) + ".mp4")
                 put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Nexvio")
@@ -423,6 +423,7 @@ private fun DownloadItemCard(
 fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfileStore.active(LocalContext.current).id, onPlayQueue: ((List<TvChannel>, Int) -> Unit)? = null) {
     val context = LocalContext.current
     val store = remember(context, profileId) { OfflineDownloads(context.applicationContext, profileId) }
+    val scope = rememberCoroutineScope()
     var rows by remember { mutableStateOf(store.rows()) }
     var error by remember { mutableStateOf<String?>(null) }
     var progressRefresh by remember { mutableIntStateOf(0) }
