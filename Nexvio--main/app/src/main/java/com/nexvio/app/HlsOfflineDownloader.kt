@@ -227,6 +227,7 @@ internal object HlsOfflineDownloader {
     private suspend fun fetchToFile(url: String, file: File, headers: Map<String, String>, callback: (HttpURLConnection?) -> Unit): Long {
         currentCoroutineContext().ensureActive()
         file.parentFile?.mkdirs()
+        val temporary = File(file.parentFile, file.name + ".part")
         val connection = open(url, headers)
         callback(connection)
         try {
@@ -234,7 +235,7 @@ internal object HlsOfflineDownloader {
             if (code !in 200..299) throw IOException("HLS segment request failed (HTTP $code).")
             var count = 0L
             connection.inputStream.use { input ->
-                file.outputStream().use { output ->
+                temporary.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
                         currentCoroutineContext().ensureActive()
@@ -245,6 +246,9 @@ internal object HlsOfflineDownloader {
                     }
                 }
             }
+            if (count <= 0L) throw IOException("The HLS source returned an empty media segment.")
+            if (file.exists()) file.delete()
+            if (!temporary.renameTo(file)) throw IOException("Could not save an HLS media segment.")
             return count
         } finally {
             callback(null)
