@@ -340,6 +340,7 @@ internal object ResumableDownloads {
             val sourcePath = runCatching { URL(downloadUrl).path.lowercase() }.getOrDefault("")
             val isHls = sourcePath.endsWith(".m3u8") || sourceHost == "vixsrc.to" || sourceHost.endsWith(".vixsrc.to")
             if (isHls) {
+                update(prefs, id) { it.put("format", "hls") }
                 val hlsFolder = File(dir, "$name.hls")
                 HlsOfflineDownloader.download(
                     downloadUrl, hlsFolder, readHeaders(rec),
