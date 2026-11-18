@@ -42,9 +42,9 @@ function getTmdbInfo(tmdbId, mediaType) {
 function extractPlaylistData(html) {
   // Vixsrc now serves an API response containing an embed path, then the
   // embed page contains the signed playlist URL and short-lived token.
-  var token = html.match(/token["']?\\s*:\\s*["']([^"']+)["']/i);
-  var expires = html.match(/expires["']?\\s*:\\s*["']([^"']+)["']/i);
-  var playlist = html.match(/url\\s*:\\s*["']([^"']+)["']/i);
+  var token = html.match(/token["']?\s*:\s*["']([^"']+)["']/i);
+  var expires = html.match(/expires["']?\s*:\s*["']([^"']+)["']/i);
+  var playlist = html.match(/url\s*:\s*["']([^"']+)["']/i);
   if (!token || !expires || !playlist) return null;
   var expirySeconds = Number(expires[1]);
   if (isFinite(expirySeconds) && expirySeconds > 0 && expirySeconds * 1000 < Date.now()) {
@@ -93,16 +93,16 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
             throw new Error("Vixsrc response was not a valid HLS playlist");
           }
           var quality = "Auto";
-          var resolution = playlistText.match(/RESOLUTION=\\d+x(\\d+)/g) || [];
+          var resolution = playlistText.match(/RESOLUTION=\d+x(\d+)/g) || [];
           if (resolution.length) {
             var heights = resolution.map(function (entry) {
-              return Number((entry.match(/x(\\d+)/) || [])[1] || 0);
+              return Number((entry.match(/x(\d+)/) || [])[1] || 0);
             });
             var best = Math.max.apply(Math, heights);
             if (best) quality = best + "p";
           }
           var subtitles = [];
-          var subtitleRegex = /#EXT-X-MEDIA:[^\\n]*TYPE=SUBTITLES[^\\n]*URI="([^"]+)"[^\\n]*/g;
+          var subtitleRegex = /#EXT-X-MEDIA:[^\n]*TYPE=SUBTITLES[^\n]*URI="([^"]+)"[^\n]*/g;
           var match;
           while ((match = subtitleRegex.exec(playlistText)) !== null) {
             var label = (match[0].match(/NAME="([^"]+)"/) || [])[1] || "Subtitle";
