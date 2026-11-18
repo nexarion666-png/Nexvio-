@@ -1037,7 +1037,8 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
                                 subtitleId = stream.subtitleId,
                                 subtitleType = stream.subtitleType,
                                 subtitleSeason = stream.subtitleSeason,
-                                subtitleEpisode = stream.subtitleEpisode
+                                subtitleEpisode = stream.subtitleEpisode,
+                                preferredVideoHeight = Regex("(?i)(2160|1080|720|480|360)P").find(stream.quality)?.value?.dropLast(1)?.toIntOrNull()
                             ))
                             },
                             onLongClick = { downloadTarget = stream }
