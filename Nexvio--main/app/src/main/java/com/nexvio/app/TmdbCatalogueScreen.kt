@@ -899,14 +899,15 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         AlertDialog(
             onDismissRequest = { downloadTarget = null },
             title = { Text("Download for offline") },
-            text = { Text("Save " + item.title + (if (item.mediaType == "tv") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " (" + target.quality + ")? Only direct media files are supported. HLS/DASH playlists, DRM and provider pages cannot be converted by this downloader.") },
+            text = { Text("Save " + item.title + (if (item.mediaType == "tv") " • S" + seasonNumber + "E" + episodeNumber else "") + " from " + target.addonName + " at " + target.quality + "? Vixsrc HLS downloads save the selected video quality with its available audio track. Progress and pause/resume are shown in Library → Offline.") },
             confirmButton = {
                 TextButton(onClick = {
                     // Use the media title as the filename; series also include SxxExx.
-                    val title = item.title + (if (item.mediaType == "tv") " - S" + seasonNumber.toString().padStart(2, '0') + "E" + episodeNumber.toString().padStart(2, '0') else "")
+                    val selectedHeight = Regex("(?i)(2160|1080|720|480|360)P").find(target.quality)?.groupValues?.get(1)?.toIntOrNull()
+                    val title = item.title + (if (item.mediaType == "tv") " - S" + seasonNumber.toString().padStart(2, '0') + "E" + episodeNumber.toString().padStart(2, '0') else "") + (selectedHeight?.let { " • ${it}p" } ?: "")
                     try {
-                        enqueueDiscoveredStream(context, title, target.url, groupTitle = item.title, mediaType = item.mediaType, posterUrl = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }, headers = target.headers, subtitleId = target.subtitleId, subtitleType = target.subtitleType, subtitleSeason = target.subtitleSeason, subtitleEpisode = target.subtitleEpisode)
-                        downloadMessage = "Download queued. Track it in Library → Offline."
+                        enqueueDiscoveredStream(context, title, target.url, groupTitle = item.title, mediaType = item.mediaType, posterUrl = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }, headers = target.headers, subtitleId = target.subtitleId, subtitleType = target.subtitleType, subtitleSeason = target.subtitleSeason, subtitleEpisode = target.subtitleEpisode, preferredVideoHeight = selectedHeight)
+                        downloadMessage = "Download queued at " + (selectedHeight?.let { "${it}p" } ?: target.quality) + ". Track its progress in Library → Offline."
                     } catch (e: Exception) {
                         downloadMessage = e.message ?: "This stream cannot be downloaded as a direct media file."
                     }
