@@ -116,8 +116,8 @@ internal object NuvioScraperEngine {
         // Run a small number of providers concurrently so one slow scraper does not
         // block faster providers from publishing their results.
         val repositories = PluginRepositoryStore(context).all()
-        // Vidlink is a built-in asset, not a repository-hosted provider. Ignore any
-        // repository copy named Vidlink so it cannot suppress or duplicate the bundled provider.
+        // Vidlink and Vixsrc are bundled assets, not repository-hosted providers.
+        // Ignore repository copies so they cannot suppress or duplicate bundled providers.
         val providers = repositories.filter { it.enabled }
             .flatMap { repository ->
                 repository.providers.filter {
@@ -129,6 +129,7 @@ internal object NuvioScraperEngine {
                     !providerId.contains("vidnest", ignoreCase = true) &&
                         !providerName.contains("vidnest", ignoreCase = true) &&
                         !providerName.equals("Vidlink", ignoreCase = true) &&
+                        !providerName.equals("Vixsrc", ignoreCase = true) &&
                         it.enabled &&
                         (providerFilter == null || providerName.equals(providerFilter, true)) &&
                         providerName !in disabledProviders
@@ -139,6 +140,11 @@ internal object NuvioScraperEngine {
             disabledProviders.none { it.equals("Vidlink", ignoreCase = true) }
         ) {
             providers.add(listOf("Nexvio Built-in", "Vidlink", "asset:vidlink.js", false))
+        }
+        if ((providerFilter == null || "Vixsrc".equals(providerFilter, ignoreCase = true)) &&
+            disabledProviders.none { it.equals("Vixsrc", ignoreCase = true) }
+        ) {
+            providers.add(listOf("Nexvio Built-in", "Vixsrc", "asset:vixsrc.js", false))
         }
         val results = java.util.Collections.synchronizedList(mutableListOf<NuvioDiscoveredStream>())
         val publishLock = kotlinx.coroutines.sync.Mutex()
@@ -158,10 +164,12 @@ internal object NuvioScraperEngine {
                             when {
                                 providerName.equals("Vidlink", ignoreCase = true) ->
                                     context.assets.open("vidlink.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
+                                providerName.equals("Vixsrc", ignoreCase = true) ->
+                                    context.assets.open("vixsrc.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
                                 else -> fetchText(fileUrl, MAX_BYTES)
                             }
                         } catch (e: Exception) {
-                            val builtIn = providerName.equals("Vidlink", true)
+                            val builtIn = providerName.equals("Vidlink", true) || providerName.equals("Vixsrc", true)
                             onStatus(providerName + ": " + (if (builtIn) "bundled provider load error" else "network/download error") + " — " + (e.message ?: "provider load error"))
                             return@withPermit
                         }
