@@ -352,12 +352,12 @@ internal object NuvioScraperEngine {
                     val payload = try {
                         val normalizedAddress = normalizedAddressForLog
                         val uri = URI(normalizedAddress)
-                        require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null)
+                        require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "Blocked invalid request URL (scheme, host, or user-info)" }
                         val host = uri.host.lowercase()
                         val dnsTask = FutureTask { java.net.InetAddress.getByName(host) }
                         Thread(dnsTask, "nexvio-dns-check").apply { isDaemon = true; start() }
                         val ip = try { dnsTask.get(5, TimeUnit.SECONDS) } catch (e: Exception) { dnsTask.cancel(true); throw IllegalStateException("DNS lookup timed out or failed", e) }
-                        require(host != "localhost" && !host.endsWith(".local") && !ip.isAnyLocalAddress && !ip.isLoopbackAddress && !ip.isLinkLocalAddress && !ip.isSiteLocalAddress) { "Requests to local/private hosts are blocked." }
+                        require(host != "localhost" && !host.endsWith(".local") && !ip.isAnyLocalAddress && !ip.isLoopbackAddress && !ip.isLinkLocalAddress && !ip.isSiteLocalAddress) { "Blocked local/private DNS address for " + host + " (" + ip.hostAddress + ")" }
                         if (!runActive.get()) throw InterruptedException("Provider run ended")
                         val options = JSONObject(optionsText)
                         val method = options.optString("method", "GET").uppercase()
@@ -373,8 +373,8 @@ internal object NuvioScraperEngine {
                             val dnsTask = FutureTask { java.net.InetAddress.getAllByName(targetHost).toList() }
                             Thread(dnsTask, "nexvio-dns-check").apply { isDaemon = true; start() }
                             val addresses = try { dnsTask.get(5, TimeUnit.SECONDS) } catch (ex: Exception) { dnsTask.cancel(true); throw IllegalStateException("DNS lookup timed out or failed", ex) }
-                            require(targetUri.scheme.equals("http", true) || targetUri.scheme.equals("https", true))
-                            require(targetHost != "localhost" && !targetHost.endsWith(".local") && addresses.isNotEmpty() && addresses.all { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress }) { "Requests to local/private hosts are blocked." }
+                            require(targetUri.scheme.equals("http", true) || targetUri.scheme.equals("https", true)) { "Blocked redirect with unsupported URL scheme" }
+                            require(targetHost != "localhost" && !targetHost.endsWith(".local") && addresses.isNotEmpty() && addresses.all { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress }) { "Blocked redirect DNS address for " + targetHost + ": " + addresses.joinToString { it.hostAddress } }
                             val connection = URL(normalizeRequestUrl(targetUri.toASCIIString())).openConnection() as HttpURLConnection
                             try {
                                 connection.connectTimeout = 10_000
