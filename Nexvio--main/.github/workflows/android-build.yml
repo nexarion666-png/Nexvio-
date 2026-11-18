@@ -23,6 +23,7 @@ jobs:
         with:
           node-version: "20"
 
+      # Vixsrc is bundled locally and checked before the Android build.
       - name: Check Nuvio JavaScript assets
         run: |
           node --check app/src/main/assets/nexvio-prelude.js
