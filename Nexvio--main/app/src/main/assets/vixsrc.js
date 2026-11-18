@@ -115,28 +115,57 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
         if (!playlistText || playlistText.indexOf("#EXTM3U") < 0) {
           throw new Error("Vixsrc response was not a valid HLS playlist");
         }
-        var quality = "Auto";
-        var resolution = playlistText.match(/RESOLUTION=\d+x(\d+)/g) || [];
-        if (resolution.length) {
-          var heights = resolution.map(function (entry) {
-            return Number((entry.match(/x(\d+)/) || [])[1] || 0);
-          });
-          var best = Math.max.apply(Math, heights);
-          if (best) quality = best + "p";
-        }
         var subtitles = [];
-        var subtitleRegex = /#EXT-X-MEDIA:[^\n]*TYPE=SUBTITLES[^\n]*URI="([^"]+)"[^\n]*/g;
+        var subtitleRegex = /#EXT-X-MEDIA:[^\\n]*TYPE=SUBTITLES[^\\n]*URI="([^"]+)"[^\\n]*/g;
         var match;
         while ((match = subtitleRegex.exec(playlistText)) !== null) {
           var label = (match[0].match(/NAME="([^"]+)"/) || [])[1] || "Subtitle";
-          var subtitleUrl = match[1].indexOf("http") === 0 ? match[1] : masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1) + match[1];
+          var subtitleUrl = match[1].indexOf("http") === 0 ? match[1] :
+            (match[1].charAt(0) === "/" ? BASE_URL + match[1] : masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1) + match[1]);
           subtitles.push({ url: subtitleUrl, language: label, name: label, headers: { "Referer": pageUrl, "User-Agent": USER_AGENT } });
+        }
+
+        // Expose each advertised HLS variant as a selectable stream.
+        var lines = playlistText.split(/\\r?\\n/);
+        var variants = [];
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (line.indexOf("#EXT-X-STREAM-INF:") !== 0) continue;
+          var heightMatch = line.match(/RESOLUTION=\\d+x(\\d+)/i);
+          var height = heightMatch ? Number(heightMatch[1]) : 0;
+          var variantLine = "";
+          for (var j = i + 1; j < lines.length; j++) {
+            var candidate = lines[j].trim();
+            if (candidate && candidate.charAt(0) !== "#") {
+              variantLine = candidate;
+              break;
+            }
+          }
+          if (!variantLine) continue;
+          var variantUrl = variantLine.indexOf("http") === 0 ? variantLine :
+            (variantLine.indexOf("//") === 0 ? "https:" + variantLine :
+              (variantLine.charAt(0) === "/" ? BASE_URL + variantLine : masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1) + variantLine));
+          variants.push({
+            name: "Vixsrc",
+            title: info.title + (info.year ? " (" + info.year + ")" : ""),
+            url: variantUrl,
+            quality: height ? height + "p" : "Auto",
+            type: "direct",
+            headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
+            subtitles: subtitles
+          });
+        }
+        if (variants.length) {
+          variants.sort(function (a, b) {
+            return (Number(b.quality.replace("p", "")) || 0) - (Number(a.quality.replace("p", "")) || 0);
+          });
+          return variants;
         }
         return [{
           name: "Vixsrc",
           title: info.title + (info.year ? " (" + info.year + ")" : ""),
           url: masterUrl,
-          quality: quality,
+          quality: "Auto",
           type: "direct",
           headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
           subtitles: subtitles
