@@ -48,6 +48,16 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ExportException
 
 private const val DOWNLOADS_TMDB_API_KEY = "df35ad7483eaf39d05d6b534109453bb"
 private const val DOWNLOADS_TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
@@ -224,37 +234,74 @@ internal class OfflineDownloads(private val context: Context, private val profil
     }.getOrElse { org.json.JSONObject() }
     fun removeRecord(id: Long) { prefs.edit().remove("metadata_$id").putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
     fun files(): List<File> { val base = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); val root = if (profileId == "primary") base else base.resolve(profileId); return root.walkTopDown().filter { it.isFile && it.length() > 0 && !it.name.endsWith(".part") }.sortedByDescending { it.lastModified() }.toList() }
-    fun saveToGallery(id: Long): Boolean {
+    suspend fun saveToGallery(id: Long): Boolean {
         val uri = open(id) ?: return false
         if (!uri.scheme.equals("file", true)) return false
         val source = File(uri.path.orEmpty())
-        if (!source.isFile || !source.canRead() || source.extension.equals("m3u8", true)) return false
-        val mime = when (source.extension.lowercase()) {
-            "mp4", "m4v" -> "video/mp4"
-            "mkv" -> "video/x-matroska"
-            "webm" -> "video/webm"
-            else -> return false
-        }
-        val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, source.name)
-            put(MediaStore.Video.Media.MIME_TYPE, mime)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Nexvio")
-                put(MediaStore.Video.Media.IS_PENDING, 1)
+        if (!source.isFile || !source.canRead()) return false
+
+        // MP4 files can be copied unchanged. HLS folders, extensionless downloads,
+        // MKV and WebM are exported to a gallery-friendly MP4 using Media3 Transformer.
+        val isMp4 = runCatching {
+            source.inputStream().use { input ->
+                val header = ByteArray(12)
+                input.read(header) == 12 &&
+                    String(header, 4, 4, Charsets.US_ASCII) == "ftyp"
             }
-        }
-        val resolver = context.contentResolver
-        val destination = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return false
-        return try {
-            resolver.openOutputStream(destination)?.use { output -> source.inputStream().use { it.copyTo(output) } }
-                ?: throw java.io.IOException("Could not open gallery destination.")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                resolver.update(destination, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+        }.getOrDefault(false)
+        val exportFile = if (isMp4) source else File(context.cacheDir, "nexvio_gallery_$id.mp4")
+        if (!isMp4) {
+            runCatching { exportFile.delete() }
+            val item = MediaItem.Builder().setUri(uri).apply {
+                if (source.extension.equals("m3u8", true)) setMimeType(MimeTypes.APPLICATION_M3U8)
+            }.build()
+            try {
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    val transformer = Transformer.Builder(context)
+                        .addListener(object : Transformer.Listener {
+                            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                                if (continuation.isActive) continuation.resume(Unit)
+                            }
+                            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                                if (continuation.isActive) continuation.resumeWithException(exportException)
+                            }
+                        })
+                        .build()
+                    continuation.invokeOnCancellation { runCatching { transformer.cancel() } }
+                    transformer.start(EditedMediaItem.Builder(item).build(), exportFile.absolutePath)
+                }
+            } catch (_: Exception) {
+                runCatching { exportFile.delete() }
+                return false
             }
-            true
-        } catch (_: Exception) {
-            runCatching { resolver.delete(destination, null, null) }
-            false
+            if (!exportFile.isFile || exportFile.length() <= 0L) return false
+        }
+
+        return withContext(Dispatchers.IO) {
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, (source.nameWithoutExtension.ifBlank { "Nexvio video" }) + ".mp4")
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Nexvio")
+                    put(MediaStore.Video.Media.IS_PENDING, 1)
+                }
+            }
+            val resolver = context.contentResolver
+            val destination = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return@withContext false
+            try {
+                resolver.openOutputStream(destination)?.use { output ->
+                    exportFile.inputStream().use { input -> input.copyTo(output) }
+                } ?: throw java.io.IOException("Could not open gallery destination.")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    resolver.update(destination, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+                }
+                true
+            } catch (_: Exception) {
+                runCatching { resolver.delete(destination, null, null) }
+                false
+            } finally {
+                if (!isMp4) runCatching { exportFile.delete() }
+            }
         }
     }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
@@ -471,8 +518,11 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
                         onPause = { store.pause(row.first); rows = store.rows() },
                         onResume = { store.resume(row.first); rows = store.rows() },
                         onSaveToGallery = {
-                            val saved = store.saveToGallery(row.first)
-                            Toast.makeText(context, if (saved) "Saved to gallery" else "This download format cannot be saved directly to the gallery.", Toast.LENGTH_LONG).show()
+                            scope.launch {
+                                Toast.makeText(context, "Preparing video for your gallery…", Toast.LENGTH_SHORT).show()
+                                val saved = store.saveToGallery(row.first)
+                                Toast.makeText(context, if (saved) "Saved to Movies/Nexvio" else "Could not export this video. Check that it is downloaded and playable.", Toast.LENGTH_LONG).show()
+                            }
                         },
                         onDelete = {
                             store.deleteDownload(row.first)
