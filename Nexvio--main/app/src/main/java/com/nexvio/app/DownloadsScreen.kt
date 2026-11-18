@@ -307,7 +307,7 @@ private fun DownloadItemCard(
                     if (total > 0) LinearProgressIndicator(progress = { (done.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     else if (running) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text(
-                        if (total > 0) "${done / mb} MB / ${total / mb} MB • ${(done * 100 / total).coerceIn(0L, 100L)}%" else "${done / mb} MB downloaded",
+                        if (total > 0) "${done / mb} MB / ~${total / mb} MB estimated • ${(done * 100 / total).coerceIn(0L, 100L)}%" else "${done / mb} MB downloaded • total size unavailable",
                         color = Color(0xFF9A9DA6), fontSize = 12.sp
                     )
                     if (canPause && running) DownloadActionPill(Icons.Filled.Pause, "Pause", onPause)
