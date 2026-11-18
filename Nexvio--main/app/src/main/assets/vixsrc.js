@@ -125,59 +125,11 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
           subtitles.push({ url: subtitleUrl, language: label, name: label, headers: { "Referer": pageUrl, "User-Agent": USER_AGENT } });
         }
 
-        // If the master playlist uses a separate audio rendition, keep the master
-        // URL intact. Opening a video variant playlist directly drops the audio
-        // rendition reference and can produce silent playback in Media3.
-        if (/#EXT-X-MEDIA:[^\\n]*TYPE=AUDIO/i.test(playlistText)) {
-          console.log("[Vixsrc] Separate audio rendition detected; keeping master playlist for audio");
-          return [{
-            name: "Vixsrc",
-            title: info.title + (info.year ? " (" + info.year + ")" : ""),
-            url: masterUrl,
-            quality: "Auto",
-            type: "direct",
-            headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
-            subtitles: subtitles
-          }];
-        }
-
-        // Expose each advertised HLS variant as a selectable stream only when
-        // the variants are self-contained (audio is muxed into each variant).
-        var lines = playlistText.split(/\r?\n/);
-        var variants = [];
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i].trim();
-          if (line.indexOf("#EXT-X-STREAM-INF:") !== 0) continue;
-          var heightMatch = line.match(/RESOLUTION=\d+x(\d+)/i);
-          var height = heightMatch ? Number(heightMatch[1]) : 0;
-          var variantLine = "";
-          for (var j = i + 1; j < lines.length; j++) {
-            var candidate = lines[j].trim();
-            if (candidate && candidate.charAt(0) !== "#") {
-              variantLine = candidate;
-              break;
-            }
-          }
-          if (!variantLine) continue;
-          var variantUrl = variantLine.indexOf("http") === 0 ? variantLine :
-            (variantLine.indexOf("//") === 0 ? "https:" + variantLine :
-              (variantLine.charAt(0) === "/" ? BASE_URL + variantLine : masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1) + variantLine));
-          variants.push({
-            name: "Vixsrc",
-            title: info.title + (info.year ? " (" + info.year + ")" : ""),
-            url: variantUrl,
-            quality: height ? height + "p" : "Auto",
-            type: "direct",
-            headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
-            subtitles: subtitles
-          });
-        }
-        if (variants.length) {
-          variants.sort(function (a, b) {
-            return (Number(b.quality.replace("p", "")) || 0) - (Number(a.quality.replace("p", "")) || 0);
-          });
-          return variants;
-        }
+        // Always pass the original HLS master playlist to Media3.
+        // ExoPlayer can select 720p/480p/360p from its video track group while
+        // retaining any separate audio rendition referenced by the master.
+        // Returning child variant URLs here can detach external audio playlists.
+        console.log("[Vixsrc] Returning HLS master playlist for in-player quality selection");
         return [{
           name: "Vixsrc",
           title: info.title + (info.year ? " (" + info.year + ")" : ""),
