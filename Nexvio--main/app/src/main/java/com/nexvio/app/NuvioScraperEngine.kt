@@ -352,7 +352,7 @@ internal object NuvioScraperEngine {
                     val payload = try {
                         val normalizedAddress = normalizedAddressForLog
                         val uri = URI(normalizedAddress)
-                        require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "Blocked invalid request URL (scheme, host, or user-info)" }
+                        require(uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) { "Blocked request URL: unsupported scheme=" + (uri.scheme ?: "(missing)") + ", authority=" + (uri.rawAuthority ?: "(missing)") }\n                        require(!uri.host.isNullOrBlank()) { "Blocked request URL: host could not be parsed, authority=" + (uri.rawAuthority ?: "(missing)") }\n                        require(uri.userInfo == null) { "Blocked request URL: user-info is not allowed for host=" + uri.host }
                         val host = uri.host.lowercase()
                         val dnsTask = FutureTask { java.net.InetAddress.getByName(host) }
                         Thread(dnsTask, "nexvio-dns-check").apply { isDaemon = true; start() }
