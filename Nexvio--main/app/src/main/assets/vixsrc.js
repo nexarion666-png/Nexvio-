@@ -129,10 +129,10 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
         // at the SAME master playlist. Media3 applies the requested video track
         // override after reading the master, so separate audio renditions remain attached.
         var availableHeights = [];
-        var lines = playlistText.split(/\\r?\\n/);
+        var lines = playlistText.split(/\r?\n/);
         for (var i = 0; i < lines.length; i++) {
           if (lines[i].indexOf("#EXT-X-STREAM-INF:") !== 0) continue;
-          var resolution = lines[i].match(/RESOLUTION=\\d+x(\\d+)/i);
+          var resolution = lines[i].match(/RESOLUTION=\d+x(\d+)/i);
           if (!resolution) continue;
           var height = Number(resolution[1]);
           if ([2160, 1080, 720, 480, 360].indexOf(height) >= 0 && availableHeights.indexOf(height) < 0) {
