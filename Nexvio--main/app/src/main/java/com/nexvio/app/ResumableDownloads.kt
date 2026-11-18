@@ -84,7 +84,7 @@ internal object ResumableDownloads {
     }
 
     @Synchronized
-    fun enqueue(context: Context, profileId: String, url: String, title: String, headers: Map<String, String> = emptyMap(), subtitleId: String? = null, subtitleType: String? = null, subtitleSeason: Int? = null, subtitleEpisode: Int? = null): Long {
+    fun enqueue(context: Context, profileId: String, url: String, title: String, headers: Map<String, String> = emptyMap(), subtitleId: String? = null, subtitleType: String? = null, subtitleSeason: Int? = null, subtitleEpisode: Int? = null, preferredVideoHeight: Int? = null): Long {
         val app = context.applicationContext
         val prefs = prefs(app, profileId)
         var id = System.currentTimeMillis().coerceAtLeast(OWN_ID_FLOOR)
@@ -106,6 +106,7 @@ internal object ResumableDownloads {
             .put("subtitleType", subtitleType.orEmpty())
             .put("subtitleSeason", subtitleSeason ?: -1)
             .put("subtitleEpisode", subtitleEpisode ?: -1)
+            .put("preferredVideoHeight", preferredVideoHeight ?: -1)
         prefs.edit().putString("own_$id", rec.toString()).apply()
         startJob(app, profileId, id)
         // Fetch English subtitles immediately, in parallel with the video transfer.
@@ -164,6 +165,7 @@ internal object ResumableDownloads {
                     runCatching { File(dir, "$name.part").delete() }
                     runCatching { File(dir, "$name.en.vtt").delete() }
                     runCatching { File(dir, "$name.en.vtt.part").delete() }
+                    runCatching { File(dir, "$name.hls").deleteRecursively() }
                 }
             }
         }
@@ -201,6 +203,11 @@ internal object ResumableDownloads {
         val rec = record(prefs(context, profileId), id) ?: return null
         val dir = directory(context, profileId)
         val name = rec.optString("file")
+        if (rec.optString("format") == "hls") {
+            val folder = File(dir, "$name.hls")
+            val downloaded = if (folder.exists()) folder.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
+            return downloaded to -1L
+        }
         val downloaded = if (rec.optInt("status") == DownloadManager.STATUS_SUCCESSFUL) File(dir, name).length() else File(dir, "$name.part").length()
         return downloaded to rec.optLong("total", -1L)
     }
@@ -308,7 +315,12 @@ internal object ResumableDownloads {
     fun completedFile(context: Context, profileId: String, id: Long): File? {
         val rec = record(prefs(context, profileId), id) ?: return null
         if (rec.optInt("status") != DownloadManager.STATUS_SUCCESSFUL) return null
-        val file = File(directory(context, profileId), rec.optString("file"))
+        val dir = directory(context, profileId)
+        if (rec.optString("format") == "hls") {
+            val playlist = File(dir, rec.optString("file") + ".hls/playlist.m3u8")
+            return playlist.takeIf { it.isFile && it.canRead() }
+        }
+        val file = File(dir, rec.optString("file"))
         return file.takeIf { it.isFile && it.canRead() }
     }
 
@@ -323,10 +335,25 @@ internal object ResumableDownloads {
         try {
             currentCoroutineContext().ensureActive()
             update(prefs, id) { if (it.optInt("status") == DownloadManager.STATUS_PENDING) it.put("status", DownloadManager.STATUS_RUNNING) }
-            transfer(rec.optString("url"), part, prefs, id, readHeaders(rec))
-            if (target.exists()) target.delete()
-            if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
-            update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
+            val downloadUrl = rec.optString("url")
+            val sourceHost = runCatching { URL(downloadUrl).host.lowercase() }.getOrDefault("")
+            val sourcePath = runCatching { URL(downloadUrl).path.lowercase() }.getOrDefault("")
+            val isHls = sourcePath.endsWith(".m3u8") || sourceHost == "vixsrc.to" || sourceHost.endsWith(".vixsrc.to")
+            if (isHls) {
+                val hlsFolder = File(dir, "$name.hls")
+                HlsOfflineDownloader.download(
+                    downloadUrl, hlsFolder, readHeaders(rec),
+                    rec.optInt("preferredVideoHeight", -1).takeIf { it > 0 },
+                    onConnection = { connection -> if (connection == null) connections.remove(id) else connections[id] = connection },
+                    onProgress = { bytes -> update(prefs, id) { it.put("downloadedBytes", bytes).put("total", -1L) } }
+                )
+                update(prefs, id) { it.put("format", "hls").put("status", DownloadManager.STATUS_SUCCESSFUL) }
+            } else {
+                transfer(downloadUrl, part, prefs, id, readHeaders(rec))
+                if (target.exists()) target.delete()
+                if (!part.renameTo(target)) throw IOException("Could not save the finished file.")
+                update(prefs, id) { it.put("status", DownloadManager.STATUS_SUCCESSFUL) }
+            }
             // If the parallel subtitle fetch finished first, publish its staged sidecar now.
             promoteSubtitleIfVideoReady(app, profileId, id)
             notifyDownloadComplete(app, rec.optString("title"))
@@ -337,7 +364,8 @@ internal object ResumableDownloads {
         } catch (e: IOException) {
             // Network dropped or the socket was closed. A real pause/delete cancels us, so rethrow that case.
             currentCoroutineContext().ensureActive()
-            update(prefs, id) { it.put("status", DownloadManager.STATUS_PAUSED).put("error", "Connection lost. Tap Resume to continue.") }
+            val message = e.message ?: "Download failed."
+            update(prefs, id) { it.put("status", DownloadManager.STATUS_PAUSED).put("error", if (message.contains("HTTP", true) || message.contains("HLS", true) || message.contains("playlist", true) || message.contains("live", true) || message.contains("DRM", true)) message else "Connection lost. Tap Resume to continue.") }
         } catch (e: Exception) {
             update(prefs, id) { it.put("status", DownloadManager.STATUS_FAILED).put("error", e.message ?: "Download failed.") }
         }
