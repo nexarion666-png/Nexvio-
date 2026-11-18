@@ -42,9 +42,9 @@ function getTmdbInfo(tmdbId, mediaType) {
 function extractPlaylistData(html) {
   // Vixsrc now serves an API response containing an embed path, then the
   // embed page contains the signed playlist URL and short-lived token.
-  var token = html.match(/token["']?\s*:\s*["']([^"']+)["']/i);
-  var expires = html.match(/expires["']?\s*:\s*["']([^"']+)["']/i);
-  var playlist = html.match(/url\s*:\s*["']([^"']+)["']/i);
+  var token = html.match(/["']?token["']?\s*:\s*["']([^"']+)["']/i);
+  var expires = html.match(/["']?expires["']?\s*:\s*["']?(\d+)["']?/i);
+  var playlist = html.match(/["']?url["']?\s*:\s*["']([^"']+)["']/i);
   if (!token || !expires || !playlist) return null;
   var expirySeconds = Number(expires[1]);
   if (isFinite(expirySeconds) && expirySeconds > 0 && expirySeconds * 1000 < Date.now()) {
