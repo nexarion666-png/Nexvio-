@@ -27,8 +27,9 @@ function request(url, headers) {
 function normalizePlaylistUrl(value) {
   // Decode escaped URL separators without relying on complex regex patterns.
   var url = String(value || "").trim();
-  url = url.split("\\\\/").join("/");
-  url = url.split("\\\\").join("/");
+  var backslash = String.fromCharCode(92);
+  url = url.split(backslash + "/").join("/");
+  url = url.split(backslash).join("/");
   url = url.replace(/\s/g, "");
   if (url.indexOf("https:/") === 0 && url.indexOf("https://") !== 0) {
     url = "https://" + url.substring(7).replace(/^\/+/, "");
