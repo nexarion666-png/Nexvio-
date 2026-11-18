@@ -125,20 +125,34 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
           subtitles.push({ url: subtitleUrl, language: label, name: label, headers: { "Referer": pageUrl, "User-Agent": USER_AGENT } });
         }
 
-        // Always pass the original HLS master playlist to Media3.
-        // ExoPlayer can select 720p/480p/360p from its video track group while
-        // retaining any separate audio rendition referenced by the master.
-        // Returning child variant URLs here can detach external audio playlists.
-        console.log("[Vixsrc] Returning HLS master playlist for in-player quality selection");
-        return [{
-          name: "Vixsrc",
-          title: info.title + (info.year ? " (" + info.year + ")" : ""),
-          url: masterUrl,
-          quality: "Auto",
-          type: "direct",
-          headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
-          subtitles: subtitles
-        }];
+        // Create one selectable result per resolution, but keep every result pointed
+        // at the SAME master playlist. Media3 applies the requested video track
+        // override after reading the master, so separate audio renditions remain attached.
+        var availableHeights = [];
+        var lines = playlistText.split(/\\r?\\n/);
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].indexOf("#EXT-X-STREAM-INF:") !== 0) continue;
+          var resolution = lines[i].match(/RESOLUTION=\\d+x(\\d+)/i);
+          if (!resolution) continue;
+          var height = Number(resolution[1]);
+          if ([2160, 1080, 720, 480, 360].indexOf(height) >= 0 && availableHeights.indexOf(height) < 0) {
+            availableHeights.push(height);
+          }
+        }
+        availableHeights.sort(function (a, b) { return b - a; });
+        if (availableHeights.length === 0) availableHeights = [0];
+        console.log("[Vixsrc] Master playlist quality options: " + availableHeights.join(", "));
+        return availableHeights.map(function (height) {
+          return {
+            name: "Vixsrc",
+            title: info.title + (info.year ? " (" + info.year + ")" : ""),
+            url: masterUrl,
+            quality: height > 0 ? height + "p" : "Auto",
+            type: "direct",
+            headers: { "Referer": pageUrl, "Origin": BASE_URL, "User-Agent": USER_AGENT },
+            subtitles: subtitles
+          };
+        });
       });
   }).catch(function (error) {
     console.error("[Vixsrc] Extraction failed: " + (error && error.message ? error.message : String(error)));
