@@ -116,7 +116,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
           throw new Error("Vixsrc response was not a valid HLS playlist");
         }
         var subtitles = [];
-        var subtitleRegex = /#EXT-X-MEDIA:[^\\n]*TYPE=SUBTITLES[^\\n]*URI="([^"]+)"[^\\n]*/g;
+        var subtitleRegex = /#EXT-X-MEDIA:[^\n]*TYPE=SUBTITLES[^\n]*URI="([^"]+)"[^\n]*/g;
         var match;
         while ((match = subtitleRegex.exec(playlistText)) !== null) {
           var label = (match[0].match(/NAME="([^"]+)"/) || [])[1] || "Subtitle";
@@ -126,12 +126,12 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
         }
 
         // Expose each advertised HLS variant as a selectable stream.
-        var lines = playlistText.split(/\\r?\\n/);
+        var lines = playlistText.split(/\r?\n/);
         var variants = [];
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim();
           if (line.indexOf("#EXT-X-STREAM-INF:") !== 0) continue;
-          var heightMatch = line.match(/RESOLUTION=\\d+x(\\d+)/i);
+          var heightMatch = line.match(/RESOLUTION=\d+x(\d+)/i);
           var height = heightMatch ? Number(heightMatch[1]) : 0;
           var variantLine = "";
           for (var j = i + 1; j < lines.length; j++) {
