@@ -5,7 +5,6 @@
  */
 "use strict";
 
-var TMDB_API_KEY = "68e094699525b18a70bab2f86b1fa706";
 var BASE_URL = "https://vixsrc.to";
 var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
 
@@ -25,20 +24,6 @@ function request(url, headers) {
   });
 }
 
-function getTmdbInfo(tmdbId, mediaType) {
-  var endpoint = mediaType === "tv" ? "tv" : "movie";
-  return request("https://api.themoviedb.org/3/" + endpoint + "/" + encodeURIComponent(tmdbId) + "?api_key=" + TMDB_API_KEY, {
-    "Accept": "application/json,*/*",
-    "Referer": BASE_URL + "/"
-  }).then(function (response) {
-    return response.json();
-  }).then(function (data) {
-    var title = mediaType === "tv" ? data.name : data.title;
-    var date = mediaType === "tv" ? data.first_air_date : data.release_date;
-    return { title: title || "Vixsrc", year: date ? String(date).substring(0, 4) : "" };
-  });
-}
-
 function extractPlaylistData(html) {
   // Vixsrc now serves an API response containing an embed path, then the
   // embed page contains the signed playlist URL and short-lived token.
@@ -53,7 +38,7 @@ function extractPlaylistData(html) {
   return { token: token[1], expires: expires[1], playlist: playlist[1] };
 }
 
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
   mediaType = mediaType === "tv" ? "tv" : "movie";
   var pageUrl = mediaType === "tv"
     ? BASE_URL + "/tv/" + encodeURIComponent(tmdbId) + "/" + seasonNum + "/" + episodeNum
@@ -63,8 +48,8 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
     : BASE_URL + "/api/movie/" + encodeURIComponent(tmdbId);
 
   console.log("[Vixsrc] Trying canonical page -> masterPlaylist extraction first");
-  return getTmdbInfo(tmdbId, mediaType).then(function (info) {
-    function fetchMasterFromPage(url, referer) {
+  var info = { title: title || "Vixsrc", year: year || "" };
+  function fetchMasterFromPage(url, referer) {
       return request(url, {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Referer": referer
@@ -81,7 +66,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
       });
     }
 
-    return fetchMasterFromPage(pageUrl, BASE_URL + "/").then(function (data) {
+  return fetchMasterFromPage(pageUrl, BASE_URL + "/").then(function (data) {
       if (data) {
         console.log("[Vixsrc] Extracted stream data from canonical page");
         return { info: info, data: data };
@@ -142,7 +127,6 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
           subtitles: subtitles
         }];
       });
-    });
   }).catch(function (error) {
     console.error("[Vixsrc] Extraction failed: " + (error && error.message ? error.message : String(error)));
     throw error;
