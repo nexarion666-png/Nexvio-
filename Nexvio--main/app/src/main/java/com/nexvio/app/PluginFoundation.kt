@@ -88,7 +88,7 @@ object PluginManifestParser {
                 val providerName = item.optString("name").trim()
                 val providerId = item.optString("id").trim()
                 // Vidnest was removed from Nexvio; do not re-expose it through cached remote manifests.
-                if (providerId.equals("vidnest", ignoreCase = true) || providerName.equals("Vidnest", ignoreCase = true)) continue
+                if (providerId.equals("vidnest", ignoreCase = true) || providerName.equals("Vidnest", ignoreCase = true) || providerName.equals("MovieBox", ignoreCase = true)) continue
                 val file = item.optString("file").ifBlank { item.optString("filename") }.trim()
                 if (providerName.isEmpty() || file.isEmpty()) continue
                 val fileUrl = PluginUrlPolicy.resolveProviderUrl(manifestUrl, file) ?: continue
