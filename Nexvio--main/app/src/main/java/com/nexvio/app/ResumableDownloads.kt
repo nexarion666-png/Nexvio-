@@ -206,7 +206,7 @@ internal object ResumableDownloads {
         if (rec.optString("format") == "hls") {
             val folder = File(dir, "$name.hls")
             val downloaded = if (folder.exists()) folder.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
-            return downloaded to -1L
+            return downloaded to rec.optLong("total", -1L)
         }
         val downloaded = if (rec.optInt("status") == DownloadManager.STATUS_SUCCESSFUL) File(dir, name).length() else File(dir, "$name.part").length()
         return downloaded to rec.optLong("total", -1L)
@@ -346,7 +346,7 @@ internal object ResumableDownloads {
                     downloadUrl, hlsFolder, readHeaders(rec),
                     rec.optInt("preferredVideoHeight", -1).takeIf { it > 0 },
                     onConnection = { connection -> if (connection == null) connections.remove(id) else connections[id] = connection },
-                    onProgress = { bytes -> update(prefs, id) { it.put("downloadedBytes", bytes).put("total", -1L) } }
+                    onProgress = { bytes, estimate -> update(prefs, id) { it.put("downloadedBytes", bytes).put("total", estimate) } }
                 )
                 update(prefs, id) { it.put("format", "hls").put("status", DownloadManager.STATUS_SUCCESSFUL) }
             } else {
