@@ -2,6 +2,10 @@ package com.nexvio.app
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.ContentValues
+import android.os.Build
+import android.provider.MediaStore
+import android.widget.Toast
 import android.net.Uri
 import android.os.Environment
 import androidx.compose.foundation.background
@@ -220,6 +224,39 @@ internal class OfflineDownloads(private val context: Context, private val profil
     }.getOrElse { org.json.JSONObject() }
     fun removeRecord(id: Long) { prefs.edit().remove("metadata_$id").putString("ids", ids().filterNot { it == id }.joinToString(",")).apply() }
     fun files(): List<File> { val base = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.resolve("Nexvio") ?: return emptyList(); val root = if (profileId == "primary") base else base.resolve(profileId); return root.walkTopDown().filter { it.isFile && it.length() > 0 && !it.name.endsWith(".part") }.sortedByDescending { it.lastModified() }.toList() }
+    fun saveToGallery(id: Long): Boolean {
+        val uri = open(id) ?: return false
+        if (!uri.scheme.equals("file", true)) return false
+        val source = File(uri.path.orEmpty())
+        if (!source.isFile || !source.canRead() || source.extension.equals("m3u8", true)) return false
+        val mime = when (source.extension.lowercase()) {
+            "mp4", "m4v" -> "video/mp4"
+            "mkv" -> "video/x-matroska"
+            "webm" -> "video/webm"
+            else -> return false
+        }
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, source.name)
+            put(MediaStore.Video.Media.MIME_TYPE, mime)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Nexvio")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+        }
+        val resolver = context.contentResolver
+        val destination = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+        return try {
+            resolver.openOutputStream(destination)?.use { output -> source.inputStream().use { it.copyTo(output) } }
+                ?: throw java.io.IOException("Could not open gallery destination.")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                resolver.update(destination, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+            }
+            true
+        } catch (_: Exception) {
+            runCatching { resolver.delete(destination, null, null) }
+            false
+        }
+    }
     fun delete(file: File) = runCatching { file.delete() }.getOrDefault(false)
 }
 
@@ -255,7 +292,8 @@ private fun DownloadItemCard(
     onPause: () -> Unit,
     onResume: () -> Unit,
     subtitleState: org.json.JSONObject?,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSaveToGallery: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -300,6 +338,12 @@ private fun DownloadItemCard(
                         "unavailable" -> Text(subtitleState.optString("error").takeIf { it.isNotBlank() } ?: "English subtitles unavailable", color = Color(0xFF9A9DA6), fontSize = 12.sp, maxLines = 2)
                     }
                 }
+                if (finished) {
+                    val actualBytes = transfer?.first ?: 0L
+                    val mb = 1024L * 1024L
+                    val actualSize = String.format(java.util.Locale.US, "%.1f", actualBytes.toDouble() / mb)
+                    Text(if (actualBytes > 0L) "$actualSize MB • Actual file size" else "File size unavailable", color = Color(0xFF9A9DA6), fontSize = 12.sp)
+                }
                 if (!finished) {
                     val done = transfer?.first ?: 0L
                     val total = transfer?.second ?: -1L
@@ -316,6 +360,10 @@ private fun DownloadItemCard(
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            if (finished) DropdownMenuItem(
+                text = { Text("Save to gallery") },
+                onClick = { menuOpen = false; onSaveToGallery() }
+            )
             DropdownMenuItem(
                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                 onClick = { menuOpen = false; onDelete() }
@@ -422,6 +470,10 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
                         onPlay = { playRow(row) },
                         onPause = { store.pause(row.first); rows = store.rows() },
                         onResume = { store.resume(row.first); rows = store.rows() },
+                        onSaveToGallery = {
+                            val saved = store.saveToGallery(row.first)
+                            Toast.makeText(context, if (saved) "Saved to gallery" else "This download format cannot be saved directly to the gallery.", Toast.LENGTH_LONG).show()
+                        },
                         onDelete = {
                             store.deleteDownload(row.first)
                             if (selectedRows.size <= 1) DownloadPosterStore.delete(context, folderKey)
