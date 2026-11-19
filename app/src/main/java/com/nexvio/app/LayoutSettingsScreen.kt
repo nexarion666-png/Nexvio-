@@ -30,7 +30,7 @@ internal object AppAppearanceState {
     val panel: Color get() = if (isLiquidGlass) Color(0xC8172029) else Color(0xFF1B1D22)
 
     val isLiquidGlass: Boolean
-        get() = true
+        get() = selectedTheme == "Liquid Glass"
     val accent: Color
         get() = if (isLiquidGlass) Color(0xFF9DEBFF) else themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
     val background: Color
