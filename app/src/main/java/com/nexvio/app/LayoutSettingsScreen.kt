@@ -52,7 +52,7 @@ private val themeColors = listOf(
 
 private val layoutPanel = Color(0xFF1B1D22)
 private val layoutMuted = Color(0xFF9A9DA6)
-private fun layoutPrefs(context: Context) = context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE)
+private fun layoutPrefs(context: Context): SharedPreferences { val profile = NexvioProfileStore.active(context); val name = if (profile.isPrimary) "nexvio_settings" else "nexvio_settings_profile_${profile.id}"; return context.getSharedPreferences(name, Context.MODE_PRIVATE) }
 
 // Preferences can survive app upgrades. Guard typed reads so an older value stored
 // with a different type cannot crash the Layout screen during composition.
@@ -71,7 +71,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     val prefs = remember(context) { layoutPrefs(context) }
     LaunchedEffect(prefs) {
         if (!AppAppearanceState.initialized) {
-            AppAppearanceState.selectedTheme = safeLayoutString(prefs, "theme_name", "Emerald")
+            AppAppearanceState.selectedTheme = safeLayoutString(prefs, "theme_name", "Liquid Glass")
             AppAppearanceState.amoledBlack = safeLayoutBoolean(prefs, "amoled_black", false)
             AppAppearanceState.initialized = true
         }
