@@ -267,7 +267,8 @@ class MainActivity : ComponentActivity() {
         Surface(
             Modifier.fillMaxSize().navigationBarsPadding().imePadding()
                 .then(if (homeFullBleed) Modifier else Modifier.statusBarsPadding()),
-            color = Ink
+            // Only Home keeps the pure-black canvas in Liquid Glass mode.
+            color = if (AppAppearanceState.isLiquidGlass && homeFullBleed) Color.Black else Ink
         ) {
             if (restoringAccountProfiles) {
                 Column(
