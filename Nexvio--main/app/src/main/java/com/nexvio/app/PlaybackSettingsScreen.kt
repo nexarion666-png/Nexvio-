@@ -186,7 +186,7 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
 private fun PlaybackSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column {
         Text(title, color = playbackMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-        Column(Modifier.fillMaxWidth().background(playbackPanel, RoundedCornerShape(18.dp)).padding(horizontal = 16.dp), content = content)
+        Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(18.dp), playbackPanel).padding(horizontal = 16.dp), content = content)
     }
 }
 
