@@ -18,12 +18,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeState
 import org.json.JSONArray
 
 internal object AppAppearanceState {
     var selectedTheme by mutableStateOf("Emerald")
     var amoledBlack by mutableStateOf(false)
     var initialized by mutableStateOf(false)
+    var hazeState: HazeState? by mutableStateOf(null)
+    val posterReflection: Color get() = Color(0xFF9DEBFF)
+    val panel: Color get() = if (isLiquidGlass) Color(0xC8172029) else Color(0xFF1B1D22)
 
     val isLiquidGlass: Boolean
         get() = selectedTheme == "Liquid Glass"

@@ -86,6 +86,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -183,6 +185,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable fun NexvioApp() {
     val appearanceContext = LocalContext.current
+    val hazeState = remember { HazeState() }
+    SideEffect { AppAppearanceState.hazeState = hazeState }
     val appearancePrefs = remember(appearanceContext, activeProfileIdForSettings(appearanceContext)) { settingsPrefs(appearanceContext) }
     LaunchedEffect(appearancePrefs) {
         AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
@@ -256,7 +260,8 @@ class MainActivity : ComponentActivity() {
             playing == null && streamSearch == null && selectedTitle == null && detail == null && current == "Home"
         Surface(
             Modifier.fillMaxSize().navigationBarsPadding().imePadding()
-                .then(if (homeFullBleed) Modifier else Modifier.statusBarsPadding()),
+                .then(if (homeFullBleed) Modifier else Modifier.statusBarsPadding())
+                .hazeSource(state = hazeState),
             color = Ink
         ) {
             if (restoringAccountProfiles) {
@@ -405,20 +410,7 @@ class MainActivity : ComponentActivity() {
                         .padding(horizontal = if (navStyle == "Compact") 6.dp else 12.dp, vertical = if (navStyle == "Compact") 5.dp else 10.dp)
                         .then(
                             if (AppAppearanceState.isLiquidGlass) {
-                                Modifier
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(Color(0xD92A3944), Color(0xA80B1118), Color(0xD92B3B47))
-                                        ),
-                                        RoundedCornerShape(40.dp)
-                                    )
-                                    .border(
-                                        1.dp,
-                                        Brush.linearGradient(
-                                            listOf(Color(0xFFBDEFFF), Color(0x667A9BAA), Color(0xFFD8F8FF))
-                                        ),
-                                        RoundedCornerShape(40.dp)
-                                    )
+                                Modifier.nexvioGlass(RoundedCornerShape(40.dp), Color(0xB5101820))
                             } else Modifier.background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
                         )
                         .padding(horizontal = 5.dp, vertical = if (navStyle == "Compact") 2.dp else 5.dp),
@@ -748,14 +740,14 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun HomeQuickCard(title:String,subtitle:String,modifier:Modifier=Modifier,onClick:()->Unit) {
-    Column(modifier.background(Panel,RoundedCornerShape(16.dp)).clickable(onClick=onClick).padding(15.dp)) {
+    Column(modifier.nexvioGlass(RoundedCornerShape(16.dp), Panel).clickable(onClick=onClick).padding(15.dp)) {
         Text(title,color=Color.White,fontSize=15.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(5.dp))
         Text(subtitle,color=Muted,fontSize=12.sp)
     }
 }
-@Composable private fun EmptySection(title:String, message:String) { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp)).padding(16.dp)) { Text(title, fontSize=18.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(message, color=Muted, fontSize=13.sp); Spacer(Modifier.height(10.dp)); Text("FOUNDATION", color=Accent, fontSize=10.sp, letterSpacing=1.sp) } }
-@Composable private fun CatalogueScreen(title:String, subtitle:String,onDetail:(String)->Unit) { Column(Modifier.fillMaxSize().padding(20.dp)) { Text(title, fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text(subtitle, color=Muted); Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp)) { Text("⌕  Search $title", color=Muted) }; Spacer(Modifier.height(20.dp)); EmptySection("Your $title collection", "Connect a compatible content provider in a later phase to browse real titles. No demonstration streams are provided.") } }
+@Composable private fun EmptySection(title:String, message:String) { Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp), Panel).padding(16.dp)) { Text(title, fontSize=18.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(message, color=Muted, fontSize=13.sp); Spacer(Modifier.height(10.dp)); Text("FOUNDATION", color=Accent, fontSize=10.sp, letterSpacing=1.sp) } }
+@Composable private fun CatalogueScreen(title:String, subtitle:String,onDetail:(String)->Unit) { Column(Modifier.fillMaxSize().padding(20.dp)) { Text(title, fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text(subtitle, color=Muted); Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), Panel).clickable { onDetail("Search") }.padding(14.dp)) { Text("⌕  Search $title", color=Muted) }; Spacer(Modifier.height(20.dp)); EmptySection("Your $title collection", "Connect a compatible content provider in a later phase to browse real titles. No demonstration streams are provided.") } }
 private class PlaylistStore(context: Context) {
     private val prefs = context.getSharedPreferences("nexvio_iptv", Context.MODE_PRIVATE)
     fun source() = prefs.getString("source", null)
@@ -2456,4 +2448,4 @@ private fun postNexvioTestNotification(context: Context) {
         }
     }
 }
-@Composable private fun InfoPage(title:String) { Column(Modifier.fillMaxWidth().padding(20.dp).background(Panel, RoundedCornerShape(18.dp)).padding(18.dp)) { Text(title, fontSize=23.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text(when(title) { "About Nexvio" -> "Nexvio 1.0.0 • Phase 2\nMovies • Series • Live TV\nAn original Android application."; "Search" -> "Search will become available when a real movie or series catalogue provider is connected."; "Appearance" -> "Nexvio currently uses its premium dark appearance."; "Playback preferences" -> "Live TV uses AndroidX Media3. Supported formats depend on stream and device compatibility."; "Content providers" -> "Movie and series provider integration is planned for a later phase."; "IPTV playlists" -> "Import an M3U/M3U8 file from Live TV or provide an HTTP/HTTPS playlist URL."; "Downloads" -> "Download supported direct media URLs and manage your offline files."; else -> "This feature is planned for a later Nexvio phase." }, color=Muted, lineHeight=23.sp); Spacer(Modifier.height(14.dp)); Text("NEXVIO", color=Accent, fontSize=10.sp, letterSpacing=1.5.sp) } }
+@Composable private fun InfoPage(title:String) { Column(Modifier.fillMaxWidth().padding(20.dp).nexvioGlass(RoundedCornerShape(18.dp), Panel).padding(18.dp)) { Text(title, fontSize=23.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text(when(title) { "About Nexvio" -> "Nexvio 1.0.0 • Phase 2\nMovies • Series • Live TV\nAn original Android application."; "Search" -> "Search will become available when a real movie or series catalogue provider is connected."; "Appearance" -> "Nexvio currently uses its premium dark appearance."; "Playback preferences" -> "Live TV uses AndroidX Media3. Supported formats depend on stream and device compatibility."; "Content providers" -> "Movie and series provider integration is planned for a later phase."; "IPTV playlists" -> "Import an M3U/M3U8 file from Live TV or provide an HTTP/HTTPS playlist URL."; "Downloads" -> "Download supported direct media URLs and manage your offline files."; else -> "This feature is planned for a later Nexvio phase." }, color=Muted, lineHeight=23.sp); Spacer(Modifier.height(14.dp)); Text("NEXVIO", color=Accent, fontSize=10.sp, letterSpacing=1.5.sp) } }
