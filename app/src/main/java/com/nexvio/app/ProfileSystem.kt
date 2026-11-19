@@ -372,7 +372,7 @@ private fun ProfileEditorScreen(
             Text(if (existing == null) "Add Profile" else "Edit Profile", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(ProfileCard).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).nexvioGlass(RoundedCornerShape(22.dp), ProfileCard).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 ProfileAvatar(avatarId, customUrl, 82.dp, modifier = Modifier)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
@@ -383,7 +383,7 @@ private fun ProfileEditorScreen(
                     Text("Add-ons and plugins shared across profiles", color = ProfileMuted, fontSize = 11.sp)
                 }
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ProfileCard).padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).nexvioGlass(RoundedCornerShape(20.dp), ProfileCard).padding(16.dp)) {
                 Text("Profile name", color = Color.White, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(9.dp))
                 OutlinedTextField(value = name, onValueChange = { name = it; error = null }, modifier = Modifier.fillMaxWidth(),
