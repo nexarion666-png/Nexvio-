@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
 
@@ -28,6 +29,8 @@ internal object AppAppearanceState {
     var amoledBlack by mutableStateOf(false)
     var initialized by mutableStateOf(false)
     var posterReflection by mutableStateOf(Color(0xFF536477))
+    /** Shared backdrop source used by every Liquid Glass surface and the floating navigation. */
+    var hazeState: HazeState? = null
 
     val isLiquidGlass: Boolean get() = selectedTheme == "Liquid Glass"
 
