@@ -882,7 +882,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp), modifier=Modifier.fillMaxWidth()) {
                 Button(onClick={ filePicker.launch(arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain", "application/octet-stream", "*/*")) }, modifier=Modifier.weight(1f).then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(50)) else Modifier), shape=RoundedCornerShape(50), colors=ButtonDefaults.buttonColors(containerColor=if (AppAppearanceState.isLiquidGlass) Color(0xB51A3440) else Accent, contentColor=if (AppAppearanceState.isLiquidGlass) Color(0xFFBDEFFF) else Ink)) { Text("Import file") }
-                OutlinedButton(onClick={ urlInput=""; urlDialog=true }, modifier=Modifier.weight(1f).then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(50)) else Modifier), shape=RoundedCornerShape(50), border=ButtonDefaults.outlinedButtonBorder.copy(brush=Brush.linearGradient(listOf(Color.White.copy(alpha=.65f), AppAppearanceState.posterReflection, Color.White.copy(alpha=.2f))))) { Text("Import URL") }
+                OutlinedButton(onClick={ urlInput=""; urlDialog=true }, modifier=Modifier.weight(1f).then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(50)) else Modifier), shape=RoundedCornerShape(50), border=androidx.compose.foundation.BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha=.65f), AppAppearanceState.posterReflection, Color.White.copy(alpha=.2f))))) { Text("Import URL") }
             }
         }
         if (sourceLabel != null) item {
