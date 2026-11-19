@@ -67,15 +67,21 @@ internal object AppAppearanceState {
 
     val accent: Color
         get() = if (isLiquidGlass) Color(0xFF9DEBFF) else themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
+    // Home is explicitly rendered pure black by the root screen. Other pages use
+    // this poster-tinted ambient base beneath translucent glass surfaces.
     val background: Color
-        get() = if (isLiquidGlass || amoledBlack) Color.Black else Color(0xFF101114)
+        get() = if (isLiquidGlass) Color(
+            red = 0.025f + posterReflection.red * 0.075f,
+            green = 0.032f + posterReflection.green * 0.075f,
+            blue = 0.045f + posterReflection.blue * 0.085f
+        ) else if (amoledBlack) Color.Black else Color(0xFF101114)
     val panel: Color
         get() = if (isLiquidGlass) {
             Color(
-                red = 0.10f + posterReflection.red * 0.13f,
-                green = 0.11f + posterReflection.green * 0.13f,
-                blue = 0.14f + posterReflection.blue * 0.15f,
-                alpha = 0.76f
+                red = 0.18f + posterReflection.red * 0.12f,
+                green = 0.20f + posterReflection.green * 0.12f,
+                blue = 0.23f + posterReflection.blue * 0.14f,
+                alpha = 0.34f
             )
         } else if (amoledBlack) Color(0xFF111318) else Color(0xFF1B1D22)
     val glassHighlight: Color
