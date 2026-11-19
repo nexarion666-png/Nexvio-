@@ -395,7 +395,7 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                     if (showDetailWatchlist) {
                         Button(
                             onClick = { if (savedToWatchlist) watchlist.remove(item) else watchlist.add(item); savedToWatchlist = !savedToWatchlist },
-                            colors = ButtonDefaults.buttonColors(containerColor = CataloguePanel, contentColor = CatalogueAccent)
+                            modifier = Modifier.then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(50)) else Modifier), shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors(containerColor = if (AppAppearanceState.isLiquidGlass) Color(0xB51A3440) else CataloguePanel, contentColor = CatalogueAccent)
                         ) { Text(if (savedToWatchlist) "✓  In watchlist" else "＋  Add to watchlist") }
                     }
                     Spacer(Modifier.height(8.dp))
