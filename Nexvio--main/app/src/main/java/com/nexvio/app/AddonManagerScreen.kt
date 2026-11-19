@@ -264,7 +264,7 @@ fun AddonManagerScreen(onBack: () -> Unit) {
             }
         }
         item {
-            Column(Modifier.fillMaxWidth().background(AddonPanel, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp), AddonPanel).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Install an add-on", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text("Paste the provider's HTTP or HTTPS manifest URL. Install only providers you trust.", color = AddonMuted, fontSize = 12.sp)
                 OutlinedTextField(value = url, onValueChange = { url = it }, modifier = Modifier.fillMaxWidth(),
@@ -279,15 +279,15 @@ fun AddonManagerScreen(onBack: () -> Unit) {
         }
         if (message != null) item {
             Text(message!!, color = if (failed) MaterialTheme.colorScheme.error else AddonLime,
-                modifier = Modifier.fillMaxWidth().background(AddonPanel, RoundedCornerShape(12.dp)).padding(12.dp), fontSize = 13.sp)
+                modifier = Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(12.dp), AddonPanel).padding(12.dp), fontSize = 13.sp)
         }
         item { Text("Installed providers (${addons.size})", fontSize = 19.sp, fontWeight = FontWeight.Bold) }
         if (addons.isEmpty()) item {
             Text("No add-ons installed yet. Add a manifest URL above to validate a provider.",
-                color = AddonMuted, modifier = Modifier.fillMaxWidth().background(AddonPanel, RoundedCornerShape(14.dp)).padding(16.dp))
+                color = AddonMuted, modifier = Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), AddonPanel).padding(16.dp))
         }
         items(addons, key = { it.id }) { addon ->
-            Column(Modifier.fillMaxWidth().background(AddonPanel, RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), AddonPanel).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(addon.name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
