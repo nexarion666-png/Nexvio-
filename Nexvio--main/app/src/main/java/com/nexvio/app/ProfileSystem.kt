@@ -204,7 +204,7 @@ internal fun ProfileSystemScreen(
 
     fun refresh() { profiles = NexvioProfileStore.all(context); activeId = NexvioProfileStore.activeId(context) }
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF101923), ProfileBg, Color.Black)))) {
+    Box(Modifier.fillMaxSize().background(if (AppAppearanceState.isLiquidGlass) Brush.verticalGradient(listOf(Color.Black, Color(0xFF07131B), Color.Black)) else Brush.verticalGradient(listOf(Color(0xFF101923), ProfileBg, Color.Black)))) {
         if (creating || editor != null || profiles.isEmpty()) {
             ProfileEditorScreen(
                 existing = editor,
