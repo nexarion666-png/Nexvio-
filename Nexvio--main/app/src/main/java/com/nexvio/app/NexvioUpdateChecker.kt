@@ -41,11 +41,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val LATEST_UPDATE_JSON = "https://nexvio-updates-site-phi.vercel.app/latest.json"
+private const val LATEST_GITHUB_RELEASES =
+    "https://api.github.com/repos/nexarion666-png/Nexvio-/releases?per_page=20"
 private const val UPDATE_PREFS = "nexvio_update_download"
 private const val UPDATE_ID_KEY = "download_id"
 private const val UPDATE_VERSION_KEY = "download_version"
@@ -75,20 +76,19 @@ fun NexvioUpdateChecker() {
         val update = withContext(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
             try {
-                connection = (URL(LATEST_UPDATE_JSON).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 7000
-                    readTimeout = 7000
-                    setRequestProperty("Accept", "application/json")
+                connection = (URL(LATEST_GITHUB_RELEASES).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
                     setRequestProperty("Cache-Control", "no-cache")
                     setRequestProperty("User-Agent", "Nexvio-Android")
                 }
                 if (connection.responseCode !in 200..299) return@withContext null
-                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                val version = json.optString("version").removePrefix("v")
-                val url = json.optString("downloadUrl")
-                if (version.isNotBlank() && url.startsWith("https://") &&
-                    isNewerVersion(version, BuildConfig.VERSION_NAME)
-                ) Triple(version, json.optString("releaseNotes"), url) else null
+                parseLatestNexvioRelease(
+                    connection.inputStream.bufferedReader().use { it.readText() },
+                    BuildConfig.VERSION_NAME
+                )
             } catch (_: Exception) {
                 null
             } finally {
@@ -98,7 +98,6 @@ fun NexvioUpdateChecker() {
 
         if (update != null) {
             // A completed APK is valid only for the exact version it was downloaded for.
-            // Old builds must never leave the banner stuck on Install for a newer release.
             val prefs = context.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
             val savedDownloadVersion = prefs.getString(UPDATE_VERSION_KEY, null)
             if (savedDownloadVersion != update.first) {
@@ -226,6 +225,36 @@ fun NexvioUpdateChecker() {
             }
         }
     }
+}
+
+/** Returns the newest published main-branch APK when it is newer than this installation. */
+internal fun parseLatestNexvioRelease(body: String, currentVersion: String): Triple<String, String, String>? {
+    val releases = JSONArray(body)
+    for (index in 0 until releases.length()) {
+        val release = releases.optJSONObject(index) ?: continue
+        if (release.optBoolean("draft", false)) continue
+        val tag = release.optString("tag_name")
+        val buildNumber = Regex("(?i)^main-build-(\\d+)$").matchEntire(tag)?.groupValues?.get(1)
+            ?: continue
+        val version = "1.0.$buildNumber"
+        if (!isNewerVersion(version, currentVersion)) continue
+
+        val assets = release.optJSONArray("assets") ?: continue
+        var apkUrl: String? = null
+        for (assetIndex in 0 until assets.length()) {
+            val asset = assets.optJSONObject(assetIndex) ?: continue
+            if (asset.optString("name").equals("Nexvio.apk", ignoreCase = true)) {
+                apkUrl = asset.optString("browser_download_url").takeIf { it.startsWith("https://") }
+                break
+            }
+        }
+        if (apkUrl != null) {
+            val notes = release.optString("body").takeIf { it.isNotBlank() }
+                ?: release.optString("name").ifBlank { "A newer Nexvio build is available." }
+            return Triple(version, notes, apkUrl)
+        }
+    }
+    return null
 }
 
 private fun installDownloadedUpdate(context: Context, manager: DownloadManager, id: Long) {
