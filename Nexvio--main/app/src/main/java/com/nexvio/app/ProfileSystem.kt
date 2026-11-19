@@ -372,7 +372,7 @@ private fun ProfileEditorScreen(
             Text(if (existing == null) "Add Profile" else "Edit Profile", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(ProfileCard).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).nexvioGlass(RoundedCornerShape(20.dp), ProfileCard).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 ProfileAvatar(avatarId, customUrl, 82.dp, modifier = Modifier)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
@@ -383,7 +383,7 @@ private fun ProfileEditorScreen(
                     Text("Add-ons and plugins shared across profiles", color = ProfileMuted, fontSize = 11.sp)
                 }
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ProfileCard).padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).nexvioGlass(RoundedCornerShape(20.dp), ProfileCard).padding(16.dp)) {
                 Text("Profile name", color = Color.White, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(9.dp))
                 OutlinedTextField(value = name, onValueChange = { name = it; error = null }, modifier = Modifier.fillMaxWidth(),
@@ -397,7 +397,7 @@ private fun ProfileEditorScreen(
                 else if (duplicate) Text("That profile name is already in use.", color = Color(0xFFFF8585), fontSize = 12.sp)
                 Text("Add-ons and plugins are shared by every profile. Your library, downloads, watch history, and viewing progress remain separate.", color = ProfileMuted, fontSize = 13.sp)
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ProfileCard).padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).nexvioGlass(RoundedCornerShape(20.dp), ProfileCard).padding(16.dp)) {
                 Text("Custom avatar URL", color = Color.White, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text("Paste an image link, or leave this empty to use the built-in avatar catalog.", color = ProfileMuted, fontSize = 12.sp)
@@ -417,7 +417,7 @@ private fun ProfileEditorScreen(
                         onError = { imageError = true })
                 }
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ProfileCard).padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).nexvioGlass(RoundedCornerShape(20.dp), ProfileCard).padding(16.dp)) {
                 Text("Choose an avatar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text(NexvioAvatars.firstOrNull { it.id == avatarId }?.name ?: "Avatar", color = ProfileGreen, fontSize = 12.sp)
                 Spacer(Modifier.height(12.dp))
