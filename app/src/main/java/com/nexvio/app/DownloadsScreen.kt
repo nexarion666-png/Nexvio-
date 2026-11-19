@@ -320,7 +320,7 @@ private fun DownloadItemCard(
     val stopped = status == DownloadManager.STATUS_PAUSED || status == DownloadManager.STATUS_FAILED
     Box {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF1B1D22))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).nexvioGlass(RoundedCornerShape(16.dp), Color(0xFF1B1D22))
                 .combinedClickable(
                     onClick = { if (finished) onPlay() },
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = true }
@@ -447,7 +447,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
                 if (isTvFolder && onPlayQueue != null) onPlayQueue(queue, index) else onPlay(queue[index])
             }
         }
-        Column(Modifier.fillMaxSize().background(Color(0xFF0D0D0F))) {
+        Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = Color.White, fontSize = 32.sp, modifier = Modifier.clickable { openedFolder = null }.padding(end = 14.dp))
                 Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
@@ -499,7 +499,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
             val poster: Any? = remember(entry.key, posterVersion) { DownloadPosterStore.local(context, entry.key) }
                 ?: meta.optString("posterUrl").takeIf { it.startsWith("https://") }
             val isShow = entry.key.startsWith("tv:")
-            Row(Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF1B1D22)).clickable { openedFolder = entry.key }) {
+            Row(Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp)).nexvioGlass(RoundedCornerShape(16.dp), Color(0xFF1B1D22)).clickable { openedFolder = entry.key }) {
                 Box(Modifier.width(126.dp).fillMaxHeight().background(Color(0xFF292B31))) {
                     if (poster != null) AsyncImage(model=poster, contentDescription=title, contentScale=androidx.compose.ui.layout.ContentScale.Crop, modifier=Modifier.fillMaxSize())
                     else Box(Modifier.fillMaxSize(), contentAlignment=Alignment.Center) { Text("▣", color=Color(0xFF777B86), fontSize=42.sp) }
@@ -576,7 +576,7 @@ internal fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String
                 }
             } else LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(titles, key = { it.mediaType + "-" + it.id }) { item ->
-                    Row(Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp)).clickable { onTitleSelected?.invoke(item) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), Color(0xFF19191D)).clickable { onTitleSelected?.invoke(item) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.size(width = 68.dp, height = 96.dp).background(Color(0xFF26262A), RoundedCornerShape(8.dp)))
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) { Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold); Text(if (item.mediaType == "movie") "Movie" else "Series", color = Color(0xFF9A9DA6), fontSize = 12.sp) }
                         Text("▣", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() })
