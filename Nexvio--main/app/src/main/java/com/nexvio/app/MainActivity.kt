@@ -623,7 +623,7 @@ class MainActivity : ComponentActivity() {
     Box(
         Modifier.fillMaxWidth().height(heroHeight)
             .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
-            .background(Panel)
+            .nexvioGlass()
             .pointerInput(titles.size) {
                 detectHorizontalDragGestures(
                     onDragStart = { dragTotal[0] = 0f },
@@ -734,7 +734,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun HomePosterCard(title:TmdbTitle,onClick:(TmdbTitle)->Unit,posterWidth:Float,posterRadius:Float,showDescriptions:Boolean,modifier:Modifier=Modifier,fillCell:Boolean=false) {
     val cardModifier = if (fillCell) modifier.fillMaxWidth() else modifier.width(posterWidth.dp)
     Column(cardModifier.clickable { onClick(title) }) {
-        AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height((posterWidth*1.45f).dp).clip(RoundedCornerShape(posterRadius.dp)).background(Panel,RoundedCornerShape(posterRadius.dp)))
+        AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height((posterWidth*1.45f).dp).clip(RoundedCornerShape(posterRadius.dp)).nexvioGlass(RoundedCornerShape(posterRadius.dp)))
         Spacer(Modifier.height(7.dp))
         Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
         if(showDescriptions) Text(title.year,color=Muted,fontSize=11.sp)
@@ -742,14 +742,14 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun HomeQuickCard(title:String,subtitle:String,modifier:Modifier=Modifier,onClick:()->Unit) {
-    Column(modifier.background(Panel,RoundedCornerShape(16.dp)).clickable(onClick=onClick).padding(15.dp)) {
+    Column(modifier.nexvioGlass(RoundedCornerShape(16.dp)).clickable(onClick=onClick).padding(15.dp)) {
         Text(title,color=Color.White,fontSize=15.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(5.dp))
         Text(subtitle,color=Muted,fontSize=12.sp)
     }
 }
-@Composable private fun EmptySection(title:String, message:String) { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp)).padding(16.dp)) { Text(title, fontSize=18.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(message, color=Muted, fontSize=13.sp); Spacer(Modifier.height(10.dp)); Text("FOUNDATION", color=Accent, fontSize=10.sp, letterSpacing=1.sp) } }
-@Composable private fun CatalogueScreen(title:String, subtitle:String,onDetail:(String)->Unit) { Column(Modifier.fillMaxSize().padding(20.dp)) { Text(title, fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text(subtitle, color=Muted); Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp)) { Text("⌕  Search $title", color=Muted) }; Spacer(Modifier.height(20.dp)); EmptySection("Your $title collection", "Connect a compatible content provider in a later phase to browse real titles. No demonstration streams are provided.") } }
+@Composable private fun EmptySection(title:String, message:String) { Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp)).padding(16.dp)) { Text(title, fontSize=18.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(message, color=Muted, fontSize=13.sp); Spacer(Modifier.height(10.dp)); Text("FOUNDATION", color=Accent, fontSize=10.sp, letterSpacing=1.sp) } }
+@Composable private fun CatalogueScreen(title:String, subtitle:String,onDetail:(String)->Unit) { Column(Modifier.fillMaxSize().padding(20.dp)) { Text(title, fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text(subtitle, color=Muted); Spacer(Modifier.height(18.dp)); Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp)).clickable { onDetail("Search") }.padding(14.dp)) { Text("⌕  Search $title", color=Muted) }; Spacer(Modifier.height(20.dp)); EmptySection("Your $title collection", "Connect a compatible content provider in a later phase to browse real titles. No demonstration streams are provided.") } }
 private class PlaylistStore(context: Context) {
     private val prefs = context.getSharedPreferences("nexvio_iptv", Context.MODE_PRIVATE)
     fun source() = prefs.getString("source", null)
@@ -881,32 +881,32 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
         item { Text("Live TV", fontSize=30.sp, fontWeight=FontWeight.ExtraBold); Text("Import and browse your authorized IPTV channels", color=Muted) }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp), modifier=Modifier.fillMaxWidth()) {
-                Button(onClick={ filePicker.launch(arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain", "application/octet-stream", "*/*")) }, modifier=Modifier.weight(1f), colors=ButtonDefaults.buttonColors(containerColor=Accent, contentColor=Ink)) { Text("Import file") }
-                OutlinedButton(onClick={ urlInput=""; urlDialog=true }, modifier=Modifier.weight(1f)) { Text("Import URL") }
+                Button(onClick={ filePicker.launch(arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain", "application/octet-stream", "*/*")) }, modifier=Modifier.weight(1f).then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(50)) else Modifier), shape=RoundedCornerShape(50), colors=ButtonDefaults.buttonColors(containerColor=if (AppAppearanceState.isLiquidGlass) Color(0xB51A3440) else Accent, contentColor=if (AppAppearanceState.isLiquidGlass) Color(0xFFBDEFFF) else Ink)) { Text("Import file") }
+                OutlinedButton(onClick={ urlInput=""; urlDialog=true }, modifier=Modifier.weight(1f).then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(50)) else Modifier), shape=RoundedCornerShape(50), border=ButtonDefaults.outlinedButtonBorder.copy(brush=Brush.linearGradient(listOf(Color.White.copy(alpha=.65f), AppAppearanceState.posterReflection, Color.White.copy(alpha=.2f))))) { Text("Import URL") }
             }
         }
         if (sourceLabel != null) item {
-            Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(12.dp)).padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text(sourceLabel!!, fontWeight=FontWeight.SemiBold, maxLines=1); Text("${channels.size} channels", color=Muted, fontSize=12.sp) }
                 Text("Clear", color=Accent, modifier=Modifier.clickable { channels=emptyList(); sourceLabel=null; error=null; loadedOnce=true; store.clearSource() }.padding(8.dp))
             }
         }
         if (loading) item { Row(verticalAlignment=Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(22.dp), color=Accent, strokeWidth=2.dp); Spacer(Modifier.width(12.dp)); Text("Loading playlist…", color=Muted) } }
-        if (error != null) item { Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(14.dp)) { Text("Playlist issue", color=Accent, fontWeight=FontWeight.Bold); Spacer(Modifier.height(4.dp)); Text(error!!, color=Color.White, fontSize=13.sp); if (store.source() != null) Text("Check the source or re-import the playlist.", color=Muted, fontSize=12.sp) } }
+        if (error != null) item { Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(12.dp)).padding(14.dp)) { Text("Playlist issue", color=Accent, fontWeight=FontWeight.Bold); Spacer(Modifier.height(4.dp)); Text(error!!, color=Color.White, fontSize=13.sp); if (store.source() != null) Text("Check the source or re-import the playlist.", color=Muted, fontSize=12.sp) } }
         if (channels.isNotEmpty()) {
             item {
-                OutlinedTextField(value=search, onValueChange={search=it}, modifier=Modifier.fillMaxWidth(), singleLine=true, label={Text("Search channels")}, placeholder={Text("Channel name")})
+                OutlinedTextField(value=search, onValueChange={search=it}, modifier=Modifier.fillMaxWidth().then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(16.dp)) else Modifier), singleLine=true, label={Text("Search channels")}, placeholder={Text("Channel name")}, shape=RoundedCornerShape(16.dp), colors=OutlinedTextFieldDefaults.colors(focusedBorderColor=Accent, unfocusedBorderColor=if (AppAppearanceState.isLiquidGlass) Color.White.copy(alpha=.35f) else Color.Gray, focusedContainerColor=Color.Transparent, unfocusedContainerColor=Color.Transparent))
             }
             item {
                 Row(verticalAlignment=Alignment.CenterVertically) { Text("Category", color=Muted, modifier=Modifier.padding(end=8.dp)); var expanded by remember { mutableStateOf(false) }
-                    Box { OutlinedButton(onClick={expanded=true}) { Text(category) }; DropdownMenu(expanded=expanded, onDismissRequest={expanded=false}) { categories.forEach { cat -> DropdownMenuItem(text={Text(cat)}, onClick={ category=cat; expanded=false }) } } }
+                    Box { OutlinedButton(onClick={expanded=true}, modifier=Modifier.then(if (AppAppearanceState.isLiquidGlass) Modifier.nexvioGlass(RoundedCornerShape(50)) else Modifier), shape=RoundedCornerShape(50)) { Text(category) }; DropdownMenu(expanded=expanded, onDismissRequest={expanded=false}) { categories.forEach { cat -> DropdownMenuItem(text={Text(cat)}, onClick={ category=cat; expanded=false }) } } }
                 }
             }
             if (filtered.isEmpty()) item { EmptySection("No matching channels", "Try another search or category.") }
             items(filtered, key={it.id}) { channel ->
-                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { Log.d(PLAYBACK_TAG, "Selected channel name=${channel.name} streamUrl=${channel.streamUrl}"); onPlay(channel) }.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
-                    if (!channel.logoUrl.isNullOrBlank()) AsyncImage(model=channel.logoUrl, contentDescription=null, error=painterResource(id=R.drawable.ic_launcher), placeholder=painterResource(id=R.drawable.ic_launcher), modifier=Modifier.size(48.dp).background(Ink, RoundedCornerShape(10.dp)))
-                    else Box(Modifier.size(48.dp).background(Ink, RoundedCornerShape(10.dp)), contentAlignment=Alignment.Center) { Text("▶", color=Accent, fontSize=20.sp) }
+                Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp)).clickable { Log.d(PLAYBACK_TAG, "Selected channel name=${channel.name} streamUrl=${channel.streamUrl}"); onPlay(channel) }.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
+                    if (!channel.logoUrl.isNullOrBlank()) AsyncImage(model=channel.logoUrl, contentDescription=null, error=painterResource(id=R.drawable.ic_launcher), placeholder=painterResource(id=R.drawable.ic_launcher), modifier=Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).nexvioGlassRim(RoundedCornerShape(10.dp)).background(Ink, RoundedCornerShape(10.dp)))
+                    else Box(Modifier.size(48.dp).nexvioGlass(RoundedCornerShape(10.dp), Ink), contentAlignment=Alignment.Center) { Text("▶", color=Accent, fontSize=20.sp) }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) { Text(channel.name, fontWeight=FontWeight.SemiBold, maxLines=2); Text(channel.category ?: "Uncategorized", color=Muted, fontSize=12.sp) }
                     Text(if (channel.id in favorites) "♥" else "♡", color=if (channel.id in favorites) Accent else Muted, fontSize=24.sp, modifier=Modifier.clickable {
@@ -2032,8 +2032,7 @@ private fun PlayerFloatingIconButton(
     size: Int = 23
 ) {
     Box(
-        Modifier.size(46.dp).clip(CircleShape)
-            .background(Color(0x99080A0F))
+        Modifier.size(46.dp).nexvioGlass(CircleShape, Color(0x99080A0F))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -2395,7 +2394,7 @@ private fun postNexvioTestNotification(context: Context) {
 }
 
 @Composable private fun SettingsToggle(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp)).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight=FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
@@ -2406,7 +2405,7 @@ private fun postNexvioTestNotification(context: Context) {
 }
 
 @Composable private fun SettingsChoice(title: String, description: String, choices: List<String>, selected: String, onSelect: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)) {
+    Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp)).padding(16.dp)) {
         Text(title, fontWeight=FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         Text(description, color=Muted, fontSize=12.sp, lineHeight=17.sp)
@@ -2420,7 +2419,7 @@ private fun postNexvioTestNotification(context: Context) {
 }
 
 @Composable private fun SettingsInfoCard(title: String, description: String) {
-    Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)) {
+    Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp)).padding(16.dp)) {
         Text(title, fontWeight=FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         Text(description, color=Muted, fontSize=12.sp, lineHeight=17.sp)
@@ -2443,7 +2442,7 @@ private fun postNexvioTestNotification(context: Context) {
         sections.forEach { (section, options) ->
             item {
                 Text(section, color=Muted, fontSize=12.sp, fontWeight=FontWeight.Bold, letterSpacing=1.1.sp, modifier=Modifier.padding(top=8.dp,bottom=2.dp))
-                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp))) {
+                Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp))) {
                     options.forEachIndexed { index, option ->
                         val (title, desc) = option
                         Row(Modifier.fillMaxWidth().clickable { onDetail(title) }.padding(horizontal=16.dp, vertical=15.dp), verticalAlignment=Alignment.CenterVertically) {
@@ -2461,4 +2460,4 @@ private fun postNexvioTestNotification(context: Context) {
         }
     }
 }
-@Composable private fun InfoPage(title:String) { Column(Modifier.fillMaxWidth().padding(20.dp).background(Panel, RoundedCornerShape(18.dp)).padding(18.dp)) { Text(title, fontSize=23.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text(when(title) { "About Nexvio" -> "Nexvio 1.0.0 • Phase 2\nMovies • Series • Live TV\nAn original Android application."; "Search" -> "Search will become available when a real movie or series catalogue provider is connected."; "Appearance" -> "Nexvio currently uses its premium dark appearance."; "Playback preferences" -> "Live TV uses AndroidX Media3. Supported formats depend on stream and device compatibility."; "Content providers" -> "Movie and series provider integration is planned for a later phase."; "IPTV playlists" -> "Import an M3U/M3U8 file from Live TV or provide an HTTP/HTTPS playlist URL."; "Downloads" -> "Download supported direct media URLs and manage your offline files."; else -> "This feature is planned for a later Nexvio phase." }, color=Muted, lineHeight=23.sp); Spacer(Modifier.height(14.dp)); Text("NEXVIO", color=Accent, fontSize=10.sp, letterSpacing=1.5.sp) } }
+@Composable private fun InfoPage(title:String) { Column(Modifier.fillMaxWidth().padding(20.dp).nexvioGlass(RoundedCornerShape(18.dp)).padding(18.dp)) { Text(title, fontSize=23.sp, fontWeight=FontWeight.Bold); Spacer(Modifier.height(12.dp)); Text(when(title) { "About Nexvio" -> "Nexvio 1.0.0 • Phase 2\nMovies • Series • Live TV\nAn original Android application."; "Search" -> "Search will become available when a real movie or series catalogue provider is connected."; "Appearance" -> "Nexvio currently uses its premium dark appearance."; "Playback preferences" -> "Live TV uses AndroidX Media3. Supported formats depend on stream and device compatibility."; "Content providers" -> "Movie and series provider integration is planned for a later phase."; "IPTV playlists" -> "Import an M3U/M3U8 file from Live TV or provide an HTTP/HTTPS playlist URL."; "Downloads" -> "Download supported direct media URLs and manage your offline files."; else -> "This feature is planned for a later Nexvio phase." }, color=Muted, lineHeight=23.sp); Spacer(Modifier.height(14.dp)); Text("NEXVIO", color=Accent, fontSize=10.sp, letterSpacing=1.5.sp) } }
