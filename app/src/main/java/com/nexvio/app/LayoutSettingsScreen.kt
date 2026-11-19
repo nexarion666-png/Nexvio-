@@ -22,7 +22,7 @@ import dev.chrisbanes.haze.HazeState
 import org.json.JSONArray
 
 internal object AppAppearanceState {
-    var selectedTheme by mutableStateOf("Emerald")
+    var selectedTheme by mutableStateOf("Liquid Glass")
     var amoledBlack by mutableStateOf(false)
     var initialized by mutableStateOf(false)
     var hazeState: HazeState? by mutableStateOf(null)
@@ -30,7 +30,7 @@ internal object AppAppearanceState {
     val panel: Color get() = if (isLiquidGlass) Color(0xC8172029) else Color(0xFF1B1D22)
 
     val isLiquidGlass: Boolean
-        get() = selectedTheme == "Liquid Glass"
+        get() = true
     val accent: Color
         get() = if (isLiquidGlass) Color(0xFF9DEBFF) else themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
     val background: Color
@@ -435,7 +435,7 @@ private fun LayoutSectionTitle(title: String) {
 
 @Composable
 private fun LayoutCard(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().background(layoutPanel, RoundedCornerShape(18.dp)).padding(horizontal = 16.dp), content = content)
+    Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(18.dp), layoutPanel).padding(horizontal = 16.dp), content = content)
 }
 
 @Composable
