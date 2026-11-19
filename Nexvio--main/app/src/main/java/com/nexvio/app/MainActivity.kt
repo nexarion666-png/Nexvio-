@@ -2226,9 +2226,31 @@ private fun describePlaybackFailure(error: PlaybackException): PlaybackFailure {
     val causeText = causes.drop(1).firstOrNull()?.let {
         "${it.javaClass.simpleName}: ${it.message ?: "No message"}"
     }
+    val failedUri = httpError?.dataSpec?.uri
+    val failedTarget = failedUri?.let { uri ->
+        val host = uri.host ?: "unknown"
+        val path = uri.encodedPath.orEmpty().take(240)
+        "${uri.scheme ?: "https"}://${host}${path}"
+    }
+    val diagnosticHeaders = httpError?.headerFields
+        ?.filterKeys { key ->
+            key != null && key.lowercase() in setOf(
+                "retry-after", "content-type", "server", "via", "cf-ray",
+                "x-cache", "x-served-by", "x-ratelimit-limit",
+                "x-ratelimit-remaining", "x-ratelimit-reset"
+            )
+        }
+        ?.entries
+        ?.mapNotNull { (key, values) ->
+            val value = values?.firstOrNull()?.take(160)
+            if (key != null && !value.isNullOrBlank()) "${key}: ${value}" else null
+        }
+        .orEmpty()
     val details = buildString {
         append("${error.errorCodeName} (${error.errorCode})")
         if (httpError != null) append(" • HTTP ${httpError.responseCode}")
+        if (!failedTarget.isNullOrBlank()) append("\nFailed request: ${failedTarget}")
+        if (diagnosticHeaders.isNotEmpty()) append("\nCDN response: ${diagnosticHeaders.joinToString(" | ")}")
         if (causeText != null) append("\n${causeText}")
     }
     val message = when {
