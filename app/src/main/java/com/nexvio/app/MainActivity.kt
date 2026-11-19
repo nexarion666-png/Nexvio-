@@ -733,7 +733,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun HomePosterCard(title:TmdbTitle,onClick:(TmdbTitle)->Unit,posterWidth:Float,posterRadius:Float,showDescriptions:Boolean,modifier:Modifier=Modifier,fillCell:Boolean=false) {
     val cardModifier = if (fillCell) modifier.fillMaxWidth() else modifier.width(posterWidth.dp)
     Column(cardModifier.clickable { onClick(title) }) {
-        AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height((posterWidth*1.45f).dp).clip(RoundedCornerShape(posterRadius.dp)).background(Panel,RoundedCornerShape(posterRadius.dp)))
+        AsyncImage(model=title.posterPath?.let{"https://image.tmdb.org/t/p/w500$it"},contentDescription=title.title,contentScale=ContentScale.Crop,modifier=Modifier.fillMaxWidth().height((posterWidth*1.45f).dp).clip(RoundedCornerShape(posterRadius.dp)).background(Panel,RoundedCornerShape(posterRadius.dp)).nexvioGlassRim(RoundedCornerShape(posterRadius.dp)))
         Spacer(Modifier.height(7.dp))
         Text(title.title,color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
         if(showDescriptions) Text(title.year,color=Muted,fontSize=11.sp)
@@ -874,7 +874,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             }
         }
         if (sourceLabel != null) item {
-            Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(12.dp), Panel).padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text(sourceLabel!!, fontWeight=FontWeight.SemiBold, maxLines=1); Text("${channels.size} channels", color=Muted, fontSize=12.sp) }
                 Text("Clear", color=Accent, modifier=Modifier.clickable { channels=emptyList(); sourceLabel=null; error=null; loadedOnce=true; store.clearSource() }.padding(8.dp))
             }
@@ -892,7 +892,7 @@ private suspend fun downloadPlaylist(urlText: String): String = withContext(Disp
             }
             if (filtered.isEmpty()) item { EmptySection("No matching channels", "Try another search or category.") }
             items(filtered, key={it.id}) { channel ->
-                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).clickable { Log.d(PLAYBACK_TAG, "Selected channel name=${channel.name} streamUrl=${channel.streamUrl}"); onPlay(channel) }.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), Panel).clickable { Log.d(PLAYBACK_TAG, "Selected channel name=${channel.name} streamUrl=${channel.streamUrl}"); onPlay(channel) }.padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
                     if (!channel.logoUrl.isNullOrBlank()) AsyncImage(model=channel.logoUrl, contentDescription=null, error=painterResource(id=R.drawable.ic_launcher), placeholder=painterResource(id=R.drawable.ic_launcher), modifier=Modifier.size(48.dp).background(Ink, RoundedCornerShape(10.dp)))
                     else Box(Modifier.size(48.dp).background(Ink, RoundedCornerShape(10.dp)), contentAlignment=Alignment.Center) { Text("▶", color=Accent, fontSize=20.sp) }
                     Spacer(Modifier.width(12.dp))
@@ -2394,7 +2394,7 @@ private fun postNexvioTestNotification(context: Context) {
 }
 
 @Composable private fun SettingsChoice(title: String, description: String, choices: List<String>, selected: String, onSelect: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)) {
+    Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), Panel).padding(16.dp)) {
         Text(title, fontWeight=FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         Text(description, color=Muted, fontSize=12.sp, lineHeight=17.sp)
