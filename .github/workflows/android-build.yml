@@ -40,6 +40,18 @@ jobs:
           grep -q 'Next →' app/src/main/java/com/nexvio/app/TmdbCatalogueScreen.kt
           node --check app/src/main/assets/nexvio-prelude.js
           node --check app/src/main/assets/crypto-js.min.js
+          node --check app/src/main/assets/vidlink.js
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const { getStreamHeaders } = require('./app/src/main/assets/vidlink.js');
+          const mp4 = getStreamHeaders('https://bcdn.hakunaymatata.com/resource/h265/test.mp4?sign=redacted');
+          assert.equal(mp4['User-Agent'], 'ExoPlayerLib/2.19.1');
+          assert.equal(mp4.Referer, undefined);
+          assert.equal(mp4.Origin, undefined);
+          const playlist = getStreamHeaders('https://bcdn.hakunaymatata.com/master.m3u8');
+          assert.equal(playlist.Referer, 'https://vidlink.pro/');
+          assert.equal(playlist.Origin, 'https://vidlink.pro');
+          NODE
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
