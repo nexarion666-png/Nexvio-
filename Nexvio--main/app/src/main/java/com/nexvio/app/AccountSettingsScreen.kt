@@ -437,9 +437,13 @@ internal fun NexvioWelcomeScreen(
 
     Column(
         Modifier.fillMaxSize()
-            .background(androidx.compose.ui.graphics.Brush.verticalGradient(
-                listOf(Color(0xFF211039), Color(0xFF10091A), Color.Black)
-            ))
+            .background(
+                if (AppAppearanceState.isLiquidGlass) androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(Color.Black, Color(0xFF07131B), Color.Black)
+                ) else androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(Color(0xFF211039), Color(0xFF10091A), Color.Black)
+                )
+            )
             .statusBarsPadding().navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 26.dp, vertical = 22.dp),
