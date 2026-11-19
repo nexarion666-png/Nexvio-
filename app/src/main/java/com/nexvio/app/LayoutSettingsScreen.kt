@@ -118,7 +118,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(AppAppearanceState.background).statusBarsPadding(),
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
@@ -131,7 +131,7 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
         }
         item {
             LayoutSectionTitle("THEME")
-            Column(Modifier.fillMaxWidth().background(layoutPanel, RoundedCornerShape(20.dp)).padding(14.dp)) {
+            Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(20.dp), layoutPanel).padding(14.dp)) {
                 // Use ordinary rows here rather than nesting a lazy grid inside the page's
                 // LazyColumn. This keeps the layout screen measurement-safe on different devices.
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
