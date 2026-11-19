@@ -45,9 +45,9 @@ import java.net.URLEncoder
 
 private const val TMDB_API_KEY = "df35ad7483eaf39d05d6b534109453bb"
 private const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
-private val CatalogueInk = Color(0xFF101114)
-private val CataloguePanel = Color(0xFF1B1D22)
-private val CatalogueAccent = Color(0xFF8B7CFF)
+private val CatalogueInk = Color.Transparent
+private val CataloguePanel: Color get() = AppAppearanceState.panel
+private val CatalogueAccent: Color get() = AppAppearanceState.accent
 private val CatalogueMuted = Color(0xFF9A9DA6)
 
 internal data class TmdbTitle(
@@ -278,13 +278,13 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
         return
     }
 
-    Column(Modifier.fillMaxSize().background(CatalogueInk).padding(horizontal = 16.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(20.dp))
         Text("Search", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
         Text("Find movies and series in one place", color = CatalogueMuted, fontSize = 13.sp)
         Spacer(Modifier.height(18.dp))
         Row(
-            Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(24.dp), CataloguePanel).padding(horizontal = 18.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("⌕", color = CatalogueMuted, fontSize = 22.sp)
@@ -329,7 +329,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(230.dp).background(CataloguePanel, RoundedCornerShape(14.dp))
+                            modifier = Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(14.dp)).background(CataloguePanel, RoundedCornerShape(14.dp)).nexvioGlassRim(RoundedCornerShape(14.dp))
                         )
                         Spacer(Modifier.height(7.dp))
                         Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2)
@@ -359,7 +359,7 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
     var collectionMessage by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
-    Column(Modifier.fillMaxSize().background(CatalogueInk)) {
+    Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹  Back", color = CatalogueAccent, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
@@ -561,7 +561,7 @@ private fun SeriesEpisodePicker(item: TmdbTitle, onSelection: (Int, Int) -> Unit
         } finally { loadingEpisodes = false }
     }
 
-    Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp)) {
+    Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp), CataloguePanel).padding(14.dp)) {
         Text("Choose episode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
