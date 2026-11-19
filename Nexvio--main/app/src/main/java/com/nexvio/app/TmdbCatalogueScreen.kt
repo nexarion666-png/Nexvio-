@@ -282,7 +282,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
         Text("Find movies and series in one place", color = CatalogueMuted, fontSize = 13.sp)
         Spacer(Modifier.height(18.dp))
         Row(
-            Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), CataloguePanel).padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("⌕", color = CatalogueMuted, fontSize = 22.sp)
@@ -327,7 +327,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(230.dp).background(CataloguePanel, RoundedCornerShape(14.dp)),
+                            modifier = Modifier.fillMaxWidth().height(230.dp).nexvioGlass(RoundedCornerShape(14.dp), CataloguePanel),
                             onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) }
                         )
                         Spacer(Modifier.height(7.dp))
@@ -368,7 +368,7 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
         androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
             if (showDetailPoster) {
                 item {
-                    Box(Modifier.fillMaxWidth().height(330.dp).background(CataloguePanel), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().height(330.dp).nexvioGlass(fallback = CataloguePanel), contentAlignment = Alignment.Center) {
                         AsyncImage(
                             model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" },
                             contentDescription = item.title,
@@ -585,7 +585,7 @@ private fun SeriesEpisodePicker(item: TmdbTitle, onSelection: (Int, Int) -> Unit
     }
 
     Column(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp)) {
+        Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), CataloguePanel).padding(14.dp)) {
             Text("Choose episode", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -923,9 +923,9 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         AlertDialog(onDismissRequest = { downloadMessage = null }, title = { Text("Nexvio downloads") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { downloadMessage = null }) { Text("OK") } })
     }
 
-    Column(if (fullPage) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(16.dp)).padding(16.dp)) {
+    Column(if (fullPage) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp), CataloguePanel).padding(16.dp)) {
         if (fullPage) {
-            Box(Modifier.fillMaxWidth().height(260.dp).background(CataloguePanel)) {
+            Box(Modifier.fillMaxWidth().height(260.dp).nexvioGlass(fallback = CataloguePanel)) {
                 AsyncImage(model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color(0xCC101114)).padding(horizontal = 16.dp, vertical = 18.dp)) {
                     Text(if (item.mediaType == "movie") "MOVIE" else "S${seasonNumber} E${episodeNumber}", color = CatalogueAccent, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
@@ -963,7 +963,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         }
         if (loading) {
             Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth().background(CataloguePanel, RoundedCornerShape(14.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), CataloguePanel).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(25.dp).rotate(loaderRotation), color = CatalogueAccent, strokeWidth = 3.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
