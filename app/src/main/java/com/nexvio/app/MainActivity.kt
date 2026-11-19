@@ -97,7 +97,8 @@ import java.net.URI
 import java.net.URL
 
 private val Ink: Color get() = AppAppearanceState.background
-private val Panel = Color(0xFF1B1D22)
+private val Panel: Color
+    get() = if (AppAppearanceState.isLiquidGlass) Color(0xC8172029) else Color(0xFF1B1D22)
 private val Accent: Color get() = AppAppearanceState.accent
 private val Muted = Color(0xFF9A9DA6)
 private const val MAX_PLAYLIST_BYTES = 5 * 1024 * 1024
@@ -402,7 +403,24 @@ class MainActivity : ComponentActivity() {
                 Row(
                     modifier = Modifier.fillMaxWidth()
                         .padding(horizontal = if (navStyle == "Compact") 6.dp else 12.dp, vertical = if (navStyle == "Compact") 5.dp else 10.dp)
-                        .background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
+                        .then(
+                            if (AppAppearanceState.isLiquidGlass) {
+                                Modifier
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xD92A3944), Color(0xA80B1118), Color(0xD92B3B47))
+                                        ),
+                                        RoundedCornerShape(40.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFFBDEFFF), Color(0x667A9BAA), Color(0xFFD8F8FF))
+                                        ),
+                                        RoundedCornerShape(40.dp)
+                                    )
+                            } else Modifier.background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
+                        )
                         .padding(horizontal = 5.dp, vertical = if (navStyle == "Compact") 2.dp else 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
