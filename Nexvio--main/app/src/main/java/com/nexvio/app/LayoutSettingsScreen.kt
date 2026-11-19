@@ -2,6 +2,8 @@ package com.nexvio.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,13 +27,59 @@ internal object AppAppearanceState {
     var selectedTheme by mutableStateOf("Emerald")
     var amoledBlack by mutableStateOf(false)
     var initialized by mutableStateOf(false)
+    var posterReflection by mutableStateOf(Color(0xFF536477))
+
+    val isLiquidGlass: Boolean get() = selectedTheme == "Liquid Glass"
+
+    fun updatePosterReflection(drawable: Drawable?) {
+        if (!isLiquidGlass) return
+        val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: return
+        if (bitmap.width <= 0 || bitmap.height <= 0) return
+        runCatching {
+            var red = 0L
+            var green = 0L
+            var blue = 0L
+            var count = 0
+            for (y in 0..5) for (x in 0..5) {
+                val pixel = bitmap.getPixel(
+                    ((x + 0.5f) * bitmap.width / 6f).toInt().coerceIn(0, bitmap.width - 1),
+                    ((y + 0.5f) * bitmap.height / 6f).toInt().coerceIn(0, bitmap.height - 1)
+                )
+                red += android.graphics.Color.red(pixel)
+                green += android.graphics.Color.green(pixel)
+                blue += android.graphics.Color.blue(pixel)
+                count++
+            }
+            if (count > 0) {
+                val sampled = Color(
+                    (red / count).toInt(),
+                    (green / count).toInt(),
+                    (blue / count).toInt()
+                )
+                posterReflection = Color(
+                    red = sampled.red * 0.72f + 0.28f * 0.20f,
+                    green = sampled.green * 0.72f + 0.28f * 0.23f,
+                    blue = sampled.blue * 0.72f + 0.28f * 0.30f
+                )
+            }
+        }
+    }
 
     val accent: Color
         get() = themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
     val background: Color
         get() = if (amoledBlack) Color.Black else Color(0xFF101114)
     val panel: Color
-        get() = if (amoledBlack) Color(0xFF111318) else Color(0xFF1B1D22)
+        get() = if (isLiquidGlass) {
+            Color(
+                red = 0.10f + posterReflection.red * 0.13f,
+                green = 0.11f + posterReflection.green * 0.13f,
+                blue = 0.14f + posterReflection.blue * 0.15f,
+                alpha = 0.94f
+            )
+        } else if (amoledBlack) Color(0xFF111318) else Color(0xFF1B1D22)
+    val glassHighlight: Color
+        get() = if (isLiquidGlass) posterReflection.copy(alpha = 0.42f) else Color.Transparent
     val muted: Color
         get() = Color(0xFF9A9DA6)
 }
@@ -44,7 +93,8 @@ private val themeColors = listOf(
     LayoutTheme("Violet", Color(0xFF9B70F5)),
     LayoutTheme("Emerald", Color(0xFF38C77A)),
     LayoutTheme("Amber", Color(0xFFFFA43A)),
-    LayoutTheme("Rose", Color(0xFFE85D9E))
+    LayoutTheme("Rose", Color(0xFFE85D9E)),
+    LayoutTheme("Liquid Glass", Color(0xFF8CCBDE))
 )
 
 private val layoutPanel: Color get() = AppAppearanceState.panel
@@ -154,7 +204,12 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                                         modifier = Modifier.size(52.dp)
                                             .then(if (selected) Modifier.background(theme.color.copy(alpha = .22f), CircleShape) else Modifier)
                                             .padding(if (selected) 4.dp else 0.dp)
-                                            .background(theme.color, CircleShape),
+                                            .background(
+                                                if (theme.name == "Liquid Glass") Brush.linearGradient(
+                                                    listOf(Color(0xFF263746), Color(0xFF769DAD), Color(0xFF263746))
+                                                ) else Brush.linearGradient(listOf(theme.color, theme.color)),
+                                                CircleShape
+                                            ),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (selected) Text("✓", color = if (theme.name == "White" || theme.name == "Amber") Color.Black else Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -168,7 +223,11 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                         }
                     }
                 }
-                Text("Your selected theme is applied consistently across Nexvio's screens and controls.", color = layoutMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                Text(
+                    if (AppAppearanceState.isLiquidGlass) "Liquid Glass reflects the colours sampled from movie and series posters across the app."
+                    else "Your selected theme is applied consistently across Nexvio's screens and controls.",
+                    color = layoutMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp)
+                )
             }
         }
         item {
