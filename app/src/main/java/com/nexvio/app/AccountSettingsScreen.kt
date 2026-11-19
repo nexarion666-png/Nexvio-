@@ -298,7 +298,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit =
     }
 
     Column(
-        Modifier.fillMaxSize().background(Color(0xFF090D12)).verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -306,7 +306,7 @@ internal fun AccountSettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit =
         Text("Nexvio Account", fontSize = 29.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
         Text("Sign in with a global account to use the same identity across your devices.", color = AccountMuted, fontSize = 13.sp)
         if (session != null) {
-            Column(Modifier.fillMaxWidth().background(AccountPanel, RoundedCornerShape(16.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp), AccountPanel).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("You're signed in", color = AccountAccent, fontWeight = FontWeight.Bold)
                 Text(session?.email.orEmpty(), color = Color.White)
                 Text("Sync your profiles, settings, add-ons, plugin repositories, IPTV URL and channel favorites, watchlists, and watch history across devices. Downloaded media and device-only file imports stay local.", color = AccountMuted, fontSize = 12.sp)
