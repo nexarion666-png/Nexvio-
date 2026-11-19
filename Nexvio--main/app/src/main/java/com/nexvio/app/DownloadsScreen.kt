@@ -349,7 +349,7 @@ private fun DownloadItemCard(
     val stopped = status == DownloadManager.STATUS_PAUSED || status == DownloadManager.STATUS_FAILED
     Box {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF1B1D22))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).nexvioGlass(RoundedCornerShape(16.dp), Color(0xFF1B1D22))
                 .combinedClickable(
                     onClick = { if (finished) onPlay() },
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menuOpen = true }
@@ -605,7 +605,7 @@ internal fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String
         if (cloudSelected) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Cloud sync isn't connected yet.", color = Color(0xFF9A9DA6)) }
         else {
             Box(Modifier.padding(start = 20.dp, top = 22.dp, bottom = 20.dp)) {
-                Row(Modifier.background(Color(0xFF19191D), RoundedCornerShape(14.dp)).clickable { sortMenu = true }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.nexvioGlass(RoundedCornerShape(14.dp), Color(0xFF19191D)).clickable { sortMenu = true }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (sortByRecent) "Recently added" else "Name", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold); Text(" ⌄", color = Color(0xFF9A9DA6), fontSize = 18.sp)
                 }
                 DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
@@ -620,7 +620,7 @@ internal fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String
                 LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     items(titles, key = { it.mediaType + "-" + it.id }) { item ->
                         Column(Modifier.fillMaxWidth().clickable { onTitleSelected?.invoke(item) }) {
-                            AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(248.dp).background(Color(0xFF19191D), RoundedCornerShape(12.dp)))
+                            AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(248.dp).nexvioGlassRim(RoundedCornerShape(12.dp)).background(Color(0xFF19191D), RoundedCornerShape(12.dp)))
                             Spacer(Modifier.height(8.dp)); Text(item.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2)
                             Text((if (item.mediaType == "movie") "Movie" else "Series") + if (item.year.isNotBlank()) " • " + item.year else "", color = Color(0xFF9A9DA6), fontSize = 12.sp)
                             Text("▣", color = Color(0xFFCF9DA4), fontSize = 20.sp, modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() }.padding(top = 5.dp))
@@ -630,7 +630,7 @@ internal fun OfflineLibraryScreen(onPlay: (TvChannel) -> Unit, profileId: String
             } else LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(titles, key = { it.mediaType + "-" + it.id }) { item ->
                     Row(Modifier.fillMaxWidth().background(Color(0xFF19191D), RoundedCornerShape(14.dp)).clickable { onTitleSelected?.invoke(item) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.size(width = 68.dp, height = 96.dp).background(Color(0xFF26262A), RoundedCornerShape(8.dp)))
+                        AsyncImage(model = item.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.size(width = 68.dp, height = 96.dp).nexvioGlassRim(RoundedCornerShape(8.dp)).background(Color(0xFF26262A), RoundedCornerShape(8.dp)))
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) { Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold); Text(if (item.mediaType == "movie") "Movie" else "Series", color = Color(0xFF9A9DA6), fontSize = 12.sp) }
                         Text("▣", color = Color(0xFFCF9DA4), modifier = Modifier.clickable { watchlist.remove(item); saved = watchlist.all() })
                     }
