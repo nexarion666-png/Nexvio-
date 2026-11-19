@@ -48,7 +48,11 @@ var TMDB_API_KEY = "68e094699525b18a70bab2f86b1fa706";
 var ENC_DEC_API = "https://enc-dec.app/api";
 var VIDLINK_API = "https://vidlink.pro/api/b";
 var VIDLINK_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+  // Match the Android Chrome client that successfully plays Vidlink's official
+  // embed page, rather than advertising a Windows desktop browser to its CDN.
+  "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+  "Accept": "*/*",
+  "Accept-Language": "en-US,en;q=0.9",
   "Connection": "keep-alive",
   "Referer": "https://vidlink.pro/",
   "Origin": "https://vidlink.pro"
