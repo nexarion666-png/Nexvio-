@@ -358,7 +358,7 @@ private fun DownloadItemCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(Modifier.size(width = 70.dp, height = 100.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF292B31))) {
-                if (poster != null) AsyncImage(model = poster, contentDescription = title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                if (poster != null) AsyncImage(model = poster, contentDescription = title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize(), onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) })
                 else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("▣", color = Color(0xFF777B86), fontSize = 28.sp) }
             }
             Column(Modifier.weight(1f).padding(start = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -554,7 +554,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
             val isShow = entry.key.startsWith("tv:")
             Row(Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF1B1D22)).clickable { openedFolder = entry.key }) {
                 Box(Modifier.width(126.dp).fillMaxHeight().background(Color(0xFF292B31))) {
-                    if (poster != null) AsyncImage(model=poster, contentDescription=title, contentScale=androidx.compose.ui.layout.ContentScale.Crop, modifier=Modifier.fillMaxSize())
+                    if (poster != null) AsyncImage(model=poster, contentDescription=title, contentScale=androidx.compose.ui.layout.ContentScale.Crop, modifier=Modifier.fillMaxSize(), onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) })
                     else Box(Modifier.fillMaxSize(), contentAlignment=Alignment.Center) { Text("▣", color=Color(0xFF777B86), fontSize=42.sp) }
                 }
                 Column(Modifier.weight(1f).fillMaxHeight().padding(14.dp), verticalArrangement=Arrangement.Center) {
