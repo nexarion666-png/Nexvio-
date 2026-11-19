@@ -38,6 +38,7 @@ android { namespace = "com.nexvio.app"; compileSdk = 35
 }
 
 dependencies {
+    implementation("dev.chrisbanes.haze:haze:1.5.2")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation(platform("androidx.compose:compose-bom:2025.01.00"))
