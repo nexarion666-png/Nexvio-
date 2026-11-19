@@ -252,7 +252,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    MaterialTheme(colorScheme = darkColorScheme(primary=Accent, background=Ink, surface=Panel, onBackground=Color.White, onSurface=Color.White)) {
+    MaterialTheme(colorScheme = darkColorScheme(
+        primary = Accent,
+        secondary = AppAppearanceState.glassHighlight,
+        tertiary = AppAppearanceState.posterReflection,
+        background = Ink,
+        surface = Panel,
+        surfaceVariant = Panel,
+        onBackground = Color.White,
+        onSurface = Color.White
+    )) {
         val homeFullBleed = !restoringAccountProfiles && !showingWelcome && !profileGate && !showingProfilePicker &&
             playing == null && streamSearch == null && selectedTitle == null && detail == null && current == "Home"
         Surface(
@@ -637,7 +646,8 @@ class MainActivity : ComponentActivity() {
                     contentDescription = item?.title,
                     contentScale = ContentScale.Crop,
                     alignment = Alignment.TopCenter,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) }
                 )
             }
         }
