@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
     SideEffect { AppAppearanceState.hazeState = hazeState }
     val appearancePrefs = remember(appearanceContext, activeProfileIdForSettings(appearanceContext)) { settingsPrefs(appearanceContext) }
     LaunchedEffect(appearancePrefs) {
-        AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Emerald") ?: "Emerald"
+        AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Liquid Glass") ?: "Liquid Glass"
         AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
         AppAppearanceState.initialized = true
     }
@@ -260,9 +260,10 @@ class MainActivity : ComponentActivity() {
             playing == null && streamSearch == null && selectedTitle == null && detail == null && current == "Home"
         Surface(
             Modifier.fillMaxSize().navigationBarsPadding().imePadding()
-                .then(if (homeFullBleed) Modifier else Modifier.statusBarsPadding())
+                 .then(if (homeFullBleed) Modifier else Modifier.statusBarsPadding())
+                .background(Brush.linearGradient(listOf(Color(0xFF111C2B), Color(0xFF080B12), Color(0xFF17101A))))
                 .hazeSource(state = hazeState),
-            color = Ink
+            color = Color.Transparent
         ) {
             if (restoringAccountProfiles) {
                 Column(
@@ -420,15 +421,15 @@ class MainActivity : ComponentActivity() {
                         val selected = current == item && selectedTitle == null && detail == null
                         Column(
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(32.dp))
-                                .background(if (selected && navGlow) Accent.copy(alpha = 0.16f) else if (selected) Ink else Color.Transparent)
+                                .background(if (selected && navGlow && AppAppearanceState.isLiquidGlass) Color(0xFF138DEB).copy(alpha = 0.30f) else if (selected && navGlow) Accent.copy(alpha = 0.16f) else if (selected) Ink else Color.Transparent)
                                 .clickable { streamSearch = null; detail = null; selectedTitle = null; current = item }
                                 .padding(vertical = if (navStyle == "Compact") 5.dp else 9.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(if (navStyle == "Compact") 1.dp else 4.dp)
                         ) {
                             Text(when(item) { "Home" -> "⌂"; "Search" -> "⌕"; "Live TV" -> "⊙"; "Library" -> "▤"; else -> "●" },
-                                color = if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 18.sp else 21.sp, lineHeight = 23.sp)
-                            if (navStyle != "Minimal") Text(item, color = if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 9.sp else 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                                color = if (selected && AppAppearanceState.isLiquidGlass) Color(0xFFB8F0FF) else if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 18.sp else 21.sp, lineHeight = 23.sp)
+                            if (navStyle != "Minimal") Text(item, color = if (selected && AppAppearanceState.isLiquidGlass) Color(0xFFB8F0FF) else if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 9.sp else 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
                         }
                     }
                 }
@@ -2382,7 +2383,7 @@ private fun postNexvioTestNotification(context: Context) {
 }
 
 @Composable private fun SettingsToggle(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(14.dp), Panel).padding(16.dp), verticalAlignment=Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight=FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
@@ -2430,7 +2431,7 @@ private fun postNexvioTestNotification(context: Context) {
         sections.forEach { (section, options) ->
             item {
                 Text(section, color=Muted, fontSize=12.sp, fontWeight=FontWeight.Bold, letterSpacing=1.1.sp, modifier=Modifier.padding(top=8.dp,bottom=2.dp))
-                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp))) {
+                Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp), Panel)) {
                     options.forEachIndexed { index, option ->
                         val (title, desc) = option
                         Row(Modifier.fillMaxWidth().clickable { onDetail(title) }.padding(horizontal=16.dp, vertical=15.dp), verticalAlignment=Alignment.CenterVertically) {
