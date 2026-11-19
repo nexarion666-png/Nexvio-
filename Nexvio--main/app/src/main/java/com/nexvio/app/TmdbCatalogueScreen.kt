@@ -23,6 +23,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -59,6 +61,33 @@ internal data class TmdbTitle(
     val rating: Double,
     val mediaType: String
 )
+
+/** Soft, poster-derived ambient light behind detail and stream-search glass UI. */
+@Composable
+private fun PosterGlassBackdrop(item: TmdbTitle) {
+    Box(Modifier.fillMaxSize().background(CatalogueInk)) {
+        AsyncImage(
+            model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" },
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().blur(30.dp).then(
+                Modifier.graphicsLayer { alpha = 0.38f }
+            ),
+            onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) }
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Black.copy(alpha = 0.48f),
+                        AppAppearanceState.background.copy(alpha = 0.40f),
+                        Color.Black.copy(alpha = 0.66f)
+                    )
+                )
+            )
+        )
+    }
+}
 
 internal class WatchlistStore(context: Context, profileId: String = NexvioProfileStore.active(context).id) {
     private val prefs = context.getSharedPreferences(if (profileId == "primary") "nexvio_watchlist" else "nexvio_watchlist_$profileId", Context.MODE_PRIVATE)
@@ -358,7 +387,9 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
     var collectionMessage by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
-    Column(Modifier.fillMaxSize().background(CatalogueInk)) {
+    Box(Modifier.fillMaxSize().background(CatalogueInk)) {
+        if (AppAppearanceState.isLiquidGlass) PosterGlassBackdrop(item)
+        Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹  Back", color = CatalogueAccent, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
@@ -453,13 +484,16 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                 }
             }
         }
+        }
     }
 }
 
 
 @Composable
 internal fun StreamSearchPage(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onBack: () -> Unit, onPlay: (TvChannel) -> Unit) {
-    Column(Modifier.fillMaxSize().background(CatalogueInk)) {
+    Box(Modifier.fillMaxSize().background(CatalogueInk)) {
+        if (AppAppearanceState.isLiquidGlass) PosterGlassBackdrop(item)
+        Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹  Back", color = CatalogueAccent, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
             Column(Modifier.weight(1f)) {
@@ -469,6 +503,7 @@ internal fun StreamSearchPage(item: TmdbTitle, seasonNumber: Int, episodeNumber:
         }
         androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             item { StreamDiscoverySection(item, seasonNumber, episodeNumber, onPlay, autoStart = true, fullPage = true) }
+        }
         }
     }
 }
@@ -927,7 +962,7 @@ private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNu
         if (fullPage) {
             Box(Modifier.fillMaxWidth().height(260.dp).nexvioGlass(fallback = CataloguePanel)) {
                 AsyncImage(model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }, contentDescription = item.title, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color(0xCC101114)).padding(horizontal = 16.dp, vertical = 18.dp)) {
+                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().nexvioGlass(RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 18.dp)) {
                     Text(if (item.mediaType == "movie") "MOVIE" else "S${seasonNumber} E${episodeNumber}", color = CatalogueAccent, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
                     Text(item.title, color = Color.White, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.ExtraBold)
                     Text(if (item.mediaType == "movie") "Movie" else "Season $seasonNumber • Episode $episodeNumber", color = CatalogueMuted, fontSize = 14.sp)
