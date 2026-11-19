@@ -25,10 +25,12 @@ internal object AppAppearanceState {
     var amoledBlack by mutableStateOf(false)
     var initialized by mutableStateOf(false)
 
+    val isLiquidGlass: Boolean
+        get() = selectedTheme == "Liquid Glass"
     val accent: Color
-        get() = themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
+        get() = if (isLiquidGlass) Color(0xFF9DEBFF) else themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
     val background: Color
-        get() = if (amoledBlack) Color.Black else Color(0xFF101114)
+        get() = if (amoledBlack || isLiquidGlass) Color.Black else Color(0xFF101114)
 }
 
 private data class LayoutTheme(val name: String, val color: Color)
@@ -40,7 +42,8 @@ private val themeColors = listOf(
     LayoutTheme("Violet", Color(0xFF9B70F5)),
     LayoutTheme("Emerald", Color(0xFF38C77A)),
     LayoutTheme("Amber", Color(0xFFFFA43A)),
-    LayoutTheme("Rose", Color(0xFFE85D9E))
+    LayoutTheme("Rose", Color(0xFFE85D9E)),
+    LayoutTheme("Liquid Glass", Color(0xFF9DEBFF))
 )
 
 private val layoutPanel = Color(0xFF1B1D22)
@@ -164,7 +167,11 @@ fun LayoutSettingsScreenV2(onBack: () -> Unit) {
                         }
                     }
                 }
-                Text("Your accent is applied to Nexvio's Material controls and selected navigation state.", color = layoutMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                Text(
+                    if (AppAppearanceState.isLiquidGlass) "Liquid Glass uses a deep-black canvas, translucent smoky surfaces, cool reflective edges and cyan highlights throughout the interface."
+                    else "Your accent is applied to Nexvio's Material controls and selected navigation state. Liquid Glass is available as a separate theme.",
+                    color = layoutMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp)
+                )
             }
         }
         item {
