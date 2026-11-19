@@ -66,16 +66,16 @@ internal object AppAppearanceState {
     }
 
     val accent: Color
-        get() = themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
+        get() = if (isLiquidGlass) Color(0xFF9DEBFF) else themeColors.firstOrNull { it.name == selectedTheme }?.color ?: Color(0xFF38C77A)
     val background: Color
-        get() = if (amoledBlack) Color.Black else Color(0xFF101114)
+        get() = if (isLiquidGlass || amoledBlack) Color.Black else Color(0xFF101114)
     val panel: Color
         get() = if (isLiquidGlass) {
             Color(
                 red = 0.10f + posterReflection.red * 0.13f,
                 green = 0.11f + posterReflection.green * 0.13f,
                 blue = 0.14f + posterReflection.blue * 0.15f,
-                alpha = 0.94f
+                alpha = 0.76f
             )
         } else if (amoledBlack) Color(0xFF111318) else Color(0xFF1B1D22)
     val glassHighlight: Color
@@ -487,7 +487,7 @@ private fun LayoutSectionTitle(title: String) {
 
 @Composable
 private fun LayoutCard(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().background(layoutPanel, RoundedCornerShape(18.dp)).padding(horizontal = 16.dp), content = content)
+    Column(Modifier.fillMaxWidth().nexvioGlass(RoundedCornerShape(18.dp)).padding(horizontal = 16.dp), content = content)
 }
 
 @Composable
