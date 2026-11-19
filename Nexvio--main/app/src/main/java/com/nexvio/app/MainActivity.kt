@@ -95,6 +95,11 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.rememberHazeState
 
 private val Ink: Color get() = AppAppearanceState.background
 private val Panel: Color get() = AppAppearanceState.panel
@@ -252,6 +257,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    val hazeState = rememberHazeState()
+    SideEffect { AppAppearanceState.hazeState = hazeState }
+
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Accent,
         secondary = AppAppearanceState.glassHighlight,
@@ -335,8 +343,8 @@ class MainActivity : ComponentActivity() {
                 )
             } else if (playing != null) {
                 PlayerScreen(channel = playing!!, profileId = activeProfileId, queue = playbackQueue, queueIndex = playbackQueueIndex, onQueueMove = { moveDownloadQueue(it) }, onBack = { playing = null; playbackQueue = emptyList(); playbackQueueIndex = 0 })
-            } else Column {
-                Box(Modifier.weight(1f)) {
+            } else Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().hazeSource(state = hazeState)) {
                     if (streamSearch != null) {
                         val request = streamSearch!!
                         StreamSearchPage(item = request.first, seasonNumber = request.second, episodeNumber = request.third, onBack = { streamSearch = null }, onPlay = { playing = it })
@@ -412,9 +420,19 @@ class MainActivity : ComponentActivity() {
                 val navStyle = navPrefs.getString("navigation_style", "Adaptive") ?: "Adaptive"
                 val navGlow = navPrefs.getBoolean("navigation_glow", true)
                 Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = if (navStyle == "Compact") 6.dp else 12.dp, vertical = if (navStyle == "Compact") 5.dp else 10.dp)
-                        .background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                        .padding(horizontal = if (navStyle == "Compact") 16.dp else 22.dp, vertical = if (navStyle == "Compact") 9.dp else 14.dp)
+                        .then(if (AppAppearanceState.isLiquidGlass) Modifier.hazeEffect(
+                            state = hazeState,
+                            style = HazeStyle(
+                                backgroundColor = Color(0xFF101820),
+                                tints = listOf(HazeTint(AppAppearanceState.posterReflection.copy(alpha = 0.20f))),
+                                blurRadius = 28.dp,
+                                noiseFactor = 0.04f
+                            )
+                        ) else Modifier)
+                        .background(if (AppAppearanceState.isLiquidGlass) Panel.copy(alpha = 0.40f) else Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
+                        .border(1.dp, if (AppAppearanceState.isLiquidGlass) Brush.linearGradient(listOf(Color.White.copy(alpha = 0.46f), AppAppearanceState.posterReflection.copy(alpha = 0.55f), Color.White.copy(alpha = 0.10f))) else Brush.linearGradient(listOf(Panel, Panel)), RoundedCornerShape(40.dp))
                         .padding(horizontal = 5.dp, vertical = if (navStyle == "Compact") 2.dp else 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
