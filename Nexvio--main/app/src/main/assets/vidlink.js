@@ -58,6 +58,22 @@ var VIDLINK_HEADERS = {
   "Origin": "https://vidlink.pro"
 };
 
+ // The hakunaymatata CDN handles direct MP4 requests differently from the
+ // Vidlink API/player page. Use the native player identity and omit page
+ // Referer/Origin headers for direct MP4 media requests.
+var VIDLINK_MP4_HEADERS = {
+  "User-Agent": "ExoPlayerLib/2.19.1",
+  "Accept": "*/*",
+  "Accept-Encoding": "identity"
+};
+function getStreamHeaders(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    if (/\.(mp4|m4v)$/i.test(pathname)) return VIDLINK_MP4_HEADERS;
+  } catch (_error) {}
+  return VIDLINK_HEADERS;
+}
+
 // src/vidlink/http.js
 function makeRequest(_0) {
   return __async(this, arguments, function* (url, options = {}) {
@@ -184,7 +200,7 @@ function fetchAndParseM3U8(playlistUrl, mediaInfo, subtitles) {
           url: playlistUrl,
           quality: "Auto",
           size: "Unknown",
-          headers: VIDLINK_HEADERS,
+          headers: getStreamHeaders(playlistUrl),
           provider: "vidlink",
           subtitles: subtitles || []
         }];
@@ -198,7 +214,7 @@ function fetchAndParseM3U8(playlistUrl, mediaInfo, subtitles) {
           url: stream.url,
           quality,
           size: "Unknown",
-          headers: VIDLINK_HEADERS,
+          headers: getStreamHeaders(stream.url),
           provider: "vidlink",
           subtitles: subtitles || []
         };
@@ -211,7 +227,7 @@ function fetchAndParseM3U8(playlistUrl, mediaInfo, subtitles) {
         url: playlistUrl,
         quality: "Auto",
         size: "Unknown",
-        headers: VIDLINK_HEADERS,
+        headers: getStreamHeaders(playlistUrl),
         provider: "vidlink",
         subtitles: subtitles || []
       }];
@@ -298,7 +314,7 @@ function processVidlinkResponse(data, mediaInfo) {
             url: qualityData.url,
             quality,
             size: "Unknown",
-            headers: VIDLINK_HEADERS,
+            headers: getStreamHeaders(qualityData.url),
             provider: "vidlink",
             subtitles
           });
@@ -328,7 +344,7 @@ function processVidlinkResponse(data, mediaInfo) {
         url: data.url,
         quality,
         size: "Unknown",
-        headers: VIDLINK_HEADERS,
+        headers: getStreamHeaders(data.url),
         provider: "vidlink",
         subtitles
       });
@@ -342,7 +358,7 @@ function processVidlinkResponse(data, mediaInfo) {
             url: stream.url,
             quality,
             size: stream.size || "Unknown",
-            headers: VIDLINK_HEADERS,
+            headers: getStreamHeaders(stream.url),
             provider: "vidlink",
             subtitles
           });
@@ -358,7 +374,7 @@ function processVidlinkResponse(data, mediaInfo) {
             url: link.url,
             quality,
             size: link.size || "Unknown",
-            headers: VIDLINK_HEADERS,
+            headers: getStreamHeaders(link.url),
             provider: "vidlink",
             subtitles
           });
@@ -378,7 +394,7 @@ function processVidlinkResponse(data, mediaInfo) {
               url: value,
               quality,
               size: "Unknown",
-              headers: VIDLINK_HEADERS,
+              headers: getStreamHeaders(value),
               provider: "vidlink",
               subtitles
             });
@@ -469,4 +485,4 @@ function getStreams(tmdbId, mediaType = "movie", seasonNum = null, episodeNum = 
     }
   });
 }
-module.exports = { getStreams };
+module.exports = { getStreams, getStreamHeaders };
