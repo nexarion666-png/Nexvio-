@@ -11,6 +11,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 
 /**
  * Shared Liquid Glass material used by cards, controls and navigation.
@@ -39,7 +42,19 @@ internal fun Modifier.nexvioGlass(
             reflection.copy(alpha = 0.42f)
         )
     )
-    return this
+    val hazeState = AppAppearanceState.hazeState
+    val blurred = if (hazeState != null) {
+        this.hazeEffect(
+            state = hazeState,
+            style = HazeStyle(
+                backgroundColor = Color(0xFF111923),
+                tints = listOf(HazeTint(reflection.copy(alpha = 0.12f))),
+                blurRadius = 22.dp,
+                noiseFactor = 0.035f
+            )
+        )
+    } else this
+    return blurred
         .shadow(13.dp, shape, clip = false)
         .clip(shape)
         .background(surface, shape)
