@@ -2048,8 +2048,7 @@ private fun PlayerFloatingButton(
     fontSize: Int = 22
 ) {
     Box(
-        Modifier.size(46.dp).clip(CircleShape)
-            .background(Color(0x99080A0F))
+        Modifier.size(46.dp).nexvioGlass(CircleShape, Color(0x99080A0F))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
