@@ -327,7 +327,8 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
                             model = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(230.dp).background(CataloguePanel, RoundedCornerShape(14.dp))
+                            modifier = Modifier.fillMaxWidth().height(230.dp).background(CataloguePanel, RoundedCornerShape(14.dp)),
+                            onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) }
                         )
                         Spacer(Modifier.height(7.dp))
                         Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2)
@@ -372,7 +373,8 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                             model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) }
                         )
                     }
                 }
