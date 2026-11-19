@@ -25,18 +25,18 @@ internal fun Modifier.nexvioGlass(
     val reflection = AppAppearanceState.posterReflection
     val surface = Brush.linearGradient(
         colors = listOf(
-            Color(0xD92B3B47),
-            Color(0xB80B121A),
-            reflection.copy(alpha = 0.28f),
-            Color(0xD51B2832)
+            Color(0x882B3B47),
+            Color(0x660B121A),
+            reflection.copy(alpha = 0.18f),
+            Color(0x881B2832)
         )
     )
     val rim = Brush.linearGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.68f),
-            reflection.copy(alpha = 0.82f),
-            Color.White.copy(alpha = 0.18f),
-            reflection.copy(alpha = 0.62f)
+            Color.White.copy(alpha = 0.48f),
+            reflection.copy(alpha = 0.58f),
+            Color.White.copy(alpha = 0.12f),
+            reflection.copy(alpha = 0.42f)
         )
     )
     return this
