@@ -99,7 +99,6 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.rememberHazeState
 
 private val Ink: Color get() = AppAppearanceState.background
 private val Panel: Color get() = AppAppearanceState.panel
@@ -257,7 +256,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    val hazeState = rememberHazeState()
+    val hazeState = remember { dev.chrisbanes.haze.HazeState() }
     SideEffect { AppAppearanceState.hazeState = hazeState }
 
     MaterialTheme(colorScheme = darkColorScheme(
