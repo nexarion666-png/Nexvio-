@@ -52,6 +52,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -414,30 +415,25 @@ class MainActivity : ComponentActivity() {
                 val navPrefs = settingsPrefs(appearanceContext)
                 val navStyle = navPrefs.getString("navigation_style", "Adaptive") ?: "Adaptive"
                 val navGlow = navPrefs.getBoolean("navigation_glow", true)
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = if (navStyle == "Compact") 6.dp else 12.dp, vertical = if (navStyle == "Compact") 5.dp else 10.dp)
-                        .then(
-                            if (AppAppearanceState.isLiquidGlass) {
-                                Modifier.nexvioGlass(RoundedCornerShape(40.dp), Color(0xB5101820))
-                            } else Modifier.background(Panel.copy(alpha = 0.97f), RoundedCornerShape(40.dp))
-                        )
-                        .padding(horizontal = 5.dp, vertical = if (navStyle == "Compact") 2.dp else 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    listOf("Home","Search","Live TV","Library","Profile").forEach { item ->
-                        val selected = current == item && selectedTitle == null && detail == null
-                        Column(
-                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(32.dp))
-                                .background(if (selected && navGlow && AppAppearanceState.isLiquidGlass) Color(0xFF138DEB).copy(alpha = 0.30f) else if (selected && navGlow) Accent.copy(alpha = 0.16f) else if (selected) Ink else Color.Transparent)
-                                .clickable { streamSearch = null; detail = null; selectedTitle = null; current = item }
-                                .padding(vertical = if (navStyle == "Compact") 5.dp else 9.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(if (navStyle == "Compact") 1.dp else 4.dp)
-                        ) {
-                            Text(when(item) { "Home" -> "⌂"; "Search" -> "⌕"; "Live TV" -> "⊙"; "Library" -> "▤"; else -> "●" },
-                                color = if (selected && AppAppearanceState.isLiquidGlass) Color(0xFFB8F0FF) else if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 18.sp else 21.sp, lineHeight = 23.sp)
-                            if (navStyle != "Minimal") Text(item, color = if (selected && AppAppearanceState.isLiquidGlass) Color(0xFFB8F0FF) else if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 9.sp else 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                val destinations = listOf("Home", "Search", "Live TV", "Library", "Profile")
+                val activeIndex = destinations.indexOf(current).coerceAtLeast(0)
+                Box(Modifier.fillMaxWidth().padding(horizontal = if (AppAppearanceState.isLiquidGlass) 4.dp else 12.dp, vertical = if (navStyle == "Compact") 5.dp else 10.dp).height(if (navStyle == "Compact") 62.dp else 72.dp)) {
+                    if (AppAppearanceState.isLiquidGlass) Box(Modifier.fillMaxSize().nexvioGlass(CircleShape, Color(0xA817202B)))
+                    else Box(Modifier.fillMaxSize().background(Panel.copy(alpha = 0.97f), CircleShape))
+                    Row(Modifier.fillMaxSize().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        destinations.forEachIndexed { index, item ->
+                            val selected = index == activeIndex && selectedTitle == null && detail == null
+                            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                if (selected && AppAppearanceState.isLiquidGlass) {
+                                    Box(Modifier.size(width = 76.dp, height = 82.dp).offset(y = (-5).dp).shadow(20.dp, CircleShape, ambientColor = Color(0xFF35AFFF), spotColor = Color(0xFF35AFFF)).background(Brush.linearGradient(listOf(Color(0xFFE8FAFF), Color(0xFF43BFFF), Color(0xFF1267E8), Color(0xFF073B9C))), CircleShape).padding(2.dp).background(Brush.linearGradient(listOf(Color(0xFF65D8FF), Color(0xFF1879F4), Color(0xFF063CBA))), CircleShape)) {
+                                        Box(Modifier.fillMaxWidth().fillMaxHeight(0.42f).padding(horizontal = 8.dp, vertical = 4.dp).background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.58f), Color.White.copy(alpha = 0.02f))), RoundedCornerShape(40.dp)))
+                                    }
+                                } else if (selected && navGlow) Box(Modifier.fillMaxSize().padding(3.dp).background(Accent.copy(alpha = 0.16f), RoundedCornerShape(30.dp)))
+                                Column(Modifier.fillMaxSize().clickable { streamSearch = null; detail = null; selectedTitle = null; current = item }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    Text(when (item) { "Home" -> "⌂"; "Search" -> "⌕"; "Live TV" -> "⊙"; "Library" -> "▤"; else -> "●" }, color = if (selected && AppAppearanceState.isLiquidGlass) Color.White else if (selected) Accent else Muted, fontSize = if (selected && AppAppearanceState.isLiquidGlass) 27.sp else if (navStyle == "Compact") 18.sp else 21.sp, lineHeight = 27.sp)
+                                    if (navStyle != "Minimal") Text(item, color = if (selected && AppAppearanceState.isLiquidGlass) Color.White else if (selected) Accent else Muted, fontSize = if (navStyle == "Compact") 9.sp else 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+                                }
+                            }
                         }
                     }
                 }
