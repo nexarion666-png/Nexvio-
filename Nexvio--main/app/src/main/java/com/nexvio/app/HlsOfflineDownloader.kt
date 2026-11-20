@@ -47,6 +47,8 @@ internal object HlsOfflineDownloader {
         if (variants.isEmpty()) {
             val mediaFile = File(folder, "playlist.m3u8")
             downloadedBytes += packageMediaPlaylist(masterUrl, masterText, mediaFile, folder, headers, onConnection, -1L, downloadedBytes, onProgress)
+            val actualFolderBytes = folder.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            onProgress(actualFolderBytes, actualFolderBytes)
             return
         }
 
