@@ -191,6 +191,7 @@ class MainActivity : ComponentActivity() {
     val hazeState = remember { HazeState() }
     SideEffect { AppAppearanceState.hazeState = hazeState }
     val appearancePrefs = remember(appearanceContext, activeProfileIdForSettings(appearanceContext)) { settingsPrefs(appearanceContext) }
+    LaunchedEffect(selectedTitle) { selectedTitle?.posterPath?.let { AppAppearanceState.ambientPosterUrl = "https://image.tmdb.org/t/p/w780$it" } }
     LaunchedEffect(appearancePrefs) {
         AppAppearanceState.selectedTheme = appearancePrefs.getString("theme_name", "Liquid Glass") ?: "Liquid Glass"
         AppAppearanceState.amoledBlack = appearancePrefs.getBoolean("amoled_black", false)
