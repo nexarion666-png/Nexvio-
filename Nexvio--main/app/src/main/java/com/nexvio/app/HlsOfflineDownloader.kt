@@ -81,10 +81,18 @@ internal object HlsOfflineDownloader {
         val audioPlaylistResponse = audioPlaylistUrl?.let { fetchText(it, headers, onConnection) }
         val resolvedAudioPlaylistUrl = audioPlaylistResponse?.finalUrl ?: audioPlaylistUrl
         val audioPlaylistText = audioPlaylistResponse?.text
-        val videoExactBytes = playlistResourceBytes(variantPlaylistUrl, variantPlaylistText, headers)
-        val audioExactBytes = if (audioPlaylistUrl != null && audioPlaylistText != null) {
+        // Vixsrc CDN segment URLs can be signed and rate-limited. Probing every
+        // segment with HEAD and then Range before downloading can leave the UI
+        // appearing stuck for minutes. Use the playlist bitrate estimate there;
+        // actual bytes are still reported as each segment is saved.
+        val vixsrcSource = headers.any { (key, value) ->
+            (key.equals("Referer", true) || key.equals("Origin", true)) &&
+                value.contains("vixsrc.to", ignoreCase = true)
+        } || runCatching { URL(url).host.contains("vixsrc.to", ignoreCase = true) }.getOrDefault(false)
+        val videoExactBytes = if (vixsrcSource) -1L else playlistResourceBytes(variantPlaylistUrl, variantPlaylistText, headers)
+        val audioExactBytes = if (!vixsrcSource && audioPlaylistUrl != null && audioPlaylistText != null) {
             playlistResourceBytes(resolvedAudioPlaylistUrl!!, audioPlaylistText, headers)
-        } else 0L
+        } else if (audioPlaylistUrl == null) 0L else -1L
         val exactTotalBytes = if (videoExactBytes >= 0L && audioExactBytes >= 0L) {
             videoExactBytes + audioExactBytes
         } else -1L
