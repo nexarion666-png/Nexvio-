@@ -35,12 +35,16 @@ internal fun Modifier.nexvioGlass(
             Color(0x70202D38)
         )
     )
+    // The bright upper-left specular edge falls away around the perimeter,
+    // with a cooler reflection returning softly at the lower-right.
     val rim = Brush.linearGradient(
-        colors = listOf(
-            Color.White.copy(alpha = 0.42f),
-            reflection.copy(alpha = 0.52f),
-            Color.White.copy(alpha = 0.10f),
-            reflection.copy(alpha = 0.32f)
+        colorStops = arrayOf(
+            0.00f to Color.White.copy(alpha = 0.88f),
+            0.10f to Color.White.copy(alpha = 0.48f),
+            0.34f to reflection.copy(alpha = 0.16f),
+            0.62f to Color.White.copy(alpha = 0.07f),
+            0.86f to reflection.copy(alpha = 0.22f),
+            1.00f to Color.White.copy(alpha = 0.58f)
         )
     )
     val state = AppAppearanceState.hazeState
@@ -60,7 +64,7 @@ internal fun Modifier.nexvioGlass(
         .shadow(14.dp, shape, clip = false)
         .clip(shape)
         .background(surface, shape)
-        .border(1.dp, rim, shape)
+        .border(1.25.dp, rim, shape)
 }
 
 /** A restrained luminous edge for artwork and image tiles. */
