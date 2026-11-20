@@ -50,6 +50,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -510,6 +512,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     LaunchedEffect(featuredTitles) {
+        featuredTitles.firstOrNull { !it.posterPath.isNullOrBlank() }?.let { AppAppearanceState.ambientPosterUrl = "https://image.tmdb.org/t/p/w780${it.posterPath}" }
         // Save the big hero posters too, so Home still looks right offline.
         TmdbOfflineCache.prefetchPosters(featuredTitles.mapNotNull { it.posterPath }, "w780")
     }
