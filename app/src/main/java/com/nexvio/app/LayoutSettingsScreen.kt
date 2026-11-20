@@ -27,6 +27,7 @@ internal object AppAppearanceState {
     var initialized by mutableStateOf(false)
     var hazeState: HazeState? by mutableStateOf(null)
     val posterReflection: Color get() = Color(0xFF9DEBFF)
+    var ambientPosterUrl by mutableStateOf<String?>(null)
     val panel: Color get() = if (isLiquidGlass) Color(0xC8172029) else Color(0xFF1B1D22)
 
     val isLiquidGlass: Boolean
