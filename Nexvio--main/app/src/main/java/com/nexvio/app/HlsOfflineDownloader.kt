@@ -25,7 +25,9 @@ internal object HlsOfflineDownloader {
         var downloadedBytes = folder.walkTopDown().filter { it.isFile }.sumOf { it.length() }
         onProgress(downloadedBytes, -1L)
 
-        val masterText = fetchText(url, headers, onConnection)
+        val masterResponse = fetchText(url, headers, onConnection)
+        val masterUrl = masterResponse.finalUrl
+        val masterText = masterResponse.text
         if (!masterText.trimStart().startsWith("#EXTM3U")) {
             throw IOException("Vixsrc did not return a valid HLS playlist. Refresh the stream and try again.")
         }
@@ -39,12 +41,12 @@ internal object HlsOfflineDownloader {
             val height = Regex("RESOLUTION=\\d+x(\\d+)", RegexOption.IGNORE_CASE)
                 .find(line)?.groupValues?.getOrNull(1)?.toIntOrNull()
             val audioGroup = attribute(line, "AUDIO")
-            variants += Variant(line, URL(URL(url), uri).toString(), height, audioGroup)
+            variants += Variant(line, URL(URL(masterUrl), uri).toString(), height, audioGroup)
         }
 
         if (variants.isEmpty()) {
             val mediaFile = File(folder, "playlist.m3u8")
-            downloadedBytes += packageMediaPlaylist(url, masterText, mediaFile, folder, headers, onConnection, -1L, downloadedBytes, onProgress)
+            downloadedBytes += packageMediaPlaylist(masterUrl, masterText, mediaFile, folder, headers, onConnection, -1L, downloadedBytes, onProgress)
             return
         }
 
@@ -56,7 +58,9 @@ internal object HlsOfflineDownloader {
             ?: audioRenditions.firstOrNull { attribute(it, "AUTOSELECT").equals("YES", true) }
             ?: audioRenditions.firstOrNull()
 
-        val variantPlaylistText = fetchText(selected.url, headers, onConnection)
+        val variantResponse = fetchText(selected.url, headers, onConnection)
+        val variantPlaylistUrl = variantResponse.finalUrl
+        val variantPlaylistText = variantResponse.text
         val videoDurationSeconds = playlistDurationSeconds(variantPlaylistText)
         val videoBandwidth = attribute(selected.tag, "AVERAGE-BANDWIDTH")?.toLongOrNull()
             ?: attribute(selected.tag, "BANDWIDTH")?.toLongOrNull()
@@ -72,12 +76,14 @@ internal object HlsOfflineDownloader {
         // one-byte Range request. If the CDN exposes resource lengths, this is the
         // exact media payload size before the download begins.
         val audioPlaylistUrl = selectedAudio?.let { audio ->
-            attribute(audio, "URI")?.takeIf { it.isNotBlank() }?.let { URL(URL(url), it).toString() }
+            attribute(audio, "URI")?.takeIf { it.isNotBlank() }?.let { URL(URL(masterUrl), it).toString() }
         }
-        val audioPlaylistText = audioPlaylistUrl?.let { fetchText(it, headers, onConnection) }
-        val videoExactBytes = playlistResourceBytes(selected.url, variantPlaylistText, headers)
+        val audioPlaylistResponse = audioPlaylistUrl?.let { fetchText(it, headers, onConnection) }
+        val resolvedAudioPlaylistUrl = audioPlaylistResponse?.finalUrl ?: audioPlaylistUrl
+        val audioPlaylistText = audioPlaylistResponse?.text
+        val videoExactBytes = playlistResourceBytes(variantPlaylistUrl, variantPlaylistText, headers)
         val audioExactBytes = if (audioPlaylistUrl != null && audioPlaylistText != null) {
-            playlistResourceBytes(audioPlaylistUrl, audioPlaylistText, headers)
+            playlistResourceBytes(resolvedAudioPlaylistUrl!!, audioPlaylistText, headers)
         } else 0L
         val exactTotalBytes = if (videoExactBytes >= 0L && audioExactBytes >= 0L) {
             videoExactBytes + audioExactBytes
@@ -88,7 +94,7 @@ internal object HlsOfflineDownloader {
         val variantFile = File(folder, "variant/playlist.m3u8")
         variantFile.parentFile?.mkdirs()
         downloadedBytes += packageMediaPlaylist(
-            selected.url, variantPlaylistText, variantFile,
+            variantPlaylistUrl, variantPlaylistText, variantFile,
             variantFile.parentFile!!, headers, onConnection, totalBytes, downloadedBytes, onProgress
         )
 
@@ -96,11 +102,11 @@ internal object HlsOfflineDownloader {
         if (selectedAudio != null) {
             val audioUri = attribute(selectedAudio, "URI")
             if (!audioUri.isNullOrBlank()) {
-                val audioUrl = URL(URL(url), audioUri).toString()
+                val audioUrl = URL(URL(masterUrl), audioUri).toString()
                 val audioFile = File(folder, "audio/playlist.m3u8")
                 audioFile.parentFile?.mkdirs()
                 downloadedBytes += packageMediaPlaylist(
-                    audioUrl, audioPlaylistText ?: fetchText(audioUrl, headers, onConnection), audioFile,
+                    resolvedAudioPlaylistUrl ?: audioUrl, audioPlaylistText ?: fetchText(audioUrl, headers, onConnection).text, audioFile,
                     audioFile.parentFile!!, headers, onConnection, totalBytes, downloadedBytes, onProgress
                 )
                 localAudioLine = selectedAudio.replace(Regex("URI=\"[^\"]*\"", RegexOption.IGNORE_CASE), "URI=\"audio/playlist.m3u8\"")
@@ -300,17 +306,16 @@ internal object HlsOfflineDownloader {
         return addedBytes
     }
 
-    private suspend fun fetchText(url: String, headers: Map<String, String>, callback: (HttpURLConnection?) -> Unit): String =
-        String(fetchBytes(url, headers, callback), Charsets.UTF_8)
+    private data class PlaylistResponse(val text: String, val finalUrl: String)
 
-    private suspend fun fetchBytes(url: String, headers: Map<String, String>, callback: (HttpURLConnection?) -> Unit): ByteArray {
-        currentCoroutineContext().ensureActive()
+    private suspend fun fetchText(url: String, headers: Map<String, String>, callback: (HttpURLConnection?) -> Unit): PlaylistResponse {
         val connection = open(url, headers)
         callback(connection)
         try {
             val code = connection.responseCode
             if (code !in 200..299) throw IOException("HLS request failed (HTTP $code).")
-            return connection.inputStream.use { it.readBytes() }
+            val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            return PlaylistResponse(text, connection.url.toString())
         } finally {
             callback(null)
             connection.disconnect()
