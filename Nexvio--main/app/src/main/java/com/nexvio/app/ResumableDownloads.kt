@@ -338,12 +338,21 @@ internal object ResumableDownloads {
             val downloadUrl = rec.optString("url")
             val sourceHost = runCatching { URL(downloadUrl).host.lowercase() }.getOrDefault("")
             val sourcePath = runCatching { URL(downloadUrl).path.lowercase() }.getOrDefault("")
-            val isHls = sourcePath.endsWith(".m3u8") || sourceHost == "vixsrc.to" || sourceHost.endsWith(".vixsrc.to")
+            val sourceHeaders = readHeaders(rec)
+            // Vixsrc often returns a signed playlist hosted on a separate CDN. In that
+            // case neither the URL host nor its extension identifies it as HLS; the
+            // provider Referer/Origin headers are the stable source identity.
+            val sourceReferer = sourceHeaders.entries.firstOrNull { it.key.equals("Referer", true) }?.value.orEmpty()
+            val sourceOrigin = sourceHeaders.entries.firstOrNull { it.key.equals("Origin", true) }?.value.orEmpty()
+            val isVixsrc = sourceHost == "vixsrc.to" || sourceHost.endsWith(".vixsrc.to") ||
+                sourceReferer.contains("vixsrc.to", ignoreCase = true) ||
+                sourceOrigin.contains("vixsrc.to", ignoreCase = true)
+            val isHls = sourcePath.endsWith(".m3u8") || isVixsrc
             if (isHls) {
                 update(prefs, id) { it.put("format", "hls") }
                 val hlsFolder = File(dir, "$name.hls")
                 HlsOfflineDownloader.download(
-                    downloadUrl, hlsFolder, readHeaders(rec),
+                    downloadUrl, hlsFolder, sourceHeaders,
                     rec.optInt("preferredVideoHeight", -1).takeIf { it > 0 },
                     onConnection = { connection -> if (connection == null) connections.remove(id) else connections[id] = connection },
                     onProgress = { bytes, estimate -> update(prefs, id) { it.put("downloadedBytes", bytes).put("total", estimate) } }
