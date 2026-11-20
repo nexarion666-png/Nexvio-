@@ -147,7 +147,9 @@ internal object HlsOfflineDownloader {
         }
         if (!output.contains("#EXTM3U")) throw IOException("Could not build the offline HLS playlist.")
         File(folder, "playlist.m3u8").writeText(output.toString(), Charsets.UTF_8)
-        onProgress(downloadedBytes, totalBytes)
+        // Once every video/audio segment is saved, report the exact packaged size.
+        val actualFolderBytes = folder.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        onProgress(actualFolderBytes, actualFolderBytes)
     }
 
     /**
@@ -255,8 +257,12 @@ internal object HlsOfflineDownloader {
         var mapIndex = 0
         var addedBytes = 0L
         var progressBytes = initialBytes
+        val playlistLines = playlistText.replace("\r", "").lines()
+        val totalSegments = playlistLines.count { it.isNotBlank() && !it.trim().startsWith("#") }
+        var completedSegments = 0
+        var visitedSegmentBytes = 0L
 
-        for (raw in playlistText.replace("\r", "").lines()) {
+        for (raw in playlistLines) {
             currentCoroutineContext().ensureActive()
             val line = raw.trim()
             if (line.isEmpty()) { output.append(raw).append('\n'); continue }
@@ -303,8 +309,16 @@ internal object HlsOfflineDownloader {
                 if (bytes <= 0L) throw IOException("The HLS source returned an empty media segment.")
                 addedBytes += bytes
                 progressBytes += bytes
-                onProgress(progressBytes, estimatedTotalBytes)
             }
+            visitedSegmentBytes += segmentFile.length()
+            completedSegments++
+            // Estimate remaining segments from the average size received so far.
+            // This avoids extra network probes and works for every HLS provider.
+            val dynamicTotal = if (estimatedTotalBytes > 0L) estimatedTotalBytes else if (completedSegments > 0 && totalSegments > completedSegments) {
+                val averageSegmentBytes = visitedSegmentBytes / completedSegments
+                (progressBytes + averageSegmentBytes * (totalSegments - completedSegments)).coerceAtLeast(progressBytes)
+            } else if (completedSegments == totalSegments && progressBytes > 0L) progressBytes else -1L
+            onProgress(progressBytes, dynamicTotal)
             output.append("segments/").append(segmentFile.name).append('\n')
             segmentIndex++
         }
