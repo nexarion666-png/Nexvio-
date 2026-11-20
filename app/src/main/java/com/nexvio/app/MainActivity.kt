@@ -267,7 +267,13 @@ class MainActivity : ComponentActivity() {
                 .hazeSource(state = hazeState),
             color = Color.Transparent
         ) {
-            if (restoringAccountProfiles) {
+            Box(Modifier.fillMaxSize()) {
+                val ambientPoster = AppAppearanceState.ambientPosterUrl
+                if (AppAppearanceState.isLiquidGlass && !ambientPoster.isNullOrBlank()) {
+                    AsyncImage(model = ambientPoster, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().scale(1.28f).blur(52.dp))
+                }
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x99070B14), Color(0x99070B14), Color(0xB8080B12)))))
+                if (restoringAccountProfiles) {
                 Column(
                     Modifier.fillMaxSize().background(Ink).padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -435,6 +441,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }
