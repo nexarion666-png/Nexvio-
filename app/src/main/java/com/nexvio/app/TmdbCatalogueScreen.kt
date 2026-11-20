@@ -271,6 +271,7 @@ internal fun TmdbCatalogueScreen(mediaType: String, onPlay: (TvChannel) -> Unit,
             load(query.trim())
         }
     }
+    LaunchedEffect(titles) { titles.firstOrNull { !it.posterPath.isNullOrBlank() }?.let { AppAppearanceState.ambientPosterUrl = "$TMDB_IMAGE_BASE${it.posterPath}" } }
     BackHandler(enabled = selected != null) { selected = null }
 
     selected?.let { item ->
