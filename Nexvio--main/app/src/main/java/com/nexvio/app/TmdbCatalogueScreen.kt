@@ -502,7 +502,7 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                         Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
                         Spacer(Modifier.height(24.dp))
                     }
-                    if (item.mediaType == "movie" && (castLoading || mainCast.isNotEmpty())) {
+                    if ((item.mediaType == "movie" || item.mediaType == "tv") && (castLoading || mainCast.isNotEmpty())) {
                         Spacer(Modifier.height(22.dp))
                         Text("Main cast", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(12.dp))
