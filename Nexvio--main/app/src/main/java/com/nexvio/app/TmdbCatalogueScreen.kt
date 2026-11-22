@@ -386,6 +386,18 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
     var collectionDialog by remember(item.id, item.mediaType) { mutableStateOf(false) }
     var collectionNames by remember(item.id, item.mediaType) { mutableStateOf(CustomCollectionStore.names(context)) }
     var collectionMessage by remember(item.id, item.mediaType) { mutableStateOf<String?>(null) }
+    var mainCast by remember(item.id, item.mediaType) { mutableStateOf<List<TmdbCastMember>>(emptyList()) }
+    var castLoading by remember(item.id, item.mediaType) { mutableStateOf(true) }
+    val detailListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val posterHeight by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (detailListState.firstVisibleItemIndex > 0) 104.dp else (210.dp - (detailListState.firstVisibleItemScrollOffset * 0.55f).dp).coerceIn(104.dp, 210.dp),
+        animationSpec = androidx.compose.animation.core.tween(180), label = "detail-poster-scroll-height"
+    )
+    LaunchedEffect(item.id, item.mediaType) {
+        castLoading = true
+        mainCast = runCatching { fetchTmdbMainCast(item) }.getOrDefault(emptyList())
+        castLoading = false
+    }
     val year = item.year.ifBlank { "Unknown year" }
     val rating = if (item.rating > 0) String.format("%.1f", item.rating) else "N/A"
     Box(Modifier.fillMaxSize().background(CatalogueInk)) {
@@ -397,10 +409,10 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
             Text("${if (item.mediaType == "movie") "Movie" else "Series"} details", color = Color.White,
                 fontSize = 19.sp, fontWeight = FontWeight.Bold)
         }
-        androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
+        androidx.compose.foundation.lazy.LazyColumn(state = detailListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
             if (showDetailPoster) {
                 item {
-                    Box(Modifier.fillMaxWidth().height(330.dp).nexvioGlass(fallback = CataloguePanel), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().height(posterHeight).nexvioGlass(fallback = CataloguePanel), contentAlignment = Alignment.Center) {
                         AsyncImage(
                             model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" },
                             contentDescription = item.title,
@@ -471,6 +483,22 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                         Text(item.overview.ifBlank { "No description is available for this title yet." }, color = CatalogueMuted, fontSize = 15.sp, lineHeight = 23.sp)
                         Spacer(Modifier.height(24.dp))
                     }
+                    if (item.mediaType == "movie" && (castLoading || mainCast.isNotEmpty())) {
+                        Spacer(Modifier.height(22.dp))
+                        Text("Main cast", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
+                        if (castLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = CatalogueAccent)
+                        else LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            items(mainCast, key = { it.id }) { person ->
+                                Column(Modifier.width(104.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    AsyncImage(model = person.profilePath?.let { "https://image.tmdb.org/t/p/w185" + it }, contentDescription = person.name, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.size(84.dp).clip(CircleShape).background(CataloguePanel).nexvioGlassRim(CircleShape))
+                                    Spacer(Modifier.height(7.dp))
+                                    Text(person.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    if (person.character.isNotBlank()) Text(person.character, color = CatalogueMuted, fontSize = 10.sp, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                }
+                            }
+                        }
+                    }
                     var selectedSeason by remember(item.id) { mutableIntStateOf(1) }
                     var selectedEpisode by remember(item.id) { mutableIntStateOf(1) }
                     if (item.mediaType == "tv" && showDetailEpisodes) {
@@ -523,6 +551,20 @@ private data class DiscoveredStream(
     val subtitleEpisode: Int? = null
 )
 
+private data class TmdbCastMember(val id: Int, val name: String, val character: String, val profilePath: String?)
+private suspend fun fetchTmdbMainCast(item: TmdbTitle): List<TmdbCastMember> = withContext(Dispatchers.IO) {
+    val media = if (item.mediaType == "tv") "tv" else "movie"
+    val body = tmdbBodyWithOfflineCopy("credits|$media|\${item.id}", "https://api.themoviedb.org/3/$media/\${item.id}/credits", "Could not load the main cast.")
+    val cast = JSONObject(body).optJSONArray("cast") ?: return@withContext emptyList()
+    (0 until cast.length()).mapNotNull { index ->
+        val person = cast.optJSONObject(index) ?: return@mapNotNull null
+        val id = person.optInt("id", 0)
+        val name = person.optString("name").trim()
+        if (id <= 0 || name.isBlank()) null else TmdbCastMember(id, name,
+            person.optString("character").takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
+            person.optString("profile_path").takeIf { it.isNotBlank() && it != "null" })
+    }.take(10)
+}
 private data class TmdbSeason(val number: Int, val name: String, val episodeCount: Int)
 private data class TmdbEpisode(val number: Int, val name: String)
 
