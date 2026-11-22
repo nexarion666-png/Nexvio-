@@ -25,6 +25,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,6 +50,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -256,6 +261,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    var navCollapsed by remember { mutableStateOf(false) }
+    val navWidth by animateFloatAsState(if (navCollapsed) 0.76f else 1f, animationSpec = tween(260), label = "navigation-capsule-width")
+    val navScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -1.5f) navCollapsed = true
+                else if (available.y > 1.5f) navCollapsed = false
+                return Offset.Zero
+            }
+        }
+    }
     val hazeState = remember { dev.chrisbanes.haze.HazeState() }
     SideEffect { AppAppearanceState.hazeState = hazeState }
 
@@ -342,7 +358,7 @@ class MainActivity : ComponentActivity() {
                 )
             } else if (playing != null) {
                 PlayerScreen(channel = playing!!, profileId = activeProfileId, queue = playbackQueue, queueIndex = playbackQueueIndex, onQueueMove = { moveDownloadQueue(it) }, onBack = { playing = null; playbackQueue = emptyList(); playbackQueueIndex = 0 })
-            } else Box(Modifier.fillMaxSize()) {
+            } else Box(Modifier.fillMaxSize().nestedScroll(navScrollConnection)) {
                 Box(Modifier.fillMaxSize().hazeSource(state = hazeState)) {
                     if (streamSearch != null) {
                         val request = streamSearch!!
@@ -419,7 +435,7 @@ class MainActivity : ComponentActivity() {
                 val navStyle = navPrefs.getString("navigation_style", "Adaptive") ?: "Adaptive"
                 val navGlow = navPrefs.getBoolean("navigation_glow", true)
                 Row(
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(navWidth)
                         .padding(horizontal = if (navStyle == "Compact") 16.dp else 22.dp, vertical = if (navStyle == "Compact") 9.dp else 14.dp)
                         .then(if (AppAppearanceState.isLiquidGlass) Modifier.hazeEffect(
                             state = hazeState,
