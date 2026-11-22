@@ -395,8 +395,9 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
     var castLoading by remember(item.id, item.mediaType) { mutableStateOf(true) }
     val detailListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val posterHeight by androidx.compose.animation.core.animateDpAsState(
-        targetValue = if (detailListState.firstVisibleItemIndex > 0) 104.dp else (210.dp - (detailListState.firstVisibleItemScrollOffset * 0.55f).dp).coerceIn(104.dp, 210.dp),
-        animationSpec = androidx.compose.animation.core.tween(180), label = "detail-poster-scroll-height"
+        targetValue = if (detailListState.firstVisibleItemIndex > 0) 156.dp else
+            (540.dp - (detailListState.firstVisibleItemScrollOffset * 0.82f).dp).coerceIn(156.dp, 540.dp),
+        animationSpec = androidx.compose.animation.core.tween(220), label = "detail-poster-scroll-height"
     )
     LaunchedEffect(item.id, item.mediaType) {
         castLoading = true
@@ -408,23 +409,36 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
     Box(Modifier.fillMaxSize().background(CatalogueInk)) {
         if (AppAppearanceState.isLiquidGlass) PosterGlassBackdrop(item)
         Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹  Back", color = CatalogueAccent, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
-            Text("${if (item.mediaType == "movie") "Movie" else "Series"} details", color = Color.White,
-                fontSize = 19.sp, fontWeight = FontWeight.Bold)
-        }
         androidx.compose.foundation.lazy.LazyColumn(state = detailListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
             if (showDetailPoster) {
                 item {
-                    Box(Modifier.fillMaxWidth().height(posterHeight).nexvioGlass(fallback = CataloguePanel), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().height(posterHeight), contentAlignment = Alignment.BottomStart) {
                         AsyncImage(
-                            model = (item.backdropPath ?: item.posterPath)?.let { "https://image.tmdb.org/t/p/w1280$it" },
+                            model = item.posterPath?.let { "https://image.tmdb.org/t/p/w780$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
                             onSuccess = { AppAppearanceState.updatePosterReflection(it.result.drawable) }
                         )
+                        Box(
+                            Modifier.fillMaxSize().background(
+                                Brush.verticalGradient(
+                                    0f to Color.Black.copy(alpha = 0.16f),
+                                    0.52f to Color.Transparent,
+                                    1f to CatalogueInk
+                                )
+                            )
+                        )
+                        Row(
+                            Modifier.align(Alignment.TopStart).fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("‹  Back", color = Color.White, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable(onClick = onBack).padding(end = 18.dp))
+                            Text("${if (item.mediaType == "movie") "Movie" else "Series"} details",
+                                color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
