@@ -63,7 +63,8 @@ internal data class TmdbTitle(
     val posterPath: String?,
     val year: String,
     val rating: Double,
-    val mediaType: String
+    val mediaType: String,
+    val backdropPath: String? = null
 )
 
 /** Soft, poster-derived ambient light behind detail and stream-search glass UI. */
@@ -71,7 +72,7 @@ internal data class TmdbTitle(
 private fun PosterGlassBackdrop(item: TmdbTitle) {
     Box(Modifier.fillMaxSize().background(CatalogueInk)) {
         AsyncImage(
-            model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" },
+            model = (item.backdropPath ?: item.posterPath)?.let { "https://image.tmdb.org/t/p/w1280$it" },
             contentDescription = null,
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             modifier = Modifier.fillMaxSize().blur(30.dp).then(
@@ -266,7 +267,8 @@ internal fun parseTmdbTitles(body: String, mediaType: String): List<TmdbTitle> {
             posterPath = item.optString("poster_path").takeIf { it.isNotBlank() && it != "null" },
             year = (if (resultType == "movie") item.optString("release_date") else item.optString("first_air_date")).take(4),
             rating = item.optDouble("vote_average", 0.0),
-            mediaType = resultType
+            mediaType = resultType,
+            backdropPath = item.optString("backdrop_path").takeIf { it.isNotBlank() && it != "null" }
         )
     }
 }
@@ -417,7 +419,7 @@ internal fun TitleDetailPage(item: TmdbTitle, onBack: () -> Unit, onPlay: (TvCha
                 item {
                     Box(Modifier.fillMaxWidth().height(posterHeight).nexvioGlass(fallback = CataloguePanel), contentAlignment = Alignment.Center) {
                         AsyncImage(
-                            model = item.posterPath?.let { "${TMDB_IMAGE_BASE}$it" },
+                            model = (item.backdropPath ?: item.posterPath)?.let { "https://image.tmdb.org/t/p/w1280$it" },
                             contentDescription = item.title,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
@@ -557,7 +559,7 @@ private data class DiscoveredStream(
 private data class TmdbCastMember(val id: Int, val name: String, val character: String, val profilePath: String?)
 private suspend fun fetchTmdbMainCast(item: TmdbTitle): List<TmdbCastMember> = withContext(Dispatchers.IO) {
     val media = if (item.mediaType == "tv") "tv" else "movie"
-    val body = tmdbBodyWithOfflineCopy("credits|$media|\${item.id}", "https://api.themoviedb.org/3/$media/\${item.id}/credits", "Could not load the main cast.")
+    val body = tmdbBodyWithOfflineCopy("credits|$media|${item.id}", "https://api.themoviedb.org/3/$media/${item.id}/credits", "Could not load the main cast.")
     val cast = JSONObject(body).optJSONArray("cast") ?: return@withContext emptyList()
     (0 until cast.length()).mapNotNull { index ->
         val person = cast.optJSONObject(index) ?: return@mapNotNull null
