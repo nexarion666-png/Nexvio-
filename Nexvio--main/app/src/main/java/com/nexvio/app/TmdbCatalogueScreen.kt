@@ -928,7 +928,7 @@ private fun streamDedupeKey(stream: DiscoveredStream): String =
 private fun StreamDiscoverySection(item: TmdbTitle, seasonNumber: Int, episodeNumber: Int, onPlay: (TvChannel) -> Unit, autoStart: Boolean = false, fullPage: Boolean = false) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val streamPrefs = remember(context) { context.getSharedPreferences("nexvio_settings", Context.MODE_PRIVATE) }
+    val streamPrefs = remember(context) { settingsPrefs(context) }
     val streamSortOrder = remember(item.id, item.mediaType) { streamPrefs.getString("stream_sort_order", "Recommended") ?: "Recommended" }
     val compactStreamRows = remember(item.id, item.mediaType) { streamPrefs.getBoolean("stream_compact_rows", false) }
     val showStreamProvider = remember(item.id, item.mediaType) { streamPrefs.getBoolean("stream_show_provider", true) }
