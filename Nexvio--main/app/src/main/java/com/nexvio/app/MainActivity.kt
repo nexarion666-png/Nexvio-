@@ -1013,6 +1013,8 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var screenLocked by rememberSaveable(channel.id) { mutableStateOf(false) }
     var muted by rememberSaveable(channel.id) { mutableStateOf(false) }
     var moreMenuExpanded by remember { mutableStateOf(false) }
+    var videoAspectRatioChoice by rememberSaveable(channel.id) { mutableStateOf(runCatching { playerPrefs.getString("playback_aspect_ratio", "Auto") ?: "Auto" }.getOrDefault("Auto")) }
+    val selectedVideoAspectRatio = when (videoAspectRatioChoice) { "16:9" -> 16f / 9f; "4:3" -> 4f / 3f; "1:1" -> 1f; "21:9" -> 21f / 9f; else -> null }
     var trackDialogOpen by remember { mutableStateOf(false) }
     var subtitleDialogOpen by remember { mutableStateOf(false) }
     var subtitleDiagnostic by remember(channel.id) { mutableStateOf("No subtitle diagnostics yet.") }
@@ -1649,9 +1651,11 @@ private fun formatPlayerTime(milliseconds: Long): String {
                 AndroidView(
                     factory = { ctx -> PlayerView(ctx).apply {
                         useController = false
-                        resizeMode = when (playerPrefs.getString("playback_resize", "Fit")) {
-                            "Fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                            "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        resizeMode = when {
+                            videoAspectRatioChoice == "Stretch" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            selectedVideoAspectRatio != null -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            playerPrefs.getString("playback_resize", "Fit") == "Fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            playerPrefs.getString("playback_resize", "Fit") == "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                         }
                         setKeepContentOnPlayerReset(true)
@@ -1672,16 +1676,23 @@ private fun formatPlayerTime(milliseconds: Long): String {
                         this.player = player
                     } },
                     update = { view ->
-                        view.resizeMode = when (playerPrefs.getString("playback_resize", "Fit")) {
-                            "Fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                            "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        view.resizeMode = when {
+                            videoAspectRatioChoice == "Stretch" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            selectedVideoAspectRatio != null -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            playerPrefs.getString("playback_resize", "Fit") == "Fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            playerPrefs.getString("playback_resize", "Fit") == "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                         }
                         if (view.player !== player) view.player = player
                     },
                     onRelease = { view -> view.player = null },
-                    modifier = (if (fullscreen) Modifier.fillMaxSize()
-                        else Modifier.fillMaxWidth().aspectRatio(16f / 9f)).pointerInput(player) {
+                    modifier = (if (selectedVideoAspectRatio == null) {
+                            if (fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        } else if (selectedVideoAspectRatio <= 16f / 9f) {
+                            Modifier.fillMaxHeight().aspectRatio(selectedVideoAspectRatio)
+                        } else {
+                            Modifier.fillMaxWidth().aspectRatio(selectedVideoAspectRatio)
+                        }).pointerInput(player) {
                             detectTapGestures(
                                 onTap = { if (screenLocked) lockHintVisible = true else { controlsVisible = !controlsVisible; controlsInteraction++ } },
                                 onDoubleTap = { offset ->
@@ -1890,6 +1901,17 @@ private fun formatPlayerTime(milliseconds: Long): String {
                                 expanded = moreMenuExpanded,
                                 onDismissRequest = { moreMenuExpanded = false }
                             ) {
+                                listOf("Auto", "16:9", "4:3", "1:1", "21:9", "Stretch").forEach { ratio ->
+                                    DropdownMenuItem(
+                                        text = { Text(if (ratio == videoAspectRatioChoice) "✓  $ratio" else ratio) },
+                                        onClick = {
+                                            videoAspectRatioChoice = ratio
+                                            playerPrefs.edit().putString("playback_aspect_ratio", ratio).apply()
+                                            moreMenuExpanded = false
+                                            revealControls()
+                                        }
+                                    )
+                                }
                                 DropdownMenuItem(text = { Text("Video quality") }, onClick = {
                                     moreMenuExpanded = false
                                     openTrackDialog(C.TRACK_TYPE_VIDEO, "Video quality")
