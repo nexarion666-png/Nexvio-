@@ -467,6 +467,30 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
         }
     }
     val selectedRows = openedFolder?.let { groups[it] }
+    // Series folders are presented in viewing order, independent of when each episode
+    // was downloaded. Support both S01E02 and "Season 1 Episode 2" title formats.
+    fun episodePosition(title: String): Pair<Int, Int> {
+        val compact = Regex("(?i)\\bS(\\d{1,3})\\s*E(\\d{1,4})\\b").find(title)
+        if (compact != null) {
+            return (compact.groupValues[1].toIntOrNull() ?: Int.MAX_VALUE) to
+                (compact.groupValues[2].toIntOrNull() ?: Int.MAX_VALUE)
+        }
+        val expanded = Regex("(?i)\\bSeason\\s*(\\d{1,3})\\s*[,.-]?\\s*Episode\\s*(\\d{1,4})\\b").find(title)
+        if (expanded != null) {
+            return (expanded.groupValues[1].toIntOrNull() ?: Int.MAX_VALUE) to
+                (expanded.groupValues[2].toIntOrNull() ?: Int.MAX_VALUE)
+        }
+        return Int.MAX_VALUE to Int.MAX_VALUE
+    }
+    val displayRows = if (openedFolder?.startsWith("tv:") == true) {
+        selectedRows.orEmpty().sortedWith(
+            compareBy<Triple<Long, String, Int>>(
+                { episodePosition(it.second).first },
+                { episodePosition(it.second).second },
+                { it.second.lowercase() }
+            )
+        )
+    } else selectedRows.orEmpty()
     // If the last item in an opened folder was deleted, go back to the folder list.
     LaunchedEffect(selectedRows == null, openedFolder) { if (openedFolder != null && selectedRows == null) openedFolder = null }
     if (openedFolder != null && selectedRows != null) {
@@ -506,7 +530,7 @@ fun DownloadsScreen(onPlay: (TvChannel) -> Unit, profileId: String = NexvioProfi
             Text("Tap to play • Hold to delete", color = Color(0xFF777B86), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(selectedRows, key = { it.first }) { row ->
+                items(displayRows, key = { it.first }) { row ->
                     DownloadItemCard(
                         title = row.second,
                         status = row.third,
