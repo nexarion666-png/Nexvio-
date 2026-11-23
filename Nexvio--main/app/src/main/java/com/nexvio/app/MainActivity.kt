@@ -1040,6 +1040,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var gestureTick by remember { mutableIntStateOf(0) }
     var lockHintVisible by remember(channel.id) { mutableStateOf(false) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val touchGesturesEnabled = runCatching { playerPrefs.getBoolean("playback_touch_gestures", false) }.getOrDefault(false)
 
     fun revealControls() { controlsVisible = true; controlsInteraction++ }
     fun showPlayerMessage(message: String) { android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show() }
@@ -1707,7 +1708,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
                             )
                         }.pointerInput(player, activity, audioManager) {
                             detectVerticalDragGestures { change, dragAmount ->
-                                if (screenLocked || kotlin.math.abs(dragAmount) < 0.5f) return@detectVerticalDragGestures
+                                if (!touchGesturesEnabled || screenLocked || kotlin.math.abs(dragAmount) < 0.5f) return@detectVerticalDragGestures
                                 val width = size.width.toFloat().coerceAtLeast(1f)
                                 val x = change.position.x
                                 if (x < width / 2f) {
