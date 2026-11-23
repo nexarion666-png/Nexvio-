@@ -41,6 +41,7 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
     var autoplay by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_autoplay", true)) }
     var resume by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_resume", true)) }
     var resize by remember { mutableStateOf(safePlaybackString(prefs, "playback_resize", "Fit")) }
+    var aspectRatio by remember { mutableStateOf(safePlaybackString(prefs, "playback_aspect_ratio", "Auto")) }
     var loadingOverlay by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_loading_overlay", true)) }
     var minBuffer by remember { mutableFloatStateOf(safePlaybackInt(prefs, "playback_min_buffer", 15).coerceIn(5, 60).toFloat()) }
     var maxBuffer by remember { mutableFloatStateOf(safePlaybackInt(prefs, "playback_max_buffer", 45).coerceIn(15, 120).toFloat()) }
@@ -81,6 +82,8 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
                 }
                 PlaybackDivider()
                 PlaybackSelect("Video sizing", resize, onClick = { dialog = "Video sizing" })
+                PlaybackDivider()
+                PlaybackSelect("Video aspect ratio", aspectRatio, onClick = { dialog = "Video aspect ratio" })
                 PlaybackDivider()
                 PlaybackToggle("Touch gestures", "Gesture seeking and swipe volume/brightness controls are not implemented yet; this preference is saved but has no player effect.", touchGestures, enabled = false) { touchGestures = it }
                 PlaybackDivider()
@@ -172,6 +175,9 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
     when (dialog) {
         "Video sizing" -> PlaybackChoiceDialog(dialog!!, listOf("Fit", "Fill", "Zoom"), resize, {
             resize = it; prefs.edit().putString("playback_resize", it).apply(); dialog = null
+        }) { dialog = null }
+        "Video aspect ratio" -> PlaybackChoiceDialog(dialog!!, listOf("Auto", "16:9", "4:3", "1:1", "21:9", "Stretch"), aspectRatio, {
+            aspectRatio = it; prefs.edit().putString("playback_aspect_ratio", it).apply(); dialog = null
         }) { dialog = null }
         "Preferred audio language" -> PlaybackChoiceDialog(dialog!!, listOf("Device language", "No preference", "English", "Japanese", "Spanish", "French"), preferredAudio, {
             preferredAudio = it; prefs.edit().putString("preferred_audio_language", it).apply(); dialog = null
