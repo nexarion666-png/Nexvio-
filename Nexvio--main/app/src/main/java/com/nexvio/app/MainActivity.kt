@@ -1040,7 +1040,7 @@ private fun formatPlayerTime(milliseconds: Long): String {
     var gestureTick by remember { mutableIntStateOf(0) }
     var lockHintVisible by remember(channel.id) { mutableStateOf(false) }
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val touchGesturesEnabled = runCatching { playerPrefs.getBoolean("playback_touch_gestures", false) }.getOrDefault(false)
+    val touchGesturesEnabled = runCatching { playerPrefs.getBoolean("playback_touch_gestures", true) }.getOrDefault(false)
 
     fun revealControls() { controlsVisible = true; controlsInteraction++ }
     fun showPlayerMessage(message: String) { android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show() }
