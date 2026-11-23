@@ -1405,6 +1405,22 @@ private fun formatPlayerTime(milliseconds: Long): String {
         var waited = 0
         while (active.playbackState != Player.STATE_READY && waited < 300) { delay(200); waited++ }
         if (active.playbackState != Player.STATE_READY || active.isCurrentMediaItemLive) return@LaunchedEffect
+        // 2) Offline downloads keep an English WebVTT sidecar beside the video.
+        // Load the persistent file before checking the temporary player cache or network.
+        val offlineDownloadId = channel.id.takeIf { it.startsWith("offline-download-") }
+            ?.removePrefix("offline-download-")?.toLongOrNull()
+        if (code.equals("en", ignoreCase = true) && offlineDownloadId != null) {
+            val offlineSubtitle = OfflineDownloads(context, profileId).subtitleFile(offlineDownloadId)
+            if (offlineSubtitle != null) {
+                try {
+                    validateSubtitleDuration(offlineSubtitle, active.duration)
+                    applySubtitleFile(offlineSubtitle, SubtitleOption(offlineSubtitle.absolutePath, "en", "English (offline)", "offline"))
+                    return@LaunchedEffect
+                } catch (e: Exception) {
+                    Log.w("NexvioSubtitles", "Saved offline subtitle could not be loaded: ${e.message}")
+                }
+            }
+        }
         val textGroups = active.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
         // Only skip downloading when the currently selected embedded subtitle is already
         // in the requested language. A selected subtitle in another language must not block
@@ -1428,22 +1444,6 @@ private fun formatPlayerTime(milliseconds: Long): String {
                     .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(index)))
                     .build()
                 return@LaunchedEffect
-            }
-        }
-        // 2) Offline downloads keep an English WebVTT sidecar beside the video.
-        // Load the persistent file before checking the temporary player cache or network.
-        val offlineDownloadId = channel.id.takeIf { it.startsWith("offline-download-") }
-            ?.removePrefix("offline-download-")?.toLongOrNull()
-        if (code.equals("en", ignoreCase = true) && offlineDownloadId != null) {
-            val offlineSubtitle = OfflineDownloads(context, profileId).subtitleFile(offlineDownloadId)
-            if (offlineSubtitle != null) {
-                try {
-                    validateSubtitleDuration(offlineSubtitle, active.duration)
-                    applySubtitleFile(offlineSubtitle, SubtitleOption(offlineSubtitle.absolutePath, "en", "English (offline)", "offline"))
-                    return@LaunchedEffect
-                } catch (e: Exception) {
-                    Log.w("NexvioSubtitles", "Saved offline subtitle could not be loaded: ${e.message}")
-                }
             }
         }
         // 3) Re-use the temporary subtitle already saved for this video, if any.
