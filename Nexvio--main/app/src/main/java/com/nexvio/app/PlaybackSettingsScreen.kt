@@ -52,7 +52,7 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
     var autoSubtitles by remember { mutableStateOf(safePlaybackBoolean(prefs, "auto_subtitles", true)) }
     var subtitleSize by remember { mutableFloatStateOf(safePlaybackFloat(prefs, "subtitle_size_sp", 18f).takeIf { it.isFinite() }?.coerceIn(12f, 36f) ?: 18f) }
     var autoplayNext by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_autoplay_next", true)) }
-    var touchGestures by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_touch_gestures", false)) }
+    var touchGestures by remember { mutableStateOf(safePlaybackBoolean(prefs, "playback_touch_gestures", true)) }
     var dialog by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
