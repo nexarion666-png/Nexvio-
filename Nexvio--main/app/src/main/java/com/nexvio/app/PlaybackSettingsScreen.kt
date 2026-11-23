@@ -85,7 +85,7 @@ fun PlaybackSettingsScreenV2(onBack: () -> Unit) {
                 PlaybackDivider()
                 PlaybackSelect("Video aspect ratio", aspectRatio, onClick = { dialog = "Video aspect ratio" })
                 PlaybackDivider()
-                PlaybackToggle("Touch gestures", "Gesture seeking and swipe volume/brightness controls are not implemented yet; this preference is saved but has no player effect.", touchGestures, enabled = false) { touchGestures = it }
+                PlaybackToggle("Touch gestures", "Enable vertical swipes on the left and right sides of the player to adjust brightness and volume.", touchGestures) { touchGestures = it; prefs.edit().putBoolean("playback_touch_gestures", it).apply() }
                 PlaybackDivider()
                 PlaybackUnavailable("Player engine", "AndroidX Media3 ExoPlayer is the only integrated engine in this build. libmpv is unavailable.")
                 PlaybackUnavailable("Hold to speed / Hold speed", "Press-and-hold playback-speed gestures are not implemented.")
