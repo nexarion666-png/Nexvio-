@@ -106,11 +106,19 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title, year) {
           "&expires=" + encodeURIComponent(data.expires) + "&h=1&lang=en";
       }
       console.log("[Vixsrc] Fetching HLS master playlist");
-      return request(masterUrl, {
-        "Accept": "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
-        "Referer": pageUrl
-      }).then(function (response) {
-        return response.text();
+      // Vixsrc's signed playlist endpoint commonly expects requests to originate
+      // from the provider site itself. Some TV pages also accept the exact episode
+      // URL as Referer, so retry that context only when the root Referer is denied.
+      function fetchMaster(referer) {
+        return request(masterUrl, {
+          "Accept": "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
+          "Referer": referer
+        }).then(function (response) { return response.text(); });
+      }
+      return fetchMaster(BASE_URL + "/").catch(function (error) {
+        if (!/HTTP 403/.test(error && error.message ? error.message : String(error))) throw error;
+        console.log("[Vixsrc] Playlist denied with site Referer; retrying with media page Referer");
+        return fetchMaster(pageUrl);
       }).then(function (playlistText) {
         if (!playlistText || playlistText.indexOf("#EXTM3U") < 0) {
           throw new Error("Vixsrc response was not a valid HLS playlist");
